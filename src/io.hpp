@@ -20,8 +20,8 @@ inline void write_bcf_genotype_probability(double* GP, const std::string& vcfout
                                            const StringVec1D& sampleids, const IntVec1D& markers,
                                            std::string& chr, int N, int M)
 {
-    FloatVec1D gp(N * 3);
-    FloatVec1D ds(N);
+    FloatVec1D gp(N * 3), ds(N);
+    IntVec1D gt(N * 2);
     if (vcfin.empty())
     {
         vcfpp::BcfWriter bw(vcfout, "VCF4.1");
@@ -29,7 +29,7 @@ inline void write_bcf_genotype_probability(double* GP, const std::string& vcfout
             chr = "1";
         bw.header.addContig(chr);
         // add GT,GP,DS tag into the header
-        // bw.header.addFORMAT("GT", "1", "String", "Unphased genotype");
+        bw.header.addFORMAT("GT", "1", "String", "Unphased genotype");
         bw.header.addFORMAT("GP", "3", "Float", "Posterior genotype probability of 0/0, 0/1, and 1/1");
         bw.header.addFORMAT("DS", "1", "Float", "Diploid dosage");
         // add all samples in the header
@@ -51,7 +51,10 @@ inline void write_bcf_genotype_probability(double* GP, const std::string& vcfout
                 gp[i * 3 + 1] = std::lround(1e3 * GP[i * M * 3 + m * 3 + 1]) / 1e3;
                 gp[i * 3 + 2] = std::lround(1e3 * GP[i * M * 3 + m * 3 + 2]) / 1e3;
                 ds[i] = gp[i * 3 + 1] + gp[i * 3 + 2] * 2;
+                gt[i * 2 + 0] = !(gp[i * 3 + 0] > gp[i * 3 + 1] && gp[i * 3 + 0] > gp[i * 3 + 2]);
+                gt[i * 2 + 1] = (gp[i * 3 + 2] > gp[i * 3 + 1] && gt[i * 2 + 0]);
             }
+            var.setGenotypes(gt);
             var.setFORMAT("GP", gp);
             var.setFORMAT("DS", ds);
             bw.writeRecord(var);
