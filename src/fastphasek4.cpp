@@ -23,8 +23,9 @@ int main(int argc, char* argv[])
     {
         std::cout << "Author: Zilong-Li (zilong.dk@gmail.com)\n"
                   << "Usage example:\n"
-                  << "     " + (std::string)argv[0] + " -g beagle.gz -c 10 -i 20 -n 10 -o out.vcf.gz\n"
+                  << "     " + (std::string)argv[0] + " -g beagle.gz -c 10 -i 20 -n 10 -o out.vcf.gz -b cluster.bin\n"
                   << "\nOptions:\n"
+                  << "     -b      binary file with clusters likelihood\n"
                   << "     -c      number of ancestral clusters\n"
                   << "     -f      input vcf/bcf format\n"
                   << "     -g      gziped beagle format\n"
@@ -39,11 +40,13 @@ int main(int argc, char* argv[])
         return 1;
     }
 
-    std::string beagle_in = "", vcf_in = "", vcf_out = "", samples = "-", region = "";
+    std::string cluster_out, beagle_in = "", vcf_in = "", vcf_out = "", samples = "-", region = "";
     int C{3}, niters{1}, nthreads{4}, seed{1};
     double tol{1e-6};
     for (size_t i = 0; i < args.size(); i++)
     {
+        if (args[i] == "-b")
+            cluster_out = args[++i];
         if (args[i] == "-c")
             C = stoi(args[++i]);
         if (args[i] == "-f")
@@ -85,7 +88,7 @@ int main(int argc, char* argv[])
     ArrDouble2D postProbsZ(M, C * C);
     ArrDouble2D postProbsZandG(M, C * C * 4);
 
-    fastPhaseK4 nofaith(N, M, C, seed);
+    fastPhaseK4 nofaith(N, M, C, seed, cluster_out);
     nthreads = nthreads < N ? nthreads : N;
     ThreadPool poolit(nthreads);
     vector<future<double>> llike;

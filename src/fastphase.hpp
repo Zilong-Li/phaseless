@@ -2,6 +2,8 @@
 #define FASTPHASE_H_
 
 #include <Eigen/Dense>
+#include <cstring> // memcpy
+#include <fstream>
 #include <iostream>
 #include <mutex>
 #include <random>
@@ -35,10 +37,11 @@ private:
     std::mutex mutex_it; // in case of race condition
 
 public:
-    fastPhaseK4(int n, int m, int c, int seed);
+    fastPhaseK4(int n, int m, int c, int seed, const std::string& out);
     ~fastPhaseK4();
 
     // SHARED VARIBALES
+    std::ofstream ofs;
     const int N, M, C;
     ArrDouble2D GP;       // genotype probabilies for all individuals, N x (M x 3)
     ArrDouble2D PI;       // nsnps x C
@@ -55,9 +58,15 @@ public:
     ArrDouble2D callGenotypeInd(const ArrDouble2D& indPostProbsZandG);
 };
 
-inline fastPhaseK4::fastPhaseK4(int n, int m, int c, int seed = 1)
+inline fastPhaseK4::fastPhaseK4(int n, int m, int c, int seed, const std::string& out)
     : N(n), M(m), C(c), GP(M * 3, N), transHap(M, C * C), transDip(M, C * C * C * C)
 {
+    ofs.open(out, std::ios::binary);
+    if (!ofs)
+        throw std::runtime_error(out + ": " + strerror(errno));
+    ofs.write((char*)&N, 4);
+    ofs.write((char*)&M, 4);
+    ofs.write((char*)&C, 4);
     auto rng = std::default_random_engine{};
     rng.seed(seed);
     F = RandomUniform<ArrDouble2D, std::default_random_engine>(M, C, rng);
@@ -67,6 +76,7 @@ inline fastPhaseK4::fastPhaseK4(int n, int m, int c, int seed = 1)
 
 inline fastPhaseK4::~fastPhaseK4()
 {
+    ofs.close();
 }
 
 
@@ -202,7 +212,6 @@ inline double fastPhaseK4::forwardAndBackwards(int ind, const DoubleVec1D& GL, A
     // ======== post decoding get p(Z|X, G) ===========
     // ArrDouble2D indPostProbsZ; // post probabilities for ind i, M x (C x C)
     ArrDouble2D indPostProbsZ = (logLikeBackwardInd + logLikeForwardInd - indLikeForwardAll).exp();
-
     // ======== post decoding get p(Z,G|X, theta) ===========
     // ArrDouble2D indPostProbsZandG, M x (C x C x 2 x 2)
     ArrDouble2D indPostProbsZandG(M, C * C * 4);
@@ -234,6 +243,9 @@ inline double fastPhaseK4::forwardAndBackwards(int ind, const DoubleVec1D& GL, A
     {
         // std::lock_guard<std::mutex> lock(mutex_it);
         GP.col(ind) = callGenotypeInd(indPostProbsZandG);
+        // output likelihood of each cluster
+        ArrDouble2D likeCluster = (logLikeBackwardInd + logLikeForwardInd).exp().transpose();
+        ofs.write((char*)likeCluster.data(), M * C * C * 8);
     }
     postProbsZ += indPostProbsZ;
     postProbsZandG += indPostProbsZandG;
