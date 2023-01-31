@@ -6,12 +6,14 @@
 using namespace std;
 
 
-ArrDouble1D calc_distRate(const IntVec1D& markers)
+// check initialize_sigmaCurrent_m in STITCH
+ArrDouble1D calc_distRate(const IntVec1D& markers, int C, int Ne = 20000, double expRate = 0.5)
 {
     ArrDouble1D distRate(markers.size());
     distRate(0) = 1e20;
+    int nGen = 4 * Ne / C;
     for (size_t i = 1; i < markers.size(); i++)
-        distRate(i) = (markers[i] - markers[i - 1]) / 1e6;
+        distRate(i) = (markers[i] - markers[i - 1]) * nGen * expRate / 1e8;
     return distRate;
 }
 
@@ -23,7 +25,8 @@ int main(int argc, char* argv[])
     {
         std::cout << "Author: Zilong-Li (zilong.dk@gmail.com)\n"
                   << "Usage example:\n"
-                  << "     " + (std::string)argv[0] + " -g beagle.gz -c 10 -i 20 -n 10 -o out.vcf.gz -b cluster.bin\n"
+                  << "     " + (std::string)argv[0] +
+                         " -g beagle.gz -c 10 -i 20 -n 10 -o out.vcf.gz -b cluster.bin\n"
                   << "\nOptions:\n"
                   << "     -b      binary file with clusters likelihood\n"
                   << "     -c      number of ancestral clusters\n"
@@ -81,8 +84,8 @@ int main(int argc, char* argv[])
     // cout << Eigen::Map<ArrDouble2D>(genolikes.data(), N * 3, M) << endl;
 
     read_beagle_genotype_likelihoods(beagle_in, genolikes, sampleids, chrs, markers, N, M);
-    auto distRate = calc_distRate(markers);
     cout << "N:" << N << ",M:" << M << ",C:" << C << endl;
+    auto distRate = calc_distRate(markers, C);
 
     double loglike{0};
     ArrDouble2D postProbsZ(M, C * C);
