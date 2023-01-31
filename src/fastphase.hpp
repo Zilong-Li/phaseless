@@ -42,12 +42,12 @@ public:
 
     // SHARED VARIBALES
     std::ofstream ofs;
-    const int N, M, C;
-    ArrDouble2D GP;       // genotype probabilies for all individuals, N x (M x 3)
-    ArrDouble2D PI;       // nsnps x C
-    ArrDouble2D F;        // nsnps x C
-    ArrDouble2D transHap; // nsnps x (C x C)
-    ArrDouble2D transDip; // nsnps x (C x C x C x C)
+    const int N, M, C, C2; // C2 = C x C
+    ArrDouble2D GP;        // genotype probabilies for all individuals, N x (M x 3)
+    ArrDouble2D PI;        // nsnps x C
+    ArrDouble2D F;         // nsnps x C
+    ArrDouble2D transHap;  // nsnps x (C x C)
+    ArrDouble2D transDip;  // nsnps x (C x C x C x C)
 
     ArrDouble2D emissionCurIterInd(const ArrDouble2D& gli, bool use_log = true);
     void transitionCurIter(const ArrDouble1D& distRate);
@@ -59,7 +59,7 @@ public:
 };
 
 inline fastPhaseK4::fastPhaseK4(int n, int m, int c, int seed, const std::string& out)
-    : N(n), M(m), C(c), GP(M * 3, N), transHap(M, C * C), transDip(M, C * C * C * C)
+    : N(n), M(m), C(c), C2(c * c), GP(M * 3, N), transHap(M, C2), transDip(M, C2 * C2)
 {
     ofs.open(out, std::ios::binary);
     if (!ofs)
@@ -146,8 +146,8 @@ inline double fastPhaseK4::forwardAndBackwards(int ind, const DoubleVec1D& GL, A
 {
     Eigen::Map<const ArrDouble2D> gli(GL.data() + ind * M * 3, 3, M);
     auto emitDip = emissionCurIterInd(gli);
-    ArrDouble2D logLikeForwardInd(M, C * C);  // log likelihood of forward recursion for ind i
-    ArrDouble2D logLikeBackwardInd(M, C * C); // log likelihood of backward recursion for ind i
+    ArrDouble2D logLikeForwardInd(C2, M);  // log likelihood of forward recursion for ind i
+    ArrDouble2D logLikeBackwardInd(C2, M); // log likelihood of backward recursion for ind i
 
     // ======== forward recursion ===========
     int k1, k2, k12, k12s, k12e;
@@ -159,7 +159,7 @@ inline double fastPhaseK4::forwardAndBackwards(int ind, const DoubleVec1D& GL, A
         for (k2 = 0; k2 < C; k2++)
         {
             k12 = k1 * C + k2;
-            logLikeForwardInd(s, k12) = emitDip(s, k12) + PI(s, k1) * PI(s, k2);
+            logLikeForwardInd(k12, s) = emitDip(s, k12) + PI(s, k1) * PI(s, k2);
         }
     }
 
@@ -167,54 +167,57 @@ inline double fastPhaseK4::forwardAndBackwards(int ind, const DoubleVec1D& GL, A
     for (s = 1; s < M; s++)
     {
         // ArrDouble1D likeForwardTmp;
-        auto likeForwardTmp = Eigen::exp(logLikeForwardInd.row(s - 1) - protect_me);
+        auto likeForwardTmp = Eigen::exp(logLikeForwardInd.col(s - 1) - protect_me);
         for (k1 = 0; k1 < C; k1++)
         {
             for (k2 = 0; k2 < C; k2++)
             {
                 k12 = k1 * C + k2;
-                k12s = (k1 * C + k2) * C * C; // fist index
-                k12e = k12s + C * C - 1;      // last index
-                logLikeForwardInd(s, k12) = protect_me + emitDip(s, k12) +
-                                            log((likeForwardTmp * transDip(s, Eigen::seq(k12s, k12e))).sum());
+                k12s = (k1 * C + k2) * C2; // fist index
+                k12e = k12s + C2 - 1;      // last index
+                logLikeForwardInd(k12, s) =
+                    protect_me + emitDip(s, k12) +
+                    log((likeForwardTmp * transDip(s, Eigen::seq(k12s, k12e)).transpose()).sum());
             }
         }
         // protect_me = logLikeForwardInd.row(s).maxCoeff();
-        protect_me = logLikeForwardInd(s, C * C - 1);
+        protect_me = logLikeForwardInd(C2 - 1, s);
     }
     // total likelhoods of the individual
-    double indLikeForwardAll = protect_me + log((logLikeForwardInd.row(M - 1) - protect_me).exp().sum());
+    double indLikeForwardAll = protect_me + log((logLikeForwardInd.col(M - 1) - protect_me).exp().sum());
 
     // ======== backward recursion ===========
     // set last site
-    logLikeBackwardInd.row(M - 1).setZero();
+    logLikeBackwardInd.col(M - 1).setZero();
     // site M-2 to 0
     protect_me = 0;
     for (s = M - 2; s >= 0; s--)
     {
-        auto likeBackwardTmp = Eigen::exp(emitDip.row(s + 1) + logLikeBackwardInd.row(s + 1) - protect_me);
+        auto likeBackwardTmp =
+            Eigen::exp(emitDip.row(s + 1).transpose() + logLikeBackwardInd.col(s + 1) - protect_me);
         for (k1 = 0; k1 < C; k1++)
         {
             for (k2 = 0; k2 < C; k2++)
             {
                 k12 = k1 * C + k2;
-                logLikeBackwardInd(s, k12) =
+                logLikeBackwardInd(k12, s) =
                     protect_me +
-                    log((likeBackwardTmp * transDip(s + 1, Eigen::seqN(k12, C * C, C * C))).sum());
+                    log((likeBackwardTmp * transDip(s + 1, Eigen::seqN(k12, C2, C2)).transpose()).sum());
             }
         }
         // protect_me = logLikeBackwardInd.row(s).maxCoeff();
-        protect_me = logLikeBackwardInd(s, C * C - 1);
+        protect_me = logLikeBackwardInd(C2 - 1, s);
     }
 
     std::lock_guard<std::mutex> lock(mutex_it); // lock here if RAM cost really matters
 
     // ======== post decoding get p(Z|X, G) ===========
     // ArrDouble2D indPostProbsZ; // post probabilities for ind i, M x (C x C)
-    ArrDouble2D indPostProbsZ = (logLikeBackwardInd + logLikeForwardInd - indLikeForwardAll).exp();
+    ArrDouble2D indPostProbsZ =
+        (logLikeBackwardInd + logLikeForwardInd - indLikeForwardAll).exp().transpose();
     // ======== post decoding get p(Z,G|X, theta) ===========
     // ArrDouble2D indPostProbsZandG, M x (C x C x 2 x 2)
-    ArrDouble2D indPostProbsZandG(M, C * C * 4);
+    ArrDouble2D indPostProbsZandG(M, C2 * 4);
     ArrDouble1D tmpSum(M);
     int g1, g2, g12;
     for (k1 = 0; k1 < C; k1++)
@@ -245,7 +248,7 @@ inline double fastPhaseK4::forwardAndBackwards(int ind, const DoubleVec1D& GL, A
         GP.col(ind) = callGenotypeInd(indPostProbsZandG);
         // output likelihood of each cluster
         ArrDouble2D likeCluster = (logLikeBackwardInd + logLikeForwardInd).exp().transpose();
-        ofs.write((char*)likeCluster.data(), M * C * C * 8);
+        ofs.write((char*)likeCluster.data(), M * C2 * 8);
     }
     postProbsZ += indPostProbsZ;
     postProbsZandG += indPostProbsZandG;
@@ -320,7 +323,7 @@ inline void fastPhaseK4::transitionCurIter(const ArrDouble1D& distRate)
 inline ArrDouble2D fastPhaseK4::emissionCurIterInd(const ArrDouble2D& gli, bool use_log)
 {
     int k1, k2, g1, g2;
-    ArrDouble2D emitDip(M, C * C); // emission probabilies, nsnps x (C x C)
+    ArrDouble2D emitDip(M, C2); // emission probabilies, nsnps x (C x C)
     for (k1 = 0; k1 < C; k1++)
     {
         for (k2 = 0; k2 < C; k2++)

@@ -3,7 +3,7 @@ HTSLIB   = /usr/local/lib
 EIGEN    = /usr/local/include
 CXX      = g++
 # CXXFLAGS = -std=c++17 -Wall -O3 -g -fsanitize=address
-CXXFLAGS = -std=c++17 -Wall -O3 -g -march=native
+CXXFLAGS = -std=c++17 -Wall -O3 -march=native
 INC      =  -I$(HTSINC) -I$(EIGEN)
 LDFLAGS  =  -L$(HTSLIB) -Wl,-rpath,$(HTSLIB)
 LIBS     = -lhts -lz -lm -lbz2 -llzma -lcurl -lpthread
