@@ -70,40 +70,54 @@ for (i in 1:10) {
 
 
 ## beagle <- read.table("../results/angsd.beagle.gz", head = T, as.is = T)
-beagle <- read.table("../data/bgl.gz", head = F, as.is = T)
+beagle <- read.table("../data/bgl.gz", head = T, as.is = T)
 N <- ncol(beagle) / 3 - 1
 M <- nrow(beagle)
 like <- list()
 for (i in 1:N) {
   like[[i]] <- t(beagle[, i * 3 + 1:3])
 }
-pos <- as.integer(sapply(strsplit(beagle[,1], "_"), function(x) x[2]))
+pos <- as.integer( sapply( strsplit(beagle$marker,"_") , function(x) x[2] ) )
+set.seed(1)
 
 
-C <- 3
+C <- 4
 d <- diff(pos) / 1e6
 # random start param
-set.seed(1)
 F <- matrix(runif(M * C), ncol = M)
 PI <- matrix(runif(M * C), ncol = C)
 PI <- PI / rowSums(PI)
 par <- list(F = F, PI = PI)
 #####################################
-## run fastPhase
-for (i in 1:10) {
+
+## run fastPhase k4
+system.time(
+for (i in 1:4) {
   cat("iteration", i, "\n")
   logEmission <- emission(like, par$F) # logScale
   trans <- transition(d, par$PI)
   system.time(res <- lapply(1:N, function(x) forwardAndBackwards(x, e = logEmission, trans = trans, M = M, C = C, PI = par$PI)))
   cat("log like=", logLike <- sum(sapply(res, function(x) x$totalLikeForwardI)), "\n")
-  system.time(par <- updatePar(res, like, C, M, par$F))
-}
+  par <- updatePar(res, like, C, M, par$F)
+})
 
 genoCall <- callGeno(res, like, C, M, par$F)
 
 ############################ 3
+source("fastphase_ngs.R")
+## run fastPhase k2
+system.time(
+for (i in 1:4) {
+  cat("iteration", i, "\n")
+  logEmission <- emission(like, par$F) # logScale
+  ## trans <- transition(d, par$PI)
+  ## system.time(res <- lapply(1:N, function(x) forwardAndBackwards(x, e = logEmission, trans = trans, M = M, C = C, PI = par$PI)))
+  res <- do_like_anders(log_e = logEmission, d = d, log_pi = log(t(par$PI)))
+  cat("log like=", logLike <- sum(sapply(res, function(x) x$totalLikeForwardI)), "\n")
+  par <- updatePar(res, like, C, M, par$F)
+})
 
-
+system.time(cat("hello"))
 
 
 
