@@ -83,6 +83,73 @@ log_backward_i <- \(log_e, d, log_pi) {
     log_b
 }
 
+
+forward_i <- \(e, d, pi) {
+    S <- ncol(pi)
+    C <- nrow(pi)
+    a <- array(NA, c(S, C, C))
+
+    dis <- c(1e20, d)
+
+    # Initialisation
+    a[1,,] <- e[1,,] * outer(pi[, 1], pi[,1])
+
+    # Induction
+    for (s in 2:S) {
+        ed <- exp(-dis[s])
+
+        # Precompute outside of double loop below for O(C^2) instead of O(C^4)
+        old_sums <- colSums(a[s - 1,,])
+        old_sum <- sum(old_sums)
+
+        for (z1 in 1:C) {
+            for (z2 in 1:C) {
+                # Terms corresponding to k = 0, 1, and 2 haplotypes with recombination
+                j_0 <- ed^2 * a[s - 1, z1, z2]
+                j_1 <- ed * (1 - ed) * (pi[z1, s] * old_sums[z2] + pi[z2, s] * old_sums[z1])
+                j_2 <- (1 - ed)^2 * pi[z1, s] * pi[z2, s] * old_sum
+
+                a[s, z1, z2] <- e[s, z1, z2] * (j_0 + j_1 + j_2)
+            }
+        }
+    }
+
+    a
+}
+
+backward_i <- \(e, d, pi) {
+    S <- ncol(pi)
+    C <- nrow(pi)
+    b <- array(NA, c(S, C, C))
+
+    dis <- c(1e20, d)
+
+    # Initialisation
+    b[S,,] <- 1
+
+    # Induction
+    for (s in S:2) {
+        ed <- exp(-dis[s])
+
+        # Precompute outside of double loop below for O(C^2) instead of O(C^4)
+        old_sum <- sum(outer(pi[,s], pi[,s]) * b[s,,] * e[s,,])
+        old_sums <- sapply(1:C, \(c) sum(pi[,s] * e[s, c,] * b[s, c,]))
+
+        for (z1 in 1:C) {
+            for (z2 in 1:C) {
+                # Terms corresponding to k = 0, 1, and 2 haplotypes with recombination
+                j_0 <- ed^2 * b[s, z1, z2] * e[s, z1, z2]
+                j_1 <- ed * (1 - ed) * (old_sums[z1] + old_sums[z2])
+                j_2 <- (1 - ed)^2 * old_sum
+
+                b[s - 1, z1, z2] <- j_0 + j_1 + j_2
+            }
+        }
+    }
+
+    b
+}
+
 # This is just to make Anders' existing "RunfastPhase.R" script work.
 # Specifically, the lines
 #

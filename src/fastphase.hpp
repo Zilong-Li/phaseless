@@ -146,7 +146,6 @@ inline double fastPhaseK2::forwardAndBackwards(int ind, const DoubleVec1D& GL, c
     // do forward recursion
     for (s = 1; s < M; s++)
     {
-        // auto likeForwardTmp = Eigen::exp(logLikeForwardInd.col(s - 1) - protect_me);
         // precompute outside of internal double loop
         sumTmp1.setZero();
         sumTmp2.setZero();
@@ -176,13 +175,12 @@ inline double fastPhaseK2::forwardAndBackwards(int ind, const DoubleVec1D& GL, c
         cs(s) = 1 / LikeForwardInd.col(s).sum();
         LikeForwardInd.col(s) *= cs(s); // normalize it
     }
-    // total likelhoods of the individual
-    double indLogLikeForwardAll = log((LikeForwardInd.col(M - 1) / cs(M - 1)).sum());
-    // double indLogLikeForwardAll = log(LikeForwardInd.col(M - 1).sum());
 
     // ======== backward recursion ===========
     // set last site
-    LikeBackwardInd.col(M - 1).setOnes(); // not log scale
+    s = M - 1;
+    LikeBackwardInd.col(s).setOnes(); // not log scale
+    LikeBackwardInd.col(s) *= cs(s);
     // site M-2 to 0
     for (s = M - 2; s >= 0; s--)
     {
@@ -196,22 +194,22 @@ inline double fastPhaseK2::forwardAndBackwards(int ind, const DoubleVec1D& GL, c
             for (k2 = 0; k2 < C; k2++)
             {
                 k12 = k1 * C + k2;
-                sumTmp1(k1) += beta_mult_emit(k12) * PI(s, k2);
-                sumTmp2(k2) += beta_mult_emit(k12) * PI(s, k1);
-                constTmp += beta_mult_emit(k12) * PI(s, k1) * PI(s, k2);
+                sumTmp1(k1) += beta_mult_emit(k12) * PI(s + 1, k2);
+                sumTmp2(k2) += beta_mult_emit(k12) * PI(s + 1, k1);
+                constTmp += beta_mult_emit(k12) * PI(s + 1, k1) * PI(s + 1, k2);
             }
         }
         // add transRate to constants
-        sumTmp1 *= transRate(1, s);
-        sumTmp2 *= transRate(1, s);
-        constTmp *= transRate(2, s);
+        sumTmp1 *= transRate(1, s + 1);
+        sumTmp2 *= transRate(1, s + 1);
+        constTmp *= transRate(2, s + 1);
         for (k1 = 0; k1 < C; k1++)
         {
             for (k2 = 0; k2 < C; k2++)
             {
                 k12 = k1 * C + k2;
                 LikeBackwardInd(k12, s) =
-                    beta_mult_emit(k12) * transRate(0, s) + sumTmp1(k1) + sumTmp2(k2) + constTmp;
+                    beta_mult_emit(k12) * transRate(0, s + 1) + sumTmp1(k1) + sumTmp2(k2) + constTmp;
             }
         }
         // apply scaling
@@ -221,8 +219,12 @@ inline double fastPhaseK2::forwardAndBackwards(int ind, const DoubleVec1D& GL, c
     std::lock_guard<std::mutex> lock(mutex_it); // lock here if RAM cost really matters
 
     // ======== post decoding get p(Z|X, G),  M x (C x C) ===========
-    // this is gamma
-    ArrDouble2D indPostProbsZ = (LikeBackwardInd * LikeForwardInd).transpose().colwise() / cs;
+    // total likelhoods of the individual
+    double indLogLikeForwardAll = (LikeForwardInd.col(M - 1) / cs(M - 1)).sum();
+    // double indLogLikeForwardAll = log(LikeForwardInd.col(M - 1).sum());
+    ArrDouble2D indPostProbsZ =
+        (LikeBackwardInd * LikeForwardInd).transpose().colwise() / (cs * indLogLikeForwardAll * cs(M - 1));
+    // ArrDouble2D indPostProbsZ = (LikeBackwardInd * LikeForwardInd).transpose() / exp(indLogLikeForwardAll);
     // ======== post decoding get p(Z,G|X, theta), M x (C x C x 2 x 2) ===========
     ArrDouble2D indPostProbsZandG(M, C2 * 4);
     ArrDouble1D tmpSum(M);
