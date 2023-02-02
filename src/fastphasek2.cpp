@@ -14,10 +14,10 @@ ArrDouble2D calc_transRate(const IntVec1D& markers, int C, int Ne = 20000, doubl
     // int nGen = 4 * Ne / C;
     for (size_t i = 1; i < markers.size(); i++)
         distRate(i) = exp(-(markers[i] - markers[i - 1]) / 1e6);
-    ArrDouble2D transRate(markers.size(), 3);
-    transRate.col(0) = distRate.square();
-    transRate.col(1) = distRate * (1 - distRate);
-    transRate.col(2) = (1 - distRate).square();
+    ArrDouble2D transRate(3, markers.size());
+    transRate.row(0) = distRate.square();
+    transRate.row(1) = distRate * (1 - distRate);
+    transRate.row(2) = (1 - distRate).square();
     return transRate;
 }
 

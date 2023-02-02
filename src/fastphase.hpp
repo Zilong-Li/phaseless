@@ -98,7 +98,15 @@ inline ArrDouble2D fastPhaseK2::emissionCurIterInd(const ArrDouble2D& gli, bool 
     if (use_log)
         return emitDip.log();
     else
+    {
+        // be careful with underflow
+        const double maxEmissionMatrixDifference = 1e-10;
+        auto x = emitDip.rowwise().maxCoeff();
+        emitDip = emitDip.colwise() / x;
+        emitDip = (emitDip < maxEmissionMatrixDifference).select(maxEmissionMatrixDifference, emitDip);
+
         return emitDip;
+    }
 }
 
 /*
@@ -116,6 +124,7 @@ inline double fastPhaseK2::forwardAndBackwards(int ind, const DoubleVec1D& GL, c
     ArrDouble2D LikeForwardInd(C2, M);  // likelihood of forward recursion for ind i, not log
     ArrDouble2D LikeBackwardInd(C2, M); // likelihood of backward recursion for ind i, not log
     ArrDouble1D sumTmp1(C), sumTmp2(C); // store sum over internal loop
+    ArrDouble1D cs(M);
     double constTmp;
 
     // ======== forward recursion ===========
@@ -131,8 +140,8 @@ inline double fastPhaseK2::forwardAndBackwards(int ind, const DoubleVec1D& GL, c
             LikeForwardInd(k12, s) = emitDip(s, k12) * PI(s, k1) * PI(s, k2);
         }
     }
-    LikeForwardInd.col(s) /= LikeForwardInd.col(s).sum(); // normalize it
-    // std::cout << std::this_thread::get_id() << ": " << ind << '\n';
+    cs(s) = 1 / LikeForwardInd.col(s).sum();
+    LikeForwardInd.col(s) *= cs(s); // normalize it
 
     // do forward recursion
     for (s = 1; s < M; s++)
@@ -150,9 +159,9 @@ inline double fastPhaseK2::forwardAndBackwards(int ind, const DoubleVec1D& GL, c
                 sumTmp2(k2) += LikeForwardInd(k12, s - 1);
             }
         }
-        constTmp = LikeForwardInd.col(s - 1).sum() * transRate(s - 1, 2);
-        sumTmp1 *= transRate(s - 1, 1);
-        sumTmp2 *= transRate(s - 1, 1);
+        constTmp = LikeForwardInd.col(s - 1).sum() * transRate(2, s);
+        sumTmp1 *= transRate(1, s);
+        sumTmp2 *= transRate(1, s);
         for (k1 = 0; k1 < C; k1++)
         {
             for (k2 = 0; k2 < C; k2++)
@@ -160,16 +169,16 @@ inline double fastPhaseK2::forwardAndBackwards(int ind, const DoubleVec1D& GL, c
                 k12 = k1 * C + k2;
                 LikeForwardInd(k12, s) =
                     emitDip(s, k12) *
-                    (LikeForwardInd(k12, s - 1) * transRate(s - 1, 0) + PI(s - 1, k1) * sumTmp1(k2) +
-                     PI(s - 1, k2) * sumTmp2(k1) + PI(s - 1, k1) * PI(s - 1, k2) * constTmp);
+                    (LikeForwardInd(k12, s - 1) * transRate(0, s) + PI(s, k1) * sumTmp1(k2) +
+                     PI(s, k2) * sumTmp2(k1) + PI(s, k1) * PI(s, k2) * constTmp);
             }
         }
-        LikeForwardInd.col(s) /= LikeForwardInd.col(s).sum(); // now scaling it
-        // protect_me = logLikeForwardInd(C2 - 1, s);
+        cs(s) = 1 / LikeForwardInd.col(s).sum();
+        LikeForwardInd.col(s) *= cs(s); // normalize it
     }
     // total likelhoods of the individual
-    // double indLikeForwardAll = protect_me + log((logLikeForwardInd.col(M - 1) - protect_me).exp().sum());
-    double indLikeForwardAll = log(LikeForwardInd.col(M - 1).sum());
+    double indLogLikeForwardAll = log((LikeForwardInd.col(M - 1) / cs(M - 1)).sum());
+    // double indLogLikeForwardAll = log(LikeForwardInd.col(M - 1).sum());
 
     // ======== backward recursion ===========
     // set last site
@@ -193,29 +202,28 @@ inline double fastPhaseK2::forwardAndBackwards(int ind, const DoubleVec1D& GL, c
             }
         }
         // add transRate to constants
-        sumTmp1 *= transRate(s, 1);
-        sumTmp2 *= transRate(s, 1);
-        constTmp *= transRate(s, 2);
+        sumTmp1 *= transRate(1, s);
+        sumTmp2 *= transRate(1, s);
+        constTmp *= transRate(2, s);
         for (k1 = 0; k1 < C; k1++)
         {
             for (k2 = 0; k2 < C; k2++)
             {
                 k12 = k1 * C + k2;
                 LikeBackwardInd(k12, s) =
-                    beta_mult_emit(k12) * transRate(s, 0) + sumTmp1(k1) + sumTmp2(k2) + constTmp;
+                    beta_mult_emit(k12) * transRate(0, s) + sumTmp1(k1) + sumTmp2(k2) + constTmp;
             }
         }
         // apply scaling
-        // LikeBackwardInd.col(s) /= LikeForwardInd.col(s).sum();
+        LikeBackwardInd.col(s) *= cs(s);
     }
 
     std::lock_guard<std::mutex> lock(mutex_it); // lock here if RAM cost really matters
 
-    // ======== post decoding get p(Z|X, G) ===========
-    // ArrDouble2D indPostProbsZ; // post probabilities for ind i, M x (C x C)
-    ArrDouble2D indPostProbsZ = (LikeBackwardInd + LikeForwardInd - indLikeForwardAll).transpose();
-    // ======== post decoding get p(Z,G|X, theta) ===========
-    // ArrDouble2D indPostProbsZandG, M x (C x C x 2 x 2)
+    // ======== post decoding get p(Z|X, G),  M x (C x C) ===========
+    // this is gamma
+    ArrDouble2D indPostProbsZ = (LikeBackwardInd * LikeForwardInd).transpose().colwise() / cs;
+    // ======== post decoding get p(Z,G|X, theta), M x (C x C x 2 x 2) ===========
     ArrDouble2D indPostProbsZandG(M, C2 * 4);
     ArrDouble1D tmpSum(M);
     int g1, g2, g12;
@@ -253,7 +261,7 @@ inline double fastPhaseK2::forwardAndBackwards(int ind, const DoubleVec1D& GL, c
     postProbsZandG += indPostProbsZandG;
     // std::cout << std::this_thread::get_id() << ": " << ind << '\n';
 
-    return indLikeForwardAll;
+    return indLogLikeForwardAll;
 }
 
 inline ArrDouble2D fastPhaseK2::callGenotypeInd(const ArrDouble2D& indPostProbsZandG)
