@@ -100,7 +100,7 @@ inline ArrDouble2D fastPhaseK2::emissionCurIterInd(const ArrDouble2D& gli, bool 
     else
     {
         // be careful with underflow
-        const double maxEmissionMatrixDifference = 1e-10;
+        const double maxEmissionMatrixDifference = 1e-6;
         auto x = emitDip.rowwise().maxCoeff();
         emitDip = emitDip.colwise() / x;
         emitDip = (emitDip < maxEmissionMatrixDifference).select(maxEmissionMatrixDifference, emitDip);
@@ -216,11 +216,11 @@ inline double fastPhaseK2::forwardAndBackwards(int ind, const DoubleVec1D& GL, c
         LikeBackwardInd.col(s) *= cs(s);
     }
 
-    std::lock_guard<std::mutex> lock(mutex_it); // lock here if RAM cost really matters
-
-    // ======== post decoding get p(Z|X, G),  M x (C x C) ===========
     // total likelhoods of the individual
     double indLogLikeForwardAll = (LikeForwardInd.col(M - 1) / cs(M - 1)).sum();
+    // std::lock_guard<std::mutex> lock(mutex_it); // lock here if RAM cost really matters
+
+    // ======== post decoding get p(Z|X, G),  M x (C x C) ===========
     // double indLogLikeForwardAll = log(LikeForwardInd.col(M - 1).sum());
     ArrDouble2D indPostProbsZ =
         (LikeBackwardInd * LikeForwardInd).transpose().colwise() / (cs * indLogLikeForwardAll * cs(M - 1));
@@ -251,16 +251,16 @@ inline double fastPhaseK2::forwardAndBackwards(int ind, const DoubleVec1D& GL, c
         }
     }
 
+    std::lock_guard<std::mutex> lock(mutex_it);
+    postProbsZ += indPostProbsZ;
+    postProbsZandG += indPostProbsZandG;
     if (call_geno)
     {
-        // std::lock_guard<std::mutex> lock(mutex_it);
         GP.col(ind) = callGenotypeInd(indPostProbsZandG);
         // output likelihood of each cluster
         ArrDouble2D likeCluster = (LikeBackwardInd + LikeForwardInd).transpose();
         ofs.write((char*)likeCluster.data(), M * C2 * 8);
     }
-    postProbsZ += indPostProbsZ;
-    postProbsZandG += indPostProbsZandG;
     // std::cout << std::this_thread::get_id() << ": " << ind << '\n';
 
     return indLogLikeForwardAll;
