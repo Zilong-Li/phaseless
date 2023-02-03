@@ -129,7 +129,6 @@ inline double fastPhaseK2::forwardAndBackwards(int ind, const DoubleVec1D& GL, c
 
     // ======== forward recursion ===========
     int k1, k2, k12;
-    // double protect_me = 0; // for underflow protection
     // first site
     int s{0};
     for (k1 = 0; k1 < C; k1++)
@@ -175,6 +174,8 @@ inline double fastPhaseK2::forwardAndBackwards(int ind, const DoubleVec1D& GL, c
         cs(s) = 1 / LikeForwardInd.col(s).sum();
         LikeForwardInd.col(s) *= cs(s); // normalize it
     }
+    // total likelhoods of the individual
+    double indLogLikeForwardAll = log((LikeForwardInd.col(M - 1) / cs(M - 1)).sum());
 
     // ======== backward recursion ===========
     // set last site
@@ -216,15 +217,11 @@ inline double fastPhaseK2::forwardAndBackwards(int ind, const DoubleVec1D& GL, c
         LikeBackwardInd.col(s) *= cs(s);
     }
 
-    // total likelhoods of the individual
-    double indLogLikeForwardAll = (LikeForwardInd.col(M - 1) / cs(M - 1)).sum();
     // std::lock_guard<std::mutex> lock(mutex_it); // lock here if RAM cost really matters
 
     // ======== post decoding get p(Z|X, G),  M x (C x C) ===========
-    // double indLogLikeForwardAll = log(LikeForwardInd.col(M - 1).sum());
     ArrDouble2D indPostProbsZ =
-        (LikeBackwardInd * LikeForwardInd).transpose().colwise() / (cs * indLogLikeForwardAll * cs(M - 1));
-    // ArrDouble2D indPostProbsZ = (LikeBackwardInd * LikeForwardInd).transpose() / exp(indLogLikeForwardAll);
+        (LikeBackwardInd * LikeForwardInd).transpose().colwise() / (cs * LikeForwardInd.col(M - 1).sum());
     // ======== post decoding get p(Z,G|X, theta), M x (C x C x 2 x 2) ===========
     ArrDouble2D indPostProbsZandG(M, C2 * 4);
     ArrDouble1D tmpSum(M);
@@ -251,7 +248,7 @@ inline double fastPhaseK2::forwardAndBackwards(int ind, const DoubleVec1D& GL, c
         }
     }
 
-    std::lock_guard<std::mutex> lock(mutex_it);
+    std::lock_guard<std::mutex> lock(mutex_it); // lock here if RAM cost really matters
     postProbsZ += indPostProbsZ;
     postProbsZandG += indPostProbsZandG;
     if (call_geno)
@@ -261,7 +258,6 @@ inline double fastPhaseK2::forwardAndBackwards(int ind, const DoubleVec1D& GL, c
         ArrDouble2D likeCluster = (LikeBackwardInd + LikeForwardInd).transpose();
         ofs.write((char*)likeCluster.data(), M * C2 * 8);
     }
-    // std::cout << std::this_thread::get_id() << ": " << ind << '\n';
 
     return indLogLikeForwardAll;
 }
@@ -442,7 +438,7 @@ inline double fastPhaseK4::forwardAndBackwards(int ind, const DoubleVec1D& GL, A
         protect_me = logLikeForwardInd(C2 - 1, s);
     }
     // total likelhoods of the individual
-    double indLikeForwardAll = protect_me + log((logLikeForwardInd.col(M - 1) - protect_me).exp().sum());
+    double indLogLikeForwardAll = protect_me + log((logLikeForwardInd.col(M - 1) - protect_me).exp().sum());
 
     // ======== backward recursion ===========
     // set last site
@@ -472,7 +468,7 @@ inline double fastPhaseK4::forwardAndBackwards(int ind, const DoubleVec1D& GL, A
     // ======== post decoding get p(Z|X, G) ===========
     // ArrDouble2D indPostProbsZ; // post probabilities for ind i, M x (C x C)
     ArrDouble2D indPostProbsZ =
-        (logLikeBackwardInd + logLikeForwardInd - indLikeForwardAll).exp().transpose();
+        (logLikeBackwardInd + logLikeForwardInd - indLogLikeForwardAll).exp().transpose();
     // ======== post decoding get p(Z,G|X, theta) ===========
     // ArrDouble2D indPostProbsZandG, M x (C x C x 2 x 2)
     ArrDouble2D indPostProbsZandG(M, C2 * 4);
@@ -512,7 +508,7 @@ inline double fastPhaseK4::forwardAndBackwards(int ind, const DoubleVec1D& GL, A
     postProbsZandG += indPostProbsZandG;
     // std::cout << std::this_thread::get_id() << ": " << ind << '\n';
 
-    return indLikeForwardAll;
+    return indLogLikeForwardAll;
 }
 
 inline ArrDouble2D fastPhaseK4::callGenotypeInd(const ArrDouble2D& indPostProbsZandG)
