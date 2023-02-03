@@ -92,7 +92,6 @@ int main(int argc, char* argv[])
     auto transRate = calc_transRate(markers, C);
 
     double loglike{0};
-    ArrDouble2D postProbsZ(M, C * C);
     ArrDouble2D postProbsZandG(M, C * C * 4);
 
     fastPhaseK2 nofaith(N, M, C, seed, cluster_out);
@@ -101,24 +100,24 @@ int main(int argc, char* argv[])
     vector<future<double>> llike;
     for (int it = 0; it < niters + 1; it++)
     {
-        postProbsZ.setZero();
+        nofaith.tmpPI.setZero(M, C);
         postProbsZandG.setZero();
         for (int i = 0; i < N; i++)
         {
             if (it == niters)
                 llike.emplace_back(poolit.enqueue(&fastPhaseK2::forwardAndBackwards, &nofaith, i,
                                                   std::ref(genolikes), std::ref(transRate),
-                                                  std::ref(postProbsZ), std::ref(postProbsZandG), true));
+                                                  std::ref(postProbsZandG), true));
             else
                 llike.emplace_back(poolit.enqueue(&fastPhaseK2::forwardAndBackwards, &nofaith, i,
                                                   std::ref(genolikes), std::ref(transRate),
-                                                  std::ref(postProbsZ), std::ref(postProbsZandG), false));
+                                                  std::ref(postProbsZandG), false));
         }
         loglike = 0;
         for (auto&& l : llike)
             loglike += l.get();
         cout << "iteration " << it << ", log likelihoods: " << loglike << endl;
-        nofaith.updateClusterFreqPI(postProbsZ, tol);
+        nofaith.updateClusterFreqPI(tol);
         nofaith.updateAlleleFreqWithinCluster(postProbsZandG, tol);
         llike.clear(); // clear future and renew
     }

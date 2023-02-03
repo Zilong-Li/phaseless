@@ -43,13 +43,14 @@ public:
     std::ofstream ofs;
     const int N, M, C, C2; // C2 = C x C
     ArrDouble2D GP;        // genotype probabilies for all individuals, N x (M x 3)
-    ArrDouble2D PI;        // nsnps x C
+    ArrDouble2D PI, tmpPI; // nsnps x C
     ArrDouble2D F;         // nsnps x C
 
+    void updateClusterFreqPI(double tol);
     void updateClusterFreqPI(const ArrDouble2D& postProbsZ, double tol);
     void updateAlleleFreqWithinCluster(const ArrDouble2D& postProbsZandG, double tol);
     double forwardAndBackwards(int ind, const DoubleVec1D& GL, const ArrDouble2D& transRate,
-                               ArrDouble2D& postProbsZ, ArrDouble2D& postProbsZandG, bool call_geno);
+                               ArrDouble2D& postProbsZandG, bool call_geno);
     ArrDouble2D emissionCurIterInd(const ArrDouble2D& gli, bool use_log = false);
     ArrDouble2D callGenotypeInd(const ArrDouble2D& indPostProbsZandG);
 };
@@ -116,8 +117,7 @@ inline ArrDouble2D fastPhaseK2::emissionCurIterInd(const ArrDouble2D& gli, bool 
 ** @return individual total likelihood
 */
 inline double fastPhaseK2::forwardAndBackwards(int ind, const DoubleVec1D& GL, const ArrDouble2D& transRate,
-                                               ArrDouble2D& postProbsZ, ArrDouble2D& postProbsZandG,
-                                               bool call_geno)
+                                               ArrDouble2D& postProbsZandG, bool call_geno)
 {
     Eigen::Map<const ArrDouble2D> gli(GL.data() + ind * M * 3, 3, M);
     auto emitDip = emissionCurIterInd(gli);
@@ -217,12 +217,15 @@ inline double fastPhaseK2::forwardAndBackwards(int ind, const DoubleVec1D& GL, c
         LikeBackwardInd.col(s) *= cs(s);
     }
 
-    // std::lock_guard<std::mutex> lock(mutex_it); // lock here if RAM cost really matters
+    cs *= LikeForwardInd.col(M - 1).sum(); // get back last forward likelihood
 
+    std::lock_guard<std::mutex> lock(mutex_it); // lock here if RAM cost really matters
     // ======== post decoding get p(Z|X, G),  M x (C x C) ===========
-    ArrDouble2D indPostProbsZ =
-        (LikeBackwardInd * LikeForwardInd).transpose().colwise() / (cs * LikeForwardInd.col(M - 1).sum());
-    // ======== post decoding get p(Z,G|X, theta), M x (C x C x 2 x 2) ===========
+    // ArrDouble2D indPostProbsZ = (LikeBackwardInd * LikeForwardInd).transpose().colwise() / cs;
+    ArrDouble1D ind_post_z_col; // col of indPostProbsZ
+
+    // ======== post decoding get p(Z,G|X, theta), M x (C x C x 2 x 2) =======
+
     ArrDouble2D indPostProbsZandG(M, C2 * 4);
     ArrDouble1D tmpSum(M);
     int g1, g2, g12;
@@ -232,6 +235,7 @@ inline double fastPhaseK2::forwardAndBackwards(int ind, const DoubleVec1D& GL, c
         {
             tmpSum.setZero();
             k12 = k1 * C + k2;
+            ind_post_z_col = (LikeForwardInd.row(k12) * LikeBackwardInd.row(k12)).transpose() / cs;
             for (g1 = 0; g1 < 2; g1++)
             {
                 for (g2 = 0; g2 < 2; g2++)
@@ -243,13 +247,14 @@ inline double fastPhaseK2::forwardAndBackwards(int ind, const DoubleVec1D& GL, c
                     tmpSum += indPostProbsZandG.col(k12 * 4 + g12);
                 }
             }
-            indPostProbsZandG.middleCols(k12 * 4, 4).colwise() *= indPostProbsZ.col(k12);
+            // update PI
+            tmpPI.col(k1) += ind_post_z_col;
+            tmpPI.col(k2) += ind_post_z_col;
+            indPostProbsZandG.middleCols(k12 * 4, 4).colwise() *= ind_post_z_col;
             indPostProbsZandG.middleCols(k12 * 4, 4).colwise() /= tmpSum;
         }
     }
 
-    std::lock_guard<std::mutex> lock(mutex_it); // lock here if RAM cost really matters
-    postProbsZ += indPostProbsZ;
     postProbsZandG += indPostProbsZandG;
     if (call_geno)
     {
@@ -283,6 +288,18 @@ inline ArrDouble2D fastPhaseK2::callGenotypeInd(const ArrDouble2D& indPostProbsZ
         }
     }
     return geno;
+}
+
+inline void fastPhaseK2::updateClusterFreqPI(double tol)
+{
+    PI = tmpPI / (2 * N);
+    // map to domain
+    if (PI.isNaN().any())
+        throw std::runtime_error("NaN in PI\n");
+    PI = (PI < tol).select(tol, PI);         // lower bound
+    PI = (PI > 1 - tol).select(1 - tol, PI); // upper bound
+    // normalize it now
+    PI = PI.colwise() / PI.rowwise().sum();
 }
 
 inline void fastPhaseK2::updateClusterFreqPI(const ArrDouble2D& postProbsZ, double tol)
