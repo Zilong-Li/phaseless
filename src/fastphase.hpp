@@ -244,7 +244,13 @@ inline double fastPhaseK2::forwardAndBackwards(int ind, const DoubleVec1D& GL, c
     }
 
     if (call_geno)
+    {
+        std::lock_guard<std::mutex> lock(mutex_it);
         GP.col(ind) = geno;
+        // output likelihood of each cluster
+        ArrDouble2D likeCluster = (LikeBackwardInd * LikeForwardInd).transpose();
+        ofs.write((char*)likeCluster.data(), M * C2 * 8);
+    }
 
     return indLogLikeForwardAll;
 }

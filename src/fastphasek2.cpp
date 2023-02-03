@@ -89,8 +89,10 @@ int main(int argc, char* argv[])
     // cout << M << endl;
     // cout << Eigen::Map<ArrDouble2D>(genolikes.data(), N * 3, M) << endl;
 
+    tm.clock();
     read_beagle_genotype_likelihoods(beagle_in, genolikes, sampleids, chrs, markers, N, M);
-    cout << "N:" << N << ",M:" << M << ",C:" << C << endl;
+    cout << "parsing input => N: " << N << ", M: " << M << ", C: " << C << " [" << tm.reltime() << " ms]"
+         << endl;
     auto transRate = calc_transRate(markers, C);
 
     double loglike{0};
