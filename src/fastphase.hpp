@@ -213,22 +213,30 @@ inline double fastPhaseK2::forwardAndBackwards(int ind, const DoubleVec1D& GL, c
             }
             ind_post_z_g.colwise() *= ind_post_z_col;
             ind_post_z_g.colwise() /= tmpSum;
-            // for update PI
-            std::lock_guard<std::mutex> lock(mutex_it);
-            Ek.col(k1) += ind_post_z_col;
-            Ek.col(k2) += ind_post_z_col;
-            // for update F
-            for (g1 = 0; g1 < 2; g1++)
+            if (call_geno)
             {
-                for (g2 = 0; g2 < 2; g2++)
+                for (g1 = 0; g1 < 2; g1++)
                 {
-                    g12 = g1 * 2 + g2;
-                    Ekg.col(k1 * 2 + g1) += ind_post_z_g.col(g12);
-                    Ekg.col(k2 * 2 + g2) += ind_post_z_g.col(g12);
-                    if (call_geno)
+                    for (g2 = 0; g2 < 2; g2++)
                     {
+                        g12 = g1 * 2 + g2;
                         g3 = g1 + g2;
                         geno(Eigen::seqN(g3, M, 3)) += ind_post_z_g.col(g12);
+                    }
+                }
+            }
+            // for update PI and F
+            {
+                std::lock_guard<std::mutex> lock(mutex_it);
+                Ek.col(k1) += ind_post_z_col;
+                Ek.col(k2) += ind_post_z_col;
+                for (g1 = 0; g1 < 2; g1++)
+                {
+                    for (g2 = 0; g2 < 2; g2++)
+                    {
+                        g12 = g1 * 2 + g2;
+                        Ekg.col(k1 * 2 + g1) += ind_post_z_g.col(g12);
+                        Ekg.col(k2 * 2 + g2) += ind_post_z_g.col(g12);
                     }
                 }
             }
