@@ -43,20 +43,18 @@ public:
     std::ofstream ofs;
     const int N, M, C, C2; // C2 = C x C
     ArrDouble2D GP;        // genotype probabilies for all individuals, N x (M x 3)
-    ArrDouble2D PI, tmpPI; // nsnps x C
+    ArrDouble2D PI, Ek;    // nsnps x C
     ArrDouble2D F;         // nsnps x C
+    ArrDouble2D Ekg;       // M x C x 2
 
-    void updateClusterFreqPI(double tol);
-    void updateClusterFreqPI(const ArrDouble2D& postProbsZ, double tol);
-    void updateAlleleFreqWithinCluster(const ArrDouble2D& postProbsZandG, double tol);
-    double forwardAndBackwards(int ind, const DoubleVec1D& GL, const ArrDouble2D& transRate,
-                               ArrDouble2D& postProbsZandG, bool call_geno);
+    double forwardAndBackwards(int ind, const DoubleVec1D& GL, const ArrDouble2D& transRate, bool call_geno);
     ArrDouble2D emissionCurIterInd(const ArrDouble2D& gli, bool use_log = false);
-    ArrDouble2D callGenotypeInd(const ArrDouble2D& indPostProbsZandG);
+    void updateClusterFreqPI(double tol);
+    void updateAlleleFreqWithinCluster(double tol);
 };
 
 inline fastPhaseK2::fastPhaseK2(int n, int m, int c, int seed, const std::string& out)
-    : N(n), M(m), C(c), C2(c * c), GP(M * 3, N)
+    : N(n), M(m), C(c), C2(c * c), GP(M * 3, N), Ek(M, C), Ekg(M, C * 2)
 {
     ofs.open(out, std::ios::binary);
     if (!ofs)
@@ -76,40 +74,6 @@ inline fastPhaseK2::~fastPhaseK2()
     ofs.close();
 }
 
-inline ArrDouble2D fastPhaseK2::emissionCurIterInd(const ArrDouble2D& gli, bool use_log)
-{
-    int k1, k2, g1, g2;
-    ArrDouble2D emitDip(M, C2); // emission probabilies, nsnps x (C x C)
-    for (k1 = 0; k1 < C; k1++)
-    {
-        for (k2 = 0; k2 < C; k2++)
-        {
-            emitDip.col(k1 * C + k2).setZero();
-            for (g1 = 0; g1 <= 1; g1++)
-            {
-                for (g2 = 0; g2 <= 1; g2++)
-                {
-                    emitDip.col(k1 * C + k2) += gli.row(g1 + g2).transpose() *
-                                                (g1 * F.col(k1) + (1 - g1) * (1 - F.col(k1))) *
-                                                (g2 * F.col(k2) + (1 - g2) * (1 - F.col(k2)));
-                }
-            }
-        }
-    }
-    if (use_log)
-        return emitDip.log();
-    else
-    {
-        // be careful with underflow
-        const double maxEmissionMatrixDifference = 1e-6;
-        auto x = emitDip.rowwise().maxCoeff();
-        emitDip = emitDip.colwise() / x;
-        emitDip = (emitDip < maxEmissionMatrixDifference).select(maxEmissionMatrixDifference, emitDip);
-
-        return emitDip;
-    }
-}
-
 /*
 ** @param ind       current individual i
 ** @param GL        genotype likelihood of all individuals in snp major form
@@ -117,7 +81,7 @@ inline ArrDouble2D fastPhaseK2::emissionCurIterInd(const ArrDouble2D& gli, bool 
 ** @return individual total likelihood
 */
 inline double fastPhaseK2::forwardAndBackwards(int ind, const DoubleVec1D& GL, const ArrDouble2D& transRate,
-                                               ArrDouble2D& postProbsZandG, bool call_geno)
+                                               bool call_geno)
 {
     Eigen::Map<const ArrDouble2D> gli(GL.data() + ind * M * 3, 3, M);
     auto emitDip = emissionCurIterInd(gli);
@@ -219,16 +183,16 @@ inline double fastPhaseK2::forwardAndBackwards(int ind, const DoubleVec1D& GL, c
 
     cs *= LikeForwardInd.col(M - 1).sum(); // get back last forward likelihood
 
-    std::lock_guard<std::mutex> lock(mutex_it); // lock here if RAM cost really matters
+    // std::lock_guard<std::mutex> lock(mutex_it); // lock here if RAM cost really matters
     // ======== post decoding get p(Z|X, G),  M x (C x C) ===========
-    // ArrDouble2D indPostProbsZ = (LikeBackwardInd * LikeForwardInd).transpose().colwise() / cs;
-    ArrDouble1D ind_post_z_col; // col of indPostProbsZ
-
     // ======== post decoding get p(Z,G|X, theta), M x (C x C x 2 x 2) =======
-
-    ArrDouble2D indPostProbsZandG(M, C2 * 4);
+    ArrDouble1D ind_post_z_col(M);  // col of indPostProbsZ
+    ArrDouble2D ind_post_z_g(M, 4); // cols of indPostProbsZandG
     ArrDouble1D tmpSum(M);
-    int g1, g2, g12;
+    ArrDouble1D geno;
+    if (call_geno)
+        geno.setZero(M * 3);
+    int g1, g2, g12, g3;
     for (k1 = 0; k1 < C; k1++)
     {
         for (k2 = 0; k2 < C; k2++)
@@ -241,58 +205,79 @@ inline double fastPhaseK2::forwardAndBackwards(int ind, const DoubleVec1D& GL, c
                 for (g2 = 0; g2 < 2; g2++)
                 {
                     g12 = g1 * 2 + g2;
-                    indPostProbsZandG.col(k12 * 4 + g12) = gli.row(g1 + g2).transpose() *
-                                                           (g1 * F.col(k1) + (1 - g1) * (1 - F.col(k1))) *
-                                                           (g2 * F.col(k2) + (1 - g2) * (1 - F.col(k2)));
-                    tmpSum += indPostProbsZandG.col(k12 * 4 + g12);
+                    ind_post_z_g.col(g12) = gli.row(g1 + g2).transpose() *
+                                            (g1 * F.col(k1) + (1 - g1) * (1 - F.col(k1))) *
+                                            (g2 * F.col(k2) + (1 - g2) * (1 - F.col(k2)));
+                    tmpSum += ind_post_z_g.col(g12);
                 }
             }
-            // update PI
-            tmpPI.col(k1) += ind_post_z_col;
-            tmpPI.col(k2) += ind_post_z_col;
-            indPostProbsZandG.middleCols(k12 * 4, 4).colwise() *= ind_post_z_col;
-            indPostProbsZandG.middleCols(k12 * 4, 4).colwise() /= tmpSum;
+            ind_post_z_g.colwise() *= ind_post_z_col;
+            ind_post_z_g.colwise() /= tmpSum;
+            // for update PI
+            std::lock_guard<std::mutex> lock(mutex_it);
+            Ek.col(k1) += ind_post_z_col;
+            Ek.col(k2) += ind_post_z_col;
+            // for update F
+            for (g1 = 0; g1 < 2; g1++)
+            {
+                for (g2 = 0; g2 < 2; g2++)
+                {
+                    g12 = g1 * 2 + g2;
+                    Ekg.col(k1 * 2 + g1) += ind_post_z_g.col(g12);
+                    Ekg.col(k2 * 2 + g2) += ind_post_z_g.col(g12);
+                    if (call_geno)
+                    {
+                        g3 = g1 + g2;
+                        geno(Eigen::seqN(g3, M, 3)) += ind_post_z_g.col(g12);
+                    }
+                }
+            }
         }
     }
 
-    postProbsZandG += indPostProbsZandG;
     if (call_geno)
-    {
-        GP.col(ind) = callGenotypeInd(indPostProbsZandG);
-        // output likelihood of each cluster
-        ArrDouble2D likeCluster = (LikeBackwardInd + LikeForwardInd).transpose();
-        ofs.write((char*)likeCluster.data(), M * C2 * 8);
-    }
+        GP.col(ind) = geno;
 
     return indLogLikeForwardAll;
 }
 
-inline ArrDouble2D fastPhaseK2::callGenotypeInd(const ArrDouble2D& indPostProbsZandG)
+inline ArrDouble2D fastPhaseK2::emissionCurIterInd(const ArrDouble2D& gli, bool use_log)
 {
-    ArrDouble1D geno = ArrDouble1D::Zero(M * 3);
-    int k1, k2, k12, g1, g2, g12, g3;
+    int k1, k2, g1, g2;
+    ArrDouble2D emitDip(M, C2); // emission probabilies, nsnps x (C x C)
     for (k1 = 0; k1 < C; k1++)
     {
         for (k2 = 0; k2 < C; k2++)
         {
-            k12 = k1 * C + k2;
-            for (g1 = 0; g1 < 2; g1++)
+            emitDip.col(k1 * C + k2).setZero();
+            for (g1 = 0; g1 <= 1; g1++)
             {
-                for (g2 = 0; g2 < 2; g2++)
+                for (g2 = 0; g2 <= 1; g2++)
                 {
-                    g12 = g1 * 2 + g2;
-                    g3 = g1 + g2;
-                    geno(Eigen::seqN(g3, M, 3)) += indPostProbsZandG.col(k12 * 4 + g12);
+                    emitDip.col(k1 * C + k2) += gli.row(g1 + g2).transpose() *
+                                                (g1 * F.col(k1) + (1 - g1) * (1 - F.col(k1))) *
+                                                (g2 * F.col(k2) + (1 - g2) * (1 - F.col(k2)));
                 }
             }
         }
     }
-    return geno;
+    if (use_log)
+        return emitDip.log();
+    else
+    {
+        // be careful with underflow
+        const double maxEmissionMatrixDifference = 1e-6;
+        auto x = emitDip.rowwise().maxCoeff();
+        emitDip = emitDip.colwise() / x;
+        emitDip = (emitDip < maxEmissionMatrixDifference).select(maxEmissionMatrixDifference, emitDip);
+
+        return emitDip;
+    }
 }
 
 inline void fastPhaseK2::updateClusterFreqPI(double tol)
 {
-    PI = tmpPI / (2 * N);
+    PI = Ek / (2 * N);
     // map to domain
     if (PI.isNaN().any())
         throw std::runtime_error("NaN in PI\n");
@@ -302,59 +287,15 @@ inline void fastPhaseK2::updateClusterFreqPI(double tol)
     PI = PI.colwise() / PI.rowwise().sum();
 }
 
-inline void fastPhaseK2::updateClusterFreqPI(const ArrDouble2D& postProbsZ, double tol)
+inline void fastPhaseK2::updateAlleleFreqWithinCluster(double tol)
 {
-    int k1, k2, k12;
-    PI.setZero();
-    for (k1 = 0; k1 < C; k1++)
-    {
-        for (k2 = 0; k2 < C; k2++)
-        {
-            k12 = k1 * C + k2;
-            PI.col(k1) += postProbsZ.col(k12);
-            PI.col(k2) += postProbsZ.col(k12);
-        }
-    }
-    PI /= 2 * N;
-    // map to domain
-    if (PI.isNaN().any())
-        throw std::runtime_error("NaN in PI\n");
-    PI = (PI < tol).select(tol, PI);         // lower bound
-    PI = (PI > 1 - tol).select(1 - tol, PI); // upper bound
-    // normalize it now
-    PI = PI.colwise() / PI.rowwise().sum();
-}
-
-inline void fastPhaseK2::updateAlleleFreqWithinCluster(const ArrDouble2D& postProbsZandG, double tol)
-{
-    int k1, k2, k12, g1, g2, g12;
-    ArrDouble2D Ekg = ArrDouble2D::Zero(M, C * 2);
-    for (k1 = 0; k1 < C; k1++)
-    {
-        for (k2 = 0; k2 < C; k2++)
-        {
-            k12 = k1 * C + k2;
-            for (g1 = 0; g1 < 2; g1++)
-            {
-                for (g2 = 0; g2 < 2; g2++)
-                {
-                    g12 = g1 * 2 + g2;
-                    Ekg.col(k1 * 2 + g1) += postProbsZandG.col(k12 * 4 + g12);
-                    Ekg.col(k2 * 2 + g2) += postProbsZandG.col(k12 * 4 + g12);
-                }
-            }
-        }
-    }
     F = Ekg(Eigen::all, Eigen::seq(1, Eigen::last, 2)) /
         (Ekg(Eigen::all, Eigen::seq(1, Eigen::last, 2)) + Ekg(Eigen::all, Eigen::seq(0, Eigen::last, 2)));
-    // std::cout << F.rows() << "," << F.cols() << std::endl;
-    // std::cout << F.topRows(3) << std::endl;
-    // map to domain but normalization
+    // map to domain but no normalization
     if (F.isNaN().any())
         throw std::runtime_error("NaN in PI\n");
     F = (F < tol).select(tol, F);         // lower bound
     F = (F > 1 - tol).select(1 - tol, F); // upper bound
-    // std::cout << "updateAlleleFreqWithinCluster" << std::endl;
 }
 
 class fastPhaseK4

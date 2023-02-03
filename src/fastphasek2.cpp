@@ -100,25 +100,23 @@ int main(int argc, char* argv[])
     vector<future<double>> llike;
     for (int it = 0; it < niters + 1; it++)
     {
-        nofaith.tmpPI.setZero(M, C);
-        postProbsZandG.setZero();
+        nofaith.Ek.setZero();
+        nofaith.Ekg.setZero();
         for (int i = 0; i < N; i++)
         {
             if (it == niters)
                 llike.emplace_back(poolit.enqueue(&fastPhaseK2::forwardAndBackwards, &nofaith, i,
-                                                  std::ref(genolikes), std::ref(transRate),
-                                                  std::ref(postProbsZandG), true));
+                                                  std::ref(genolikes), std::ref(transRate), true));
             else
                 llike.emplace_back(poolit.enqueue(&fastPhaseK2::forwardAndBackwards, &nofaith, i,
-                                                  std::ref(genolikes), std::ref(transRate),
-                                                  std::ref(postProbsZandG), false));
+                                                  std::ref(genolikes), std::ref(transRate), false));
         }
         loglike = 0;
         for (auto&& l : llike)
             loglike += l.get();
         cout << "iteration " << it << ", log likelihoods: " << loglike << endl;
         nofaith.updateClusterFreqPI(tol);
-        nofaith.updateAlleleFreqWithinCluster(postProbsZandG, tol);
+        nofaith.updateAlleleFreqWithinCluster(tol);
         llike.clear(); // clear future and renew
     }
 
