@@ -2,6 +2,7 @@
 #include "fastphase.hpp"
 #include "io.hpp"
 #include "threadpool.hpp"
+#include "timer.hpp"
 
 using namespace std;
 
@@ -81,6 +82,7 @@ int main(int argc, char* argv[])
     DoubleVec1D genolikes;
     IntVec1D markers;
     StringVec1D sampleids, chrs;
+    Timer tm;
 
     // read_bcf_genotype_likelihoods(genolikes, markers, N, M, vcffile, samples, region);
     // cout << N << endl;
@@ -92,14 +94,13 @@ int main(int argc, char* argv[])
     auto transRate = calc_transRate(markers, C);
 
     double loglike{0};
-    ArrDouble2D postProbsZandG(M, C * C * 4);
-
     fastPhaseK2 nofaith(N, M, C, seed, cluster_out);
     nthreads = nthreads < N ? nthreads : N;
     ThreadPool poolit(nthreads);
     vector<future<double>> llike;
     for (int it = 0; it < niters + 1; it++)
     {
+        tm.clock();
         nofaith.Ek.setZero();
         nofaith.Ekg.setZero();
         for (int i = 0; i < N; i++)
@@ -114,10 +115,11 @@ int main(int argc, char* argv[])
         loglike = 0;
         for (auto&& l : llike)
             loglike += l.get();
-        cout << "iteration " << it << ", log likelihoods: " << loglike << endl;
         nofaith.updateClusterFreqPI(tol);
         nofaith.updateAlleleFreqWithinCluster(tol);
         llike.clear(); // clear future and renew
+        cout << "iteration " << it << ", log likelihoods: " << loglike << " [" << tm.reltime() << " ms]"
+             << endl;
     }
 
     write_bcf_genotype_probability(nofaith.GP.data(), vcf_out, vcf_in, sampleids, markers, chrs[0], N, M);
