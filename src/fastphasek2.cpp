@@ -1,6 +1,7 @@
 // -*- compile-command: "g++ fastphasek4.cpp -o fastphasek4 -std=c++17 -g -O3 -Wall -lz && ./fastphasek4 -f ../data/gl.vcf.gz"; -*-
 #include "fastphase.hpp"
 #include "io.hpp"
+#include "log.hpp"
 #include "threadpool.hpp"
 #include "timer.hpp"
 
@@ -83,16 +84,14 @@ int main(int argc, char* argv[])
     IntVec1D markers;
     StringVec1D sampleids, chrs;
     Timer tm;
-
-    // read_bcf_genotype_likelihoods(genolikes, markers, N, M, vcffile, samples, region);
-    // cout << N << endl;
-    // cout << M << endl;
-    // cout << Eigen::Map<ArrDouble2D>(genolikes.data(), N * 3, M) << endl;
+    Logger log(vcf_out + ".log");
+    log.warn(tm.date() + "-> program start\n"); // print out options in effect
+    log.cao.precision(4);
 
     tm.clock();
     read_beagle_genotype_likelihoods(beagle_in, genolikes, sampleids, chrs, markers, N, M);
-    cout << "parsing input => N: " << N << ", M: " << M << ", C: " << C << " [" << tm.reltime() << " ms]"
-         << endl;
+    log.done(tm.date()) << "parsing input -> N:" << N << ", M: " << M << ", C: " << C << " ," << tm.reltime()
+                        << " ms" << endl;
     auto transRate = calc_transRate(markers, C);
 
     double loglike{0};
@@ -103,8 +102,7 @@ int main(int argc, char* argv[])
     for (int it = 0; it < niters + 1; it++)
     {
         tm.clock();
-        nofaith.Ek.setZero();
-        nofaith.Ekg.setZero();
+        nofaith.initIteration();
         for (int i = 0; i < N; i++)
         {
             if (it == niters)
@@ -117,14 +115,15 @@ int main(int argc, char* argv[])
         loglike = 0;
         for (auto&& l : llike)
             loglike += l.get();
+        llike.clear(); // clear future and renew
         nofaith.updateClusterFreqPI(tol);
         nofaith.updateAlleleFreqWithinCluster(tol);
-        llike.clear(); // clear future and renew
-        cout << "iteration " << it << ", log likelihoods: " << loglike << " [" << tm.reltime() << " ms]"
-             << endl;
+        log.done(tm.date()) << "iteration " << setw(2) << it << ", log likelihoods: " << std::fixed << loglike
+                            << ", " << tm.reltime() << " ms" << endl;
     }
 
     write_bcf_genotype_probability(nofaith.GP.data(), vcf_out, vcf_in, sampleids, markers, chrs[0], N, M);
+    log.warn(tm.date() + "-> have a nice day, bye!\n");
 
     return 0;
 }

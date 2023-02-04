@@ -47,6 +47,7 @@ public:
     ArrDouble2D F;         // nsnps x C
     ArrDouble2D Ekg;       // M x C x 2
 
+    void initIteration();
     double forwardAndBackwards(int ind, const DoubleVec1D& GL, const ArrDouble2D& transRate, bool call_geno);
     ArrDouble2D emissionCurIterInd(const ArrDouble2D& gli, bool use_log = false);
     void updateClusterFreqPI(double tol);
@@ -72,6 +73,12 @@ inline fastPhaseK2::fastPhaseK2(int n, int m, int c, int seed, const std::string
 inline fastPhaseK2::~fastPhaseK2()
 {
     ofs.close();
+}
+
+inline void fastPhaseK2::initIteration()
+{
+    Ek.setZero();
+    Ekg.setZero();
 }
 
 /*

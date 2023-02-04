@@ -2,6 +2,8 @@
 #define TIMER_H_
 
 #include <chrono>
+#include <iomanip> // put_time
+#include <sstream>
 
 class Timer
 {
@@ -12,6 +14,7 @@ public:
     Timer();
     ~Timer();
     void clock();
+    std::string date();
     unsigned int reltime();
     unsigned int abstime();
 };
@@ -42,6 +45,15 @@ inline unsigned int Timer::abstime()
     return std::chrono::duration_cast<std::chrono::milliseconds>(std::chrono::high_resolution_clock::now() -
                                                                  start_clock)
         .count();
+}
+
+inline std::string Timer::date()
+{
+    auto now = std::chrono::system_clock::now();
+    auto in_time_t = std::chrono::system_clock::to_time_t(now);
+    std::stringstream ss;
+    ss << std::put_time(std::localtime(&in_time_t), "[%d/%m/%Y-%X] ");
+    return ss.str();
 }
 
 #endif // TIMER_H_
