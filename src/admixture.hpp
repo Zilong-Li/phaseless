@@ -16,7 +16,7 @@ class Admixture
     const int N, M, C, K; // C2 = C x C
     ArrDouble2D F; // (M x C) x K
     ArrDouble2D Q; // K x N
-    ArrDouble2D Ekg; // K x N, expected number of alleles per k
+    ArrDouble2D Ekg; // (M x K) x N, expected number of alleles per k per n
     ArrDouble2D Ekc; // (M x C) x K, expected number of alleles per c per k
     ArrDouble1D NormF; // K
 
@@ -40,7 +40,7 @@ inline Admixture::~Admixture() {}
 
 inline void Admixture::initIteration()
 {
-    Ekg.setZero(K, N);
+    Ekg.setZero(M * K, N);
     Ekc.setZero(M * C, K);
     NormF.setZero(K);
 }
@@ -98,8 +98,8 @@ inline double Admixture::updateQ(int ind, ArrDouble2D icluster)
                         // w(c12, k12) =
                         //     icluster(c12, s) * F(s * C + c1, k1) * Q(k1, ind) * F(s * C + c2, k2) * Q(k2, ind);
                         std::lock_guard<std::mutex> lock(mutex_it);
-                        Ekg(k1, ind) += w(c12, k12) / norm;
-                        Ekg(k2, ind) += w(c12, k12) / norm;
+                        Ekg(k1 * M + s, ind) += w(c12, k12) / norm;
+                        Ekg(k2 * M + s, ind) += w(c12, k12) / norm;
                         Ekc(s * C + c1, k1) += w(c12, k12) / norm;
                         Ekc(s * C + c2, k2) += w(c12, k12) / norm;
                         NormF(k1) += w(c12, k12) / norm;
@@ -109,8 +109,9 @@ inline double Admixture::updateQ(int ind, ArrDouble2D icluster)
             }
         }
     }
+    // update Q
+    for(k1 = 0; k1 < K; k1++) Q(k1, ind) = Ekg.middleRows(k1 * M, M).col(ind).sum() / (2 * M);
 
-    Q.col(ind) = Ekg.col(ind) / (2 * M);
     return norm;
 }
 
