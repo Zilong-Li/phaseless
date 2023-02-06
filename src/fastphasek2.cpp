@@ -1,4 +1,3 @@
-// -*- compile-command: "g++ fastphasek4.cpp -o fastphasek4 -std=c++17 -g -O3 -Wall -lz && ./fastphasek4 -f ../data/gl.vcf.gz"; -*-
 #include "fastphase.hpp"
 #include "io.hpp"
 #include "log.hpp"
@@ -8,13 +7,12 @@
 using namespace std;
 
 // check initialize_sigmaCurrent_m in STITCH
-ArrDouble2D calc_transRate(const IntVec1D& markers, int C, int Ne = 20000, double expRate = 0.5)
+ArrDouble2D calc_transRate(const IntVec1D & markers, int C, int Ne = 20000, double expRate = 0.5)
 {
     ArrDouble1D distRate(markers.size());
     distRate(0) = exp(-1e20);
     // int nGen = 4 * Ne / C;
-    for (size_t i = 1; i < markers.size(); i++)
-        distRate(i) = exp(-(markers[i] - markers[i - 1]) / 1e6);
+    for(size_t i = 1; i < markers.size(); i++) distRate(i) = exp(-(markers[i] - markers[i - 1]) / 1e6);
     ArrDouble2D transRate(3, markers.size());
     transRate.row(0) = distRate.square();
     transRate.row(1) = distRate * (1 - distRate);
@@ -22,16 +20,15 @@ ArrDouble2D calc_transRate(const IntVec1D& markers, int C, int Ne = 20000, doubl
     return transRate;
 }
 
-int main(int argc, char* argv[])
+int main(int argc, char * argv[])
 {
     // ========= helper message and parameters parsing ============================
     std::vector<std::string> args(argv + 1, argv + argc);
-    if (argc <= 1 || args[0] == "-h" || args[0] == "-help")
+    if(argc <= 1 || args[0] == "-h" || args[0] == "-help")
     {
         std::cout << "Author: Zilong-Li (zilong.dk@gmail.com)\n"
                   << "Usage example:\n"
-                  << "     " + (std::string)argv[0] +
-                         " -g beagle.gz -c 10 -i 20 -n 10 -o out.vcf.gz -b cluster.bin\n"
+                  << "     " + (std::string)argv[0] + " -g beagle.gz -c 10 -i 20 -n 10 -o out.vcf.gz -b cluster.bin\n"
                   << "\nOptions:\n"
                   << "     -b      binary file with clusters likelihood\n"
                   << "     -c      number of ancestral clusters\n"
@@ -51,37 +48,26 @@ int main(int argc, char* argv[])
     std::string out_cluster, in_beagle = "", in_vcf = "", out_vcf = "", samples = "-", region = "";
     int C{3}, niters{1}, nthreads{4}, seed{1};
     double tol{1e-6};
-    for (size_t i = 0; i < args.size(); i++)
+    for(size_t i = 0; i < args.size(); i++)
     {
-        if (args[i] == "-b")
-            out_cluster = args[++i];
-        if (args[i] == "-c")
-            C = stoi(args[++i]);
-        if (args[i] == "-f")
-            in_vcf = args[++i];
-        if (args[i] == "-o")
-            out_vcf = args[++i];
-        if (args[i] == "-g")
-            in_beagle = args[++i];
-        if (args[i] == "-i")
-            niters = stoi(args[++i]);
-        if (args[i] == "-n")
-            nthreads = stoi(args[++i]);
-        if (args[i] == "-r")
-            region = args[++i];
-        if (args[i] == "-s")
-            samples = args[++i];
-        if (args[i] == "-seed")
-            seed = stoi(args[++i]);
-        if (args[i] == "-tol")
-            tol = stod(args[++i]);
+        if(args[i] == "-b") out_cluster = args[++i];
+        if(args[i] == "-c") C = stoi(args[++i]);
+        if(args[i] == "-f") in_vcf = args[++i];
+        if(args[i] == "-o") out_vcf = args[++i];
+        if(args[i] == "-g") in_beagle = args[++i];
+        if(args[i] == "-i") niters = stoi(args[++i]);
+        if(args[i] == "-n") nthreads = stoi(args[++i]);
+        if(args[i] == "-r") region = args[++i];
+        if(args[i] == "-s") samples = args[++i];
+        if(args[i] == "-seed") seed = stoi(args[++i]);
+        if(args[i] == "-tol") tol = stod(args[++i]);
     }
 
     Logger log(out_vcf + ".log");
     log.cao << "Options in effect:\n";
-    for (size_t i = 0; i < args.size(); i++) // print out options in effect
+    for(size_t i = 0; i < args.size(); i++) // print out options in effect
     {
-        if (i % 2)
+        if(i % 2)
             log.cao << args[i] + "\n";
         else
             log.cao << "  " + args[i] + " ";
@@ -98,8 +84,8 @@ int main(int argc, char* argv[])
 
     tm.clock();
     read_beagle_genotype_likelihoods(in_beagle, genolikes, sampleids, chrs, markers, N, M);
-    log.done(tm.date()) << "parsing input -> N:" << N << ", M:" << M << ", C:" << C << "; " << tm.reltime()
-                        << " ms" << endl;
+    log.done(tm.date()) << "parsing input -> N:" << N << ", M:" << M << ", C:" << C << "; " << tm.reltime() << " ms"
+                        << endl;
     auto transRate = calc_transRate(markers, C);
 
     double loglike{0};
@@ -107,27 +93,26 @@ int main(int argc, char* argv[])
     nthreads = nthreads < N ? nthreads : N;
     ThreadPool poolit(nthreads);
     vector<future<double>> llike;
-    for (int it = 0; it < niters + 1; it++)
+    for(int it = 0; it < niters + 1; it++)
     {
         tm.clock();
         nofaith.initIteration();
-        for (int i = 0; i < N; i++)
+        for(int i = 0; i < N; i++)
         {
-            if (it == niters)
-                llike.emplace_back(poolit.enqueue(&FastPhaseK2::forwardAndBackwards, &nofaith, i,
-                                                  std::ref(genolikes), std::ref(transRate), true));
+            if(it == niters)
+                llike.emplace_back(poolit.enqueue(&FastPhaseK2::forwardAndBackwards, &nofaith, i, std::ref(genolikes),
+                                                  std::ref(transRate), true));
             else
-                llike.emplace_back(poolit.enqueue(&FastPhaseK2::forwardAndBackwards, &nofaith, i,
-                                                  std::ref(genolikes), std::ref(transRate), false));
+                llike.emplace_back(poolit.enqueue(&FastPhaseK2::forwardAndBackwards, &nofaith, i, std::ref(genolikes),
+                                                  std::ref(transRate), false));
         }
         loglike = 0;
-        for (auto&& l : llike)
-            loglike += l.get();
+        for(auto && l : llike) loglike += l.get();
         llike.clear(); // clear future and renew
         nofaith.updateClusterFreqPI(tol);
         nofaith.updateAlleleFreqWithinCluster(tol);
-        log.done(tm.date()) << "iteration " << setw(2) << it << ", log likelihoods: " << std::fixed << loglike
-                            << "; " << tm.reltime() << " ms" << endl;
+        log.done(tm.date()) << "iteration " << setw(2) << it << ", log likelihoods: " << std::fixed << loglike << "; "
+                            << tm.reltime() << " ms" << endl;
     }
 
     write_bcf_genotype_probability(nofaith.GP.data(), out_vcf, in_vcf, sampleids, markers, chrs[0], N, M);
