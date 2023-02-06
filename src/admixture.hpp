@@ -63,8 +63,6 @@ inline double Admixture::updateQ(int ind, ArrDouble2D icluster)
     // std::cout << std::this_thread::get_id() << ": " << ind << '\n';
     for (s = 0; s < M; s++)
     {
-        // auto tmp = icluster * ((F.middleRows(s * C, C) * Q.col(ind)) *
-        //                        (F.middleRows(s * C, C) * Q.col(ind)).transpose());
         norm = 0;
         for (k1 = 0; k1 < K; k1++)
         {
@@ -83,6 +81,11 @@ inline double Admixture::updateQ(int ind, ArrDouble2D icluster)
                 }
             }
         }
+        norm = (icluster.col(s) * ((F.middleRows(s * C, C).matrix() * Q.col(ind).matrix()) *
+                                   (F.middleRows(s * C, C).matrix() * Q.col(ind).matrix()).transpose())
+                                      .array()
+                                      .reshaped())
+                   .sum();
         for (c1 = 0; c1 < C; c1++)
         {
             for (c2 = 0; c2 < C; c2++)
