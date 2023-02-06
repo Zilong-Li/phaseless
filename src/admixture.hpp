@@ -30,8 +30,8 @@ inline Admixture::Admixture(int n, int m, int c, int k, int seed) : N(n), M(m), 
     auto rng = std::default_random_engine{};
     rng.seed(seed);
     F = RandomUniform<ArrDouble2D, std::default_random_engine>(M * C, K, rng, 0.05, 0.95);
-    for(int s = 0; s < M; s++) // normalize it per snp per K
-        F.middleRows(s * C, C).rowwise() /= F.middleRows(s * C, C).colwise().sum();
+    // normalize it per snp per K
+    for(int s = 0; s < M; s++) F.middleRows(s * C, C).rowwise() /= F.middleRows(s * C, C).colwise().sum();
     Q = RandomUniform<ArrDouble2D, std::default_random_engine>(K, N, rng, 0.05, 0.95);
     Q = Q.rowwise() / Q.colwise().sum(); // normalize it per N individual
 }
@@ -79,12 +79,12 @@ inline double Admixture::updateQ(int ind, ArrDouble2D icluster)
                 }
             }
         }
-        norm = (icluster.col(s)
-                * ((F.middleRows(s * C, C).matrix() * Q.col(ind).matrix())
-                   * (F.middleRows(s * C, C).matrix() * Q.col(ind).matrix()).transpose())
-                      .array()
-                      .reshaped())
-                   .sum();
+        // norm = (icluster.col(s)
+        //         * ((F.middleRows(s * C, C).matrix() * Q.col(ind).matrix())
+        //            * (F.middleRows(s * C, C).matrix() * Q.col(ind).matrix()).transpose())
+        //               .array()
+        //               .reshaped())
+        //            .sum();
         for(c1 = 0; c1 < C; c1++)
         {
             for(c2 = 0; c2 < C; c2++)
@@ -95,6 +95,8 @@ inline double Admixture::updateQ(int ind, ArrDouble2D icluster)
                     for(k2 = 0; k2 < K; k2++)
                     {
                         k12 = k1 * K + k2;
+                        // w(c12, k12) =
+                        //     icluster(c12, s) * F(s * C + c1, k1) * Q(k1, ind) * F(s * C + c2, k2) * Q(k2, ind);
                         std::lock_guard<std::mutex> lock(mutex_it);
                         Ekg(k1, ind) += w(c12, k12) / norm;
                         Ekg(k2, ind) += w(c12, k12) / norm;
