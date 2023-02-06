@@ -8,15 +8,18 @@
 using namespace std;
 
 // check initialize_sigmaCurrent_m in STITCH
-ArrDouble1D calc_distRate(const IntVec1D& markers, int C, int Ne = 20000, double expRate = 0.5)
+ArrDouble2D calc_transRate(const IntVec1D& markers, int C, int Ne = 20000, double expRate = 0.5)
 {
     ArrDouble1D distRate(markers.size());
-    distRate(0) = 1e20;
+    distRate(0) = exp(-1e20);
     // int nGen = 4 * Ne / C;
     for (size_t i = 1; i < markers.size(); i++)
-        distRate(i) = (markers[i] - markers[i - 1]) / 1e6;
-    // distRate(i) = (markers[i] - markers[i - 1]) * nGen * expRate / 1e8;
-    return distRate;
+        distRate(i) = exp(-(markers[i] - markers[i - 1]) / 1e6);
+    ArrDouble2D transRate(3, markers.size());
+    transRate.row(0) = distRate.square();
+    transRate.row(1) = distRate * (1 - distRate);
+    transRate.row(2) = (1 - distRate).square();
+    return transRate;
 }
 
 int main(int argc, char* argv[])
@@ -93,49 +96,36 @@ int main(int argc, char* argv[])
     IntVec1D markers;
     StringVec1D sampleids, chrs;
 
-    // read_bcf_genotype_likelihoods(genolikes, markers, N, M, vcffile, samples, region);
-    // cout << N << endl;
-    // cout << M << endl;
-    // cout << Eigen::Map<ArrDouble2D>(genolikes.data(), N * 3, M) << endl;
-
     tm.clock();
     read_beagle_genotype_likelihoods(in_beagle, genolikes, sampleids, chrs, markers, N, M);
     log.done(tm.date()) << "parsing input -> N:" << N << ", M:" << M << ", C:" << C << "; " << tm.reltime()
                         << " ms" << endl;
-    auto distRate = calc_distRate(markers, C);
+    auto transRate = calc_transRate(markers, C);
 
     double loglike{0};
-    ArrDouble2D postProbsZ(M, C * C);
-    ArrDouble2D postProbsZandG(M, C * C * 4);
-
-    FastPhaseK4 nofaith(N, M, C, seed, out_cluster);
+    FastPhaseK2 nofaith(N, M, C, seed, out_cluster);
     nthreads = nthreads < N ? nthreads : N;
     ThreadPool poolit(nthreads);
     vector<future<double>> llike;
     for (int it = 0; it < niters + 1; it++)
     {
         tm.clock();
-        nofaith.transitionCurIter(distRate);
-        postProbsZ.setZero();
-        postProbsZandG.setZero();
+        nofaith.initIteration();
         for (int i = 0; i < N; i++)
         {
-            // loglike += nofaith.forwardAndBackwards(i, genolikes, postProbsZ, postProbsZandG);
             if (it == niters)
-                llike.emplace_back(poolit.enqueue(&FastPhaseK4::forwardAndBackwards, &nofaith, i,
-                                                  std::ref(genolikes), std::ref(postProbsZ),
-                                                  std::ref(postProbsZandG), true));
+                llike.emplace_back(poolit.enqueue(&FastPhaseK2::forwardAndBackwards, &nofaith, i,
+                                                  std::ref(genolikes), std::ref(transRate), true));
             else
-                llike.emplace_back(poolit.enqueue(&FastPhaseK4::forwardAndBackwards, &nofaith, i,
-                                                  std::ref(genolikes), std::ref(postProbsZ),
-                                                  std::ref(postProbsZandG), false));
+                llike.emplace_back(poolit.enqueue(&FastPhaseK2::forwardAndBackwards, &nofaith, i,
+                                                  std::ref(genolikes), std::ref(transRate), false));
         }
         loglike = 0;
         for (auto&& l : llike)
             loglike += l.get();
         llike.clear(); // clear future and renew
-        nofaith.updateClusterFreqPI(postProbsZ, tol);
-        nofaith.updateAlleleFreqWithinCluster(postProbsZandG, tol);
+        nofaith.updateClusterFreqPI(tol);
+        nofaith.updateAlleleFreqWithinCluster(tol);
         log.done(tm.date()) << "iteration " << setw(2) << it << ", log likelihoods: " << std::fixed << loglike
                             << "; " << tm.reltime() << " ms" << endl;
     }
