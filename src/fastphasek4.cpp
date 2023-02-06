@@ -1,10 +1,11 @@
 // -*- compile-command: "g++ fastphasek4.cpp -o fastphasek4 -std=c++17 -g -O3 -Wall -lz && ./fastphasek4 -f ../data/gl.vcf.gz"; -*-
 #include "fastphase.hpp"
 #include "io.hpp"
+#include "log.hpp"
 #include "threadpool.hpp"
+#include "timer.hpp"
 
 using namespace std;
-
 
 // check initialize_sigmaCurrent_m in STITCH
 ArrDouble1D calc_distRate(const IntVec1D& markers, int C, int Ne = 20000, double expRate = 0.5)
@@ -14,7 +15,7 @@ ArrDouble1D calc_distRate(const IntVec1D& markers, int C, int Ne = 20000, double
     // int nGen = 4 * Ne / C;
     for (size_t i = 1; i < markers.size(); i++)
         distRate(i) = (markers[i] - markers[i - 1]) / 1e6;
-        // distRate(i) = (markers[i] - markers[i - 1]) * nGen * expRate / 1e8;
+    // distRate(i) = (markers[i] - markers[i - 1]) * nGen * expRate / 1e8;
     return distRate;
 }
 
@@ -44,21 +45,21 @@ int main(int argc, char* argv[])
         return 1;
     }
 
-    std::string cluster_out, beagle_in = "", vcf_in = "", vcf_out = "", samples = "-", region = "";
+    std::string out_cluster, in_beagle = "", in_vcf = "", out_vcf = "", samples = "-", region = "";
     int C{3}, niters{1}, nthreads{4}, seed{1};
     double tol{1e-6};
     for (size_t i = 0; i < args.size(); i++)
     {
         if (args[i] == "-b")
-            cluster_out = args[++i];
+            out_cluster = args[++i];
         if (args[i] == "-c")
             C = stoi(args[++i]);
         if (args[i] == "-f")
-            vcf_in = args[++i];
+            in_vcf = args[++i];
         if (args[i] == "-o")
-            vcf_out = args[++i];
+            out_vcf = args[++i];
         if (args[i] == "-g")
-            beagle_in = args[++i];
+            in_beagle = args[++i];
         if (args[i] == "-i")
             niters = stoi(args[++i]);
         if (args[i] == "-n")
@@ -73,6 +74,19 @@ int main(int argc, char* argv[])
             tol = stod(args[++i]);
     }
 
+    Logger log(out_vcf + ".log");
+    log.cao << "Options in effect:\n";
+    for (size_t i = 0; i < args.size(); i++) // print out options in effect
+    {
+        if (i % 2)
+            log.cao << args[i] + "\n";
+        else
+            log.cao << "  " + args[i] + " ";
+    }
+    Timer tm;
+    log.warn(tm.date() + "-> program start\n");
+    log.cao.precision(4);
+
     // ========= core calculation part ===========================================
     int N, M;
     DoubleVec1D genolikes;
@@ -84,20 +98,23 @@ int main(int argc, char* argv[])
     // cout << M << endl;
     // cout << Eigen::Map<ArrDouble2D>(genolikes.data(), N * 3, M) << endl;
 
-    read_beagle_genotype_likelihoods(beagle_in, genolikes, sampleids, chrs, markers, N, M);
-    cout << "N:" << N << ",M:" << M << ",C:" << C << endl;
+    tm.clock();
+    read_beagle_genotype_likelihoods(in_beagle, genolikes, sampleids, chrs, markers, N, M);
+    log.done(tm.date()) << "parsing input -> N:" << N << ", M:" << M << ", C:" << C << "; " << tm.reltime()
+                        << " ms" << endl;
     auto distRate = calc_distRate(markers, C);
 
     double loglike{0};
     ArrDouble2D postProbsZ(M, C * C);
     ArrDouble2D postProbsZandG(M, C * C * 4);
 
-    fastPhaseK4 nofaith(N, M, C, seed, cluster_out);
+    FastPhaseK4 nofaith(N, M, C, seed, out_cluster);
     nthreads = nthreads < N ? nthreads : N;
     ThreadPool poolit(nthreads);
     vector<future<double>> llike;
     for (int it = 0; it < niters + 1; it++)
     {
+        tm.clock();
         nofaith.transitionCurIter(distRate);
         postProbsZ.setZero();
         postProbsZandG.setZero();
@@ -105,24 +122,26 @@ int main(int argc, char* argv[])
         {
             // loglike += nofaith.forwardAndBackwards(i, genolikes, postProbsZ, postProbsZandG);
             if (it == niters)
-                llike.emplace_back(poolit.enqueue(&fastPhaseK4::forwardAndBackwards, &nofaith, i,
+                llike.emplace_back(poolit.enqueue(&FastPhaseK4::forwardAndBackwards, &nofaith, i,
                                                   std::ref(genolikes), std::ref(postProbsZ),
                                                   std::ref(postProbsZandG), true));
             else
-                llike.emplace_back(poolit.enqueue(&fastPhaseK4::forwardAndBackwards, &nofaith, i,
+                llike.emplace_back(poolit.enqueue(&FastPhaseK4::forwardAndBackwards, &nofaith, i,
                                                   std::ref(genolikes), std::ref(postProbsZ),
                                                   std::ref(postProbsZandG), false));
         }
         loglike = 0;
         for (auto&& l : llike)
             loglike += l.get();
-        cout << "iteration " << it << ", log likelihoods: " << loglike << endl;
+        llike.clear(); // clear future and renew
         nofaith.updateClusterFreqPI(postProbsZ, tol);
         nofaith.updateAlleleFreqWithinCluster(postProbsZandG, tol);
-        llike.clear(); // clear future and renew
+        log.done(tm.date()) << "iteration " << setw(2) << it << ", log likelihoods: " << std::fixed << loglike
+                            << "; " << tm.reltime() << " ms" << endl;
     }
 
-    write_bcf_genotype_probability(nofaith.GP.data(), vcf_out, vcf_in, sampleids, markers, chrs[0], N, M);
+    write_bcf_genotype_probability(nofaith.GP.data(), out_vcf, in_vcf, sampleids, markers, chrs[0], N, M);
+    log.warn(tm.date() + "-> have a nice day, bye!\n");
 
     return 0;
 }

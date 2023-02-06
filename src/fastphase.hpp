@@ -30,14 +30,14 @@ inline MatrixType RandomUniform(const Eigen::Index numRows, const Eigen::Index n
     return MatrixType::NullaryExpr(numRows, numCols, uniform);
 };
 
-class fastPhaseK2
+class FastPhaseK2
 {
 private:
     std::mutex mutex_it; // in case of race condition
 
 public:
-    fastPhaseK2(int n, int m, int c, int seed, const std::string& out);
-    ~fastPhaseK2();
+    FastPhaseK2(int n, int m, int c, int seed, const std::string& out);
+    ~FastPhaseK2();
 
     // SHARED VARIBALES
     std::ofstream ofs;
@@ -54,7 +54,7 @@ public:
     void updateAlleleFreqWithinCluster(double tol);
 };
 
-inline fastPhaseK2::fastPhaseK2(int n, int m, int c, int seed, const std::string& out)
+inline FastPhaseK2::FastPhaseK2(int n, int m, int c, int seed, const std::string& out)
     : N(n), M(m), C(c), C2(c * c), GP(M * 3, N), Ek(M, C), Ekg(M, C * 2)
 {
     ofs.open(out, std::ios::binary);
@@ -70,12 +70,12 @@ inline fastPhaseK2::fastPhaseK2(int n, int m, int c, int seed, const std::string
     PI = PI.colwise() / PI.rowwise().sum(); // normalize it
 }
 
-inline fastPhaseK2::~fastPhaseK2()
+inline FastPhaseK2::~FastPhaseK2()
 {
     ofs.close();
 }
 
-inline void fastPhaseK2::initIteration()
+inline void FastPhaseK2::initIteration()
 {
     Ek.setZero();
     Ekg.setZero();
@@ -87,7 +87,7 @@ inline void fastPhaseK2::initIteration()
 ** @param transRate (x^2, x(1-x), (1-x)^2),M x 3
 ** @return individual total likelihood
 */
-inline double fastPhaseK2::forwardAndBackwards(int ind, const DoubleVec1D& GL, const ArrDouble2D& transRate,
+inline double FastPhaseK2::forwardAndBackwards(int ind, const DoubleVec1D& GL, const ArrDouble2D& transRate,
                                                bool call_geno)
 {
     Eigen::Map<const ArrDouble2D> gli(GL.data() + ind * M * 3, 3, M);
@@ -262,7 +262,7 @@ inline double fastPhaseK2::forwardAndBackwards(int ind, const DoubleVec1D& GL, c
     return indLogLikeForwardAll;
 }
 
-inline ArrDouble2D fastPhaseK2::emissionCurIterInd(const ArrDouble2D& gli, bool use_log)
+inline ArrDouble2D FastPhaseK2::emissionCurIterInd(const ArrDouble2D& gli, bool use_log)
 {
     int k1, k2, g1, g2;
     ArrDouble2D emitDip(M, C2); // emission probabilies, nsnps x (C x C)
@@ -296,7 +296,7 @@ inline ArrDouble2D fastPhaseK2::emissionCurIterInd(const ArrDouble2D& gli, bool 
     }
 }
 
-inline void fastPhaseK2::updateClusterFreqPI(double tol)
+inline void FastPhaseK2::updateClusterFreqPI(double tol)
 {
     PI = Ek / (2 * N);
     // map to domain
@@ -308,7 +308,7 @@ inline void fastPhaseK2::updateClusterFreqPI(double tol)
     PI = PI.colwise() / PI.rowwise().sum();
 }
 
-inline void fastPhaseK2::updateAlleleFreqWithinCluster(double tol)
+inline void FastPhaseK2::updateAlleleFreqWithinCluster(double tol)
 {
     F = Ekg(Eigen::all, Eigen::seq(1, Eigen::last, 2)) /
         (Ekg(Eigen::all, Eigen::seq(1, Eigen::last, 2)) + Ekg(Eigen::all, Eigen::seq(0, Eigen::last, 2)));
@@ -319,14 +319,14 @@ inline void fastPhaseK2::updateAlleleFreqWithinCluster(double tol)
     F = (F > 1 - tol).select(1 - tol, F); // upper bound
 }
 
-class fastPhaseK4
+class FastPhaseK4
 {
 private:
     std::mutex mutex_it; // in case of race condition
 
 public:
-    fastPhaseK4(int n, int m, int c, int seed, const std::string& out);
-    ~fastPhaseK4();
+    FastPhaseK4(int n, int m, int c, int seed, const std::string& out);
+    ~FastPhaseK4();
 
     // SHARED VARIBALES
     std::ofstream ofs;
@@ -346,7 +346,7 @@ public:
     ArrDouble2D callGenotypeInd(const ArrDouble2D& indPostProbsZandG);
 };
 
-inline fastPhaseK4::fastPhaseK4(int n, int m, int c, int seed, const std::string& out)
+inline FastPhaseK4::FastPhaseK4(int n, int m, int c, int seed, const std::string& out)
     : N(n), M(m), C(c), C2(c * c), GP(M * 3, N), transHap(M, C2), transDip(M, C2 * C2)
 {
     ofs.open(out, std::ios::binary);
@@ -362,7 +362,7 @@ inline fastPhaseK4::fastPhaseK4(int n, int m, int c, int seed, const std::string
     PI = PI.colwise() / PI.rowwise().sum(); // normalize it
 }
 
-inline fastPhaseK4::~fastPhaseK4()
+inline FastPhaseK4::~FastPhaseK4()
 {
     ofs.close();
 }
@@ -374,7 +374,7 @@ inline fastPhaseK4::~fastPhaseK4()
 ** @param GL  genotype likelihood of all individuals in snp major form
 ** @return individual total likelihood
 */
-inline double fastPhaseK4::forwardAndBackwards(int ind, const DoubleVec1D& GL, ArrDouble2D& postProbsZ,
+inline double FastPhaseK4::forwardAndBackwards(int ind, const DoubleVec1D& GL, ArrDouble2D& postProbsZ,
                                                ArrDouble2D& postProbsZandG, bool call_geno)
 {
     Eigen::Map<const ArrDouble2D> gli(GL.data() + ind * M * 3, 3, M);
@@ -490,7 +490,7 @@ inline double fastPhaseK4::forwardAndBackwards(int ind, const DoubleVec1D& GL, A
     return indLogLikeForwardAll;
 }
 
-inline ArrDouble2D fastPhaseK4::callGenotypeInd(const ArrDouble2D& indPostProbsZandG)
+inline ArrDouble2D FastPhaseK4::callGenotypeInd(const ArrDouble2D& indPostProbsZandG)
 {
     ArrDouble1D geno = ArrDouble1D::Zero(M * 3);
     int k1, k2, k12, g1, g2, g12, g3;
@@ -516,7 +516,7 @@ inline ArrDouble2D fastPhaseK4::callGenotypeInd(const ArrDouble2D& indPostProbsZ
 /*
 ** @param distRate distance or recombination rate between two markers
 */
-inline void fastPhaseK4::transitionCurIter(const ArrDouble1D& distRate)
+inline void FastPhaseK4::transitionCurIter(const ArrDouble1D& distRate)
 {
     int to1, to2, from1, from2;
     int k4d, k2d1, k2d2;
@@ -553,7 +553,7 @@ inline void fastPhaseK4::transitionCurIter(const ArrDouble1D& distRate)
 /*
 ** @param gli  genotype likelihoods of current individual i,3 x nsnps
 */
-inline ArrDouble2D fastPhaseK4::emissionCurIterInd(const ArrDouble2D& gli, bool use_log)
+inline ArrDouble2D FastPhaseK4::emissionCurIterInd(const ArrDouble2D& gli, bool use_log)
 {
     int k1, k2, g1, g2;
     ArrDouble2D emitDip(M, C2); // emission probabilies, nsnps x (C x C)
@@ -579,7 +579,7 @@ inline ArrDouble2D fastPhaseK4::emissionCurIterInd(const ArrDouble2D& gli, bool 
         return emitDip;
 }
 
-inline void fastPhaseK4::updateClusterFreqPI(const ArrDouble2D& postProbsZ, double tol)
+inline void FastPhaseK4::updateClusterFreqPI(const ArrDouble2D& postProbsZ, double tol)
 {
     int k1, k2, k12;
     PI.setZero();
@@ -602,7 +602,7 @@ inline void fastPhaseK4::updateClusterFreqPI(const ArrDouble2D& postProbsZ, doub
     PI = PI.colwise() / PI.rowwise().sum();
 }
 
-inline void fastPhaseK4::updateAlleleFreqWithinCluster(const ArrDouble2D& postProbsZandG, double tol)
+inline void FastPhaseK4::updateAlleleFreqWithinCluster(const ArrDouble2D& postProbsZandG, double tol)
 {
     int k1, k2, k12, g1, g2, g12;
     ArrDouble2D Ekg = ArrDouble2D::Zero(M, C * 2);

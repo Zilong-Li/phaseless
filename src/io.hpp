@@ -83,7 +83,6 @@ inline void read_bcf_genotype_likelihoods(const std::string& vcffile, const std:
         else
             GL.insert(GL.end(), PL.begin(), PL.end());
     }
-
     // now do transpose if snp major is wanted
     if (snp_major)
     {
@@ -101,12 +100,13 @@ inline void read_bcf_genotype_likelihoods(const std::string& vcffile, const std:
 }
 
 /*
+** @brief gz line gets
 ** @param gz   file hander returned by gzopen
 ** @param buf  buffer used for storing data
 ** @param size buffer size for realloc buffer
 ** @return length and buffer of current line
 */
-inline int zgets(gzFile gz, char** buf, uint64_t* size)
+inline int zlgets(gzFile gz, char** buf, uint64_t* size)
 {
     int rlen = 0;
     char* tok = gzgets(gz, *buf + rlen, *size - rlen); // return buf or NULL
@@ -142,7 +142,7 @@ inline void read_beagle_genotype_likelihoods(const std::string& beagle, DoubleVe
     // PARSE BEAGLE FILE
     fp = gzopen(beagle.c_str(), "r");
     original = buffer = (char*)calloc(bufsize, sizeof(char));
-    zgets(fp, &buffer, &bufsize);
+    zlgets(fp, &buffer, &bufsize);
     if (buffer != original)
         original = buffer;
     int nCol = 1;
@@ -161,7 +161,7 @@ inline void read_beagle_genotype_likelihoods(const std::string& beagle, DoubleVe
     nsnps = 0;
     GL.clear();
     buffer = original;
-    while (zgets(fp, &buffer, &bufsize))
+    while (zlgets(fp, &buffer, &bufsize))
     {
         if (buffer != original)
             original = buffer;
@@ -192,7 +192,6 @@ inline void read_beagle_genotype_likelihoods(const std::string& beagle, DoubleVe
             GL.insert(GL.end(), gli.begin(), gli.end());
     }
     gzclose(fp);
-
     // now do transpose if snp major is wanted
     if (snp_major)
     {

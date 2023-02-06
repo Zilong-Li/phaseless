@@ -7,7 +7,6 @@
 
 using namespace std;
 
-
 // check initialize_sigmaCurrent_m in STITCH
 ArrDouble2D calc_transRate(const IntVec1D& markers, int C, int Ne = 20000, double expRate = 0.5)
 {
@@ -104,7 +103,7 @@ int main(int argc, char* argv[])
     auto transRate = calc_transRate(markers, C);
 
     double loglike{0};
-    fastPhaseK2 nofaith(N, M, C, seed, out_cluster);
+    FastPhaseK2 nofaith(N, M, C, seed, out_cluster);
     nthreads = nthreads < N ? nthreads : N;
     ThreadPool poolit(nthreads);
     vector<future<double>> llike;
@@ -115,10 +114,10 @@ int main(int argc, char* argv[])
         for (int i = 0; i < N; i++)
         {
             if (it == niters)
-                llike.emplace_back(poolit.enqueue(&fastPhaseK2::forwardAndBackwards, &nofaith, i,
+                llike.emplace_back(poolit.enqueue(&FastPhaseK2::forwardAndBackwards, &nofaith, i,
                                                   std::ref(genolikes), std::ref(transRate), true));
             else
-                llike.emplace_back(poolit.enqueue(&fastPhaseK2::forwardAndBackwards, &nofaith, i,
+                llike.emplace_back(poolit.enqueue(&FastPhaseK2::forwardAndBackwards, &nofaith, i,
                                                   std::ref(genolikes), std::ref(transRate), false));
         }
         loglike = 0;
