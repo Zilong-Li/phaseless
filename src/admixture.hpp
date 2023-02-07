@@ -14,7 +14,7 @@ class Admixture
     Admixture(int n, int m, int c, int k, int seed);
     ~Admixture();
     const int N, M, C, K; // C2 = C x C
-    ArrDouble2D F; // (K x C) x M
+    ArrDouble2D FI; // (K x C) x M
     ArrDouble2D Q; // K x N
     ArrDouble2D Ekg; // (M x K) x N, expected number of alleles per k per n
     ArrDouble2D Ekc; // (K x C) x M, expected number of alleles per c per k
@@ -25,7 +25,7 @@ class Admixture
                                      const DoubleVec1D & GL,
                                      const ArrDouble2D & transRate,
                                      const ArrDouble2D & PI,
-                                     const ArrDouble2D & PF);
+                                     const ArrDouble2D & F);
     void updateF();
     void initIteration();
 };
@@ -34,9 +34,9 @@ inline Admixture::Admixture(int n, int m, int c, int k, int seed) : N(n), M(m), 
 {
     auto rng = std::default_random_engine{};
     rng.seed(seed);
-    F = RandomUniform<ArrDouble2D, std::default_random_engine>(K * C, M, rng, 0.05, 0.95);
+    FI = RandomUniform<ArrDouble2D, std::default_random_engine>(K * C, M, rng, 0.05, 0.95);
     for(int k = 0; k < K; k++) // normalize it per snp per k
-        F.middleRows(k * C, C).rowwise() /= F.middleRows(k * C, C).colwise().sum();
+        FI.middleRows(k * C, C).rowwise() /= FI.middleRows(k * C, C).colwise().sum();
     Q = RandomUniform<ArrDouble2D, std::default_random_engine>(K, N, rng, 0.05, 0.95);
     Q.rowwise() /= Q.colwise().sum(); // normalize it per individual
 }
@@ -55,19 +55,19 @@ inline void Admixture::initIteration()
 ** @param GL        genotype likelihood of all individuals in snp major form
 ** @param transRate (x^2, x(1-x), (1-x)^2),M x 3
 ** @param PI        PI from fastphase model
-** @param PF        F from fastphase model
+** @param F        F from fastphase model
 ** @return individual total likelihood
 */
 inline double Admixture::runWithClusterLikelihoods(int ind,
                                                    const DoubleVec1D & GL,
                                                    const ArrDouble2D & transRate,
                                                    const ArrDouble2D & PI,
-                                                   const ArrDouble2D & PF)
+                                                   const ArrDouble2D & F)
 {
     int k1, k2, k12;
     // ======== forward and backward recursion ===========
     Eigen::Map<const ArrDouble2D> gli(GL.data() + ind * M * 3, 3, M);
-    auto emitDip = emissionCurIterInd(gli, PF, false);
+    auto emitDip = emissionCurIterInd(gli, F, false);
     ArrDouble2D LikeForwardInd(C * C, M); // likelihood of forward recursion for ind i, not log
     ArrDouble2D LikeBackwardInd(C * C, M); // likelihood of backward recursion for ind i, not log
     ArrDouble1D sumTmp1(C), sumTmp2(C); // store sum over internal loop
@@ -169,7 +169,7 @@ inline double Admixture::runWithClusterLikelihoods(int ind,
                     for(c2 = 0; c2 < C; c2++)
                     {
                         c12 = c1 * C + c2;
-                        w(c12, k12) = icluster(c12, s) * F(k1 * C + c1, s) * Q(k1, ind) * F(k2 * C + c2, s)
+                        w(c12, k12) = icluster(c12, s) * FI(k1 * C + c1, s) * Q(k1, ind) * FI(k2 * C + c2, s)
                                       * Q(k2, ind);
                         norm += w(c12, k12);
                     }
@@ -206,8 +206,9 @@ inline double Admixture::runWithClusterLikelihoods(int ind,
 
 inline void Admixture::updateF()
 {
-    for(int k = 0; k < K; k++) F.middleRows(k * C, C) = Ekc.middleRows(k * C, C) / NormF(k);
-    // std::cout << F.middleRows(1 * C, C).colwise().sum() << "\n";
+    for(int k = 0; k < K; k++) FI.middleRows(k * C, C) = Ekc.middleRows(k * C, C) / NormF(k);
+    // for(int k = 0; k < K; k++) std::cout << F.middleRows(k * C, C).sum() << "\n";
+    // for(int k = 0; k < K; k++) std::cout << F.middleRows(k * C, C).colwise().sum() << "\n";
 }
 
 /*
@@ -232,7 +233,7 @@ inline double Admixture::updateQ(int ind, ArrDouble2D icluster)
                     for(c2 = 0; c2 < C; c2++)
                     {
                         c12 = c1 * C + c2;
-                        w(c12, k12) = icluster(c12, s) * F(s * C + c1, k1) * Q(k1, ind) * F(s * C + c2, k2)
+                        w(c12, k12) = icluster(c12, s) * FI(s * C + c1, k1) * Q(k1, ind) * FI(s * C + c2, k2)
                                       * Q(k2, ind);
                         norm += w(c12, k12);
                     }
