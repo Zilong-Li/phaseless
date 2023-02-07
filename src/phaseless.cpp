@@ -131,6 +131,7 @@ int main(int argc, char * argv[])
     double loglike_prev = 0, diff;
     for(int it = 0; it <= niters_admix; it++)
     {
+        tm.clock();
         admixer.initIteration();
         for(int i = 0; i < N; i++)
         {

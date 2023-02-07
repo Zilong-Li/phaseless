@@ -197,9 +197,11 @@ inline double Admixture::runWithClusterLikelihoods(int ind,
     }
     // update Q, Q.colwise().sum() should be 1
     for(int k = 0; k < K; k++) Q(k, ind) = Ekg.row(ind * K + k).sum() / (2 * M);
-    std::lock_guard<std::mutex> lock(mutex_it); // sum over all samples
-    Ekc += Ekc_i;
-    NormF += NormF_i;
+    {
+        std::lock_guard<std::mutex> lock(mutex_it); // sum over all samples
+        Ekc += Ekc_i;
+        NormF += NormF_i;
+    }
     return llike;
 }
 
