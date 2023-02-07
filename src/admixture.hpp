@@ -150,6 +150,8 @@ inline double Admixture::runWithClusterLikelihoods(int ind,
     double norm;
     int c1, c2, c12;
     ArrDouble2D w(C * C, K * K);
+    ArrDouble2D Ekc_i = ArrDouble2D::Zero(K * C, M);
+    ArrDouble2D NormF_i = ArrDouble2D::Zero(K, M);
     for(s = 0; s < M; s++)
     {
         norm = 0;
@@ -182,13 +184,10 @@ inline double Admixture::runWithClusterLikelihoods(int ind,
                         k12 = k1 * K + k2;
                         Ekg(ind * K + k1, s) += w(c12, k12) / norm;
                         Ekg(ind * K + k2, s) += w(c12, k12) / norm;
-                        std::lock_guard<std::mutex> lock(mutex_it); // sum over all samples
-                        Ekc(k1 * C + c1, s) += w(c12, k12) / norm;
-                        Ekc(k2 * C + c2, s) += w(c12, k12) / norm;
-                        // NormF(s, k1) += w(c12, k12) / norm;
-                        // NormF(s, k2) += w(c12, k12) / norm;
-                        NormF(k1, s) += w(c12, k12) / norm;
-                        NormF(k2, s) += w(c12, k12) / norm;
+                        Ekc_i(k1 * C + c1, s) += w(c12, k12) / norm;
+                        Ekc_i(k2 * C + c2, s) += w(c12, k12) / norm;
+                        NormF_i(k1, s) += w(c12, k12) / norm;
+                        NormF_i(k2, s) += w(c12, k12) / norm;
                     }
                 }
             }
@@ -196,7 +195,9 @@ inline double Admixture::runWithClusterLikelihoods(int ind,
     }
     // update Q, Q.colwise().sum() should be 1
     for(int k = 0; k < K; k++) Q(k, ind) = Ekg.row(ind * K + k).sum() / (2 * M);
-
+    std::lock_guard<std::mutex> lock(mutex_it); // sum over all samples
+    Ekc += Ekc_i;
+    NormF += NormF_i;
     return norm;
 }
 
