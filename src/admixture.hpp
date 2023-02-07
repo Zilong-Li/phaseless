@@ -18,7 +18,7 @@ class Admixture
     ArrDouble2D Q; // K x N
     ArrDouble2D Ekg; // (M x K) x N, expected number of alleles per k per n
     ArrDouble2D Ekc; // (K x C) x M, expected number of alleles per c per k
-    ArrDouble1D NormF; // K
+    ArrDouble2D NormF; // K x M
 
     double updateQ(int ind, ArrDouble2D clusters);
     double runWithClusterLikelihoods(int ind,
@@ -37,18 +37,12 @@ inline Admixture::Admixture(int n, int m, int c, int k, int seed) : N(n), M(m), 
     FI = RandomUniform<ArrDouble2D, std::default_random_engine>(K * C, M, rng, 0.05, 0.95);
     for(int k = 0; k < K; k++) // normalize it per snp per k
         FI.middleRows(k * C, C).rowwise() /= FI.middleRows(k * C, C).colwise().sum();
+    // for(int k = 0; k < K; k++) std::cout << FI.middleRows(k * C, C).colwise().sum() << "\n";
     Q = RandomUniform<ArrDouble2D, std::default_random_engine>(K, N, rng, 0.05, 0.95);
     Q.rowwise() /= Q.colwise().sum(); // normalize it per individual
 }
 
 inline Admixture::~Admixture() {}
-
-inline void Admixture::initIteration()
-{
-    Ekg.setZero(N * K, M);
-    Ekc.setZero(K * C, M);
-    NormF.setZero(K);
-}
 
 /*
 ** @param ind       current individual i
@@ -186,13 +180,15 @@ inline double Admixture::runWithClusterLikelihoods(int ind,
                     for(k2 = 0; k2 < K; k2++)
                     {
                         k12 = k1 * K + k2;
-                        std::lock_guard<std::mutex> lock(mutex_it);
                         Ekg(ind * K + k1, s) += w(c12, k12) / norm;
                         Ekg(ind * K + k2, s) += w(c12, k12) / norm;
+                        std::lock_guard<std::mutex> lock(mutex_it); // sum over all samples
                         Ekc(k1 * C + c1, s) += w(c12, k12) / norm;
                         Ekc(k2 * C + c2, s) += w(c12, k12) / norm;
-                        NormF(k1) += w(c12, k12) / norm;
-                        NormF(k2) += w(c12, k12) / norm;
+                        // NormF(s, k1) += w(c12, k12) / norm;
+                        // NormF(s, k2) += w(c12, k12) / norm;
+                        NormF(k1, s) += w(c12, k12) / norm;
+                        NormF(k2, s) += w(c12, k12) / norm;
                     }
                 }
             }
@@ -204,11 +200,18 @@ inline double Admixture::runWithClusterLikelihoods(int ind,
     return norm;
 }
 
+inline void Admixture::initIteration()
+{
+    Ekg.setZero(N * K, M);
+    Ekc.setZero(K * C, M);
+    NormF.setZero(K, M);
+}
+
 inline void Admixture::updateF()
 {
-    for(int k = 0; k < K; k++) FI.middleRows(k * C, C) = Ekc.middleRows(k * C, C) / NormF(k);
-    // for(int k = 0; k < K; k++) std::cout << F.middleRows(k * C, C).sum() << "\n";
-    // for(int k = 0; k < K; k++) std::cout << F.middleRows(k * C, C).colwise().sum() << "\n";
+    for(int k = 0; k < K; k++) FI.middleRows(k * C, C) = Ekc.middleRows(k * C, C).rowwise() / NormF.row(k);
+    // for(int k = 0; k < K; k++) std::cout << FI.middleRows(k * C, C).sum() << "\n";
+    // for(int k = 0; k < K; k++) std::cout << FI.middleRows(k * C, C).colwise().sum() << "\n";
 }
 
 /*
