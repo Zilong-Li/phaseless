@@ -89,13 +89,16 @@ int main(int argc, char * argv[])
     // ========= core calculation part ===========================================
     int N, M;
     DoubleVec1D genolikes;
-    IntVec1D markers;
-    StringVec1D sampleids, chrs;
+    StringIntVecMapU chrs_map;
+    StringVec1D sampleids;
+    std::string ichr;
     tm.clock();
-    read_beagle_genotype_likelihoods(in_beagle, genolikes, sampleids, chrs, markers, N, M);
+    read_beagle_genotype_likelihoods(in_beagle, genolikes, sampleids, chrs_map, N, M);
     log.done(tm.date()) << "parsing input -> N:" << N << ", M:" << M << ", C:" << C << "; " << tm.reltime()
                         << " ms" << endl;
-    auto transRate = calc_transRate(markers, C);
+    assert(chrs_map.size() == 1);
+    ichr = chrs_map.begin()->first;
+    auto transRate = calc_transRate(chrs_map[ichr], C);
     nthreads = nthreads < N ? nthreads : N;
 
     double loglike{0};
@@ -124,7 +127,7 @@ int main(int argc, char * argv[])
         log.done(tm.date()) << "iteration " << setw(2) << it << ", log likelihoods: " << std::fixed << loglike
                             << "; " << tm.reltime() << " ms" << endl;
     }
-    write_bcf_genotype_probability(nofaith.GP.data(), out_vcf, in_vcf, sampleids, markers, chrs[0], N, M);
+    write_bcf_genotype_probability(nofaith.GP.data(), out_vcf, in_vcf, sampleids, chrs_map[ichr], ichr, N, M);
     log.done(tm.date()) << "imputation done and outputting.\n";
     log.warn(tm.date() + "-> running admixture\n");
     Admixture admixer(N, M, C, K, seed);

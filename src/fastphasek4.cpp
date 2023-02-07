@@ -79,8 +79,9 @@ int main(int argc, char * argv[])
     // ========= core calculation part ===========================================
     int N, M;
     DoubleVec1D genolikes;
-    IntVec1D markers;
-    StringVec1D sampleids, chrs;
+    StringVec1D sampleids;
+    StringIntVecMapU chrs_map;
+    std::string ichr;
 
     // read_bcf_genotype_likelihoods(genolikes, markers, N, M, vcffile, samples, region);
     // cout << N << endl;
@@ -88,10 +89,12 @@ int main(int argc, char * argv[])
     // cout << Eigen::Map<ArrDouble2D>(genolikes.data(), N * 3, M) << endl;
 
     tm.clock();
-    read_beagle_genotype_likelihoods(in_beagle, genolikes, sampleids, chrs, markers, N, M);
+    read_beagle_genotype_likelihoods(in_beagle, genolikes, sampleids, chrs_map, N, M);
     log.done(tm.date()) << "parsing input -> N:" << N << ", M:" << M << ", C:" << C << "; " << tm.reltime()
                         << " ms" << endl;
-    auto distRate = calc_distRate(markers, C);
+    assert(chrs_map.size() == 1);
+    ichr = chrs_map.begin()->first;
+    auto distRate = calc_distRate(chrs_map[ichr], C);
 
     double loglike{0};
     ArrDouble2D postProbsZ(M, C * C);
@@ -127,8 +130,7 @@ int main(int argc, char * argv[])
         log.done(tm.date()) << "iteration " << setw(2) << it << ", log likelihoods: " << std::fixed << loglike
                             << "; " << tm.reltime() << " ms" << endl;
     }
-
-    write_bcf_genotype_probability(nofaith.GP.data(), out_vcf, in_vcf, sampleids, markers, chrs[0], N, M);
+    write_bcf_genotype_probability(nofaith.GP.data(), out_vcf, in_vcf, sampleids, chrs_map[ichr], ichr, N, M);
     log.warn(tm.date() + "-> have a nice day, bye!\n");
 
     return 0;

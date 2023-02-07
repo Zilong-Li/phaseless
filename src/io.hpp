@@ -3,6 +3,7 @@
 
 #include "vcfpp.h"
 #include <cmath>
+#include <unordered_map>
 #include <zlib.h>
 
 using IntVec1D = std::vector<int>;
@@ -12,6 +13,8 @@ using FloatVec2D = std::vector<FloatVec1D>;
 using DoubleVec1D = std::vector<double>;
 using DoubleVec2D = std::vector<DoubleVec1D>;
 using StringVec1D = std::vector<std::string>;
+using StringIntVecMapU = std::unordered_map<std::string, IntVec1D>;
+using StringIntPairMapU = std::unordered_map<std::string, std::pair<int, int>>;
 
 /*
 ** @GP maps Eigen matrix layout, (3 x nsnps) x nsamples
@@ -138,15 +141,14 @@ inline int zlgets(gzFile gz, char ** buf, uint64_t * size)
 inline void read_beagle_genotype_likelihoods(const std::string & beagle,
                                              DoubleVec1D & GL,
                                              StringVec1D & sampleids,
-                                             StringVec1D & chrs,
-                                             IntVec1D & markers,
+                                             StringIntVecMapU & chrs,
                                              int & nsamples,
                                              int & nsnps,
                                              bool snp_major = true)
 {
     // VARIBLES
     gzFile fp = nullptr;
-    char *original, *buffer, *tok, *id;
+    char *original, *buffer, *tok,  *chr, *pos;
     uint64_t bufsize = (uint64_t)128 * 1024 * 1024;
     int i, j;
     const char * delims = "\t \n";
@@ -175,13 +177,10 @@ inline void read_beagle_genotype_likelihoods(const std::string & beagle,
     {
         if(buffer != original) original = buffer;
         tok = strtok_r(buffer, delims, &buffer); // id: chr_pos
-        id = strtok(tok, "_");
-        chrs.push_back(id);
-        id = strtok(NULL, "_");
-        markers.push_back(std::stoi(id));
-        if(nsnps > 0 && chrs[nsnps] != chrs[nsnps - 1])
-            std::cerr << "warning: there are multiple chromosomes in beagle file. make sure this is wanted!"
-                      << std::endl;
+        chr = strtok(tok, "_");
+        // chrs.push_back(id);
+        pos = strtok(NULL, "_");
+        chrs[chr].push_back(std::stoi(pos));
         tok = strtok_r(NULL, delims, &buffer); // ref
         tok = strtok_r(NULL, delims, &buffer); // alt
         for(i = 0; i < nsamples; i++)
