@@ -24,7 +24,6 @@ class FastPhaseK2
     ArrDouble2D Ekg; // M x C x 2
 
     void initIteration();
-    ArrDouble2D getClusterLikelihoods(int ind, const DoubleVec1D & GL, const ArrDouble2D & transRate);
     void updateClusterFreqPI(double tol);
     void updateAlleleFreqWithinCluster(double tol);
     double forwardAndBackwards(int ind,
@@ -57,116 +56,6 @@ inline void FastPhaseK2::initIteration()
 {
     Ek.setZero();
     Ekg.setZero();
-}
-
-/*
-** @param ind       current individual i
-** @param GL        genotype likelihood of all individuals in snp major form
-** @param transRate (x^2, x(1-x), (1-x)^2),M x 3
-** @return cluster likelihoods
-*/
-inline ArrDouble2D FastPhaseK2::getClusterLikelihoods(int ind,
-                                                      const DoubleVec1D & GL,
-                                                      const ArrDouble2D & transRate)
-{
-    Eigen::Map<const ArrDouble2D> gli(GL.data() + ind * M * 3, 3, M);
-    auto emitDip = emissionCurIterInd(gli, F, false);
-    ArrDouble2D LikeForwardInd(C2, M); // likelihood of forward recursion for ind i, not log
-    ArrDouble2D LikeBackwardInd(C2, M); // likelihood of backward recursion for ind i, not log
-    ArrDouble1D sumTmp1(C), sumTmp2(C); // store sum over internal loop
-    ArrDouble1D cs(M);
-    double constTmp;
-
-    // ======== forward recursion ===========
-    int k1, k2, k12;
-    // first site
-    int s{0};
-    for(k1 = 0; k1 < C; k1++)
-    {
-        for(k2 = 0; k2 < C; k2++)
-        {
-            k12 = k1 * C + k2;
-            LikeForwardInd(k12, s) = emitDip(s, k12) * PI(s, k1) * PI(s, k2);
-        }
-    }
-    cs(s) = 1 / LikeForwardInd.col(s).sum();
-    LikeForwardInd.col(s) *= cs(s); // normalize it
-
-    // do forward recursion
-    for(s = 1; s < M; s++)
-    {
-        // precompute outside of internal double loop
-        sumTmp1.setZero();
-        sumTmp2.setZero();
-        for(k1 = 0; k1 < C; k1++)
-        {
-            for(k2 = 0; k2 < C; k2++)
-            {
-                k12 = k1 * C + k2;
-                sumTmp1(k1) += LikeForwardInd(k12, s - 1);
-                sumTmp2(k2) += LikeForwardInd(k12, s - 1);
-            }
-        }
-        constTmp = LikeForwardInd.col(s - 1).sum() * transRate(2, s);
-        sumTmp1 *= transRate(1, s);
-        sumTmp2 *= transRate(1, s);
-        for(k1 = 0; k1 < C; k1++)
-        {
-            for(k2 = 0; k2 < C; k2++)
-            {
-                k12 = k1 * C + k2;
-                LikeForwardInd(k12, s) =
-                    emitDip(s, k12)
-                    * (LikeForwardInd(k12, s - 1) * transRate(0, s) + PI(s, k1) * sumTmp1(k2)
-                       + PI(s, k2) * sumTmp2(k1) + PI(s, k1) * PI(s, k2) * constTmp);
-            }
-        }
-        cs(s) = 1 / LikeForwardInd.col(s).sum();
-        LikeForwardInd.col(s) *= cs(s); // normalize it
-    }
-
-    // ======== backward recursion ===========
-    // set last site
-    s = M - 1;
-    LikeBackwardInd.col(s).setOnes(); // not log scale
-    LikeBackwardInd.col(s) *= cs(s);
-    // site M-2 to 0
-    for(s = M - 2; s >= 0; s--)
-    {
-        // precompute outside of internal double loop
-        sumTmp1.setZero();
-        sumTmp2.setZero();
-        constTmp = 0;
-        auto beta_mult_emit = emitDip.row(s + 1).transpose() * LikeBackwardInd.col(s + 1);
-        for(k1 = 0; k1 < C; k1++)
-        {
-            for(k2 = 0; k2 < C; k2++)
-            {
-                k12 = k1 * C + k2;
-                sumTmp1(k1) += beta_mult_emit(k12) * PI(s + 1, k2);
-                sumTmp2(k2) += beta_mult_emit(k12) * PI(s + 1, k1);
-                constTmp += beta_mult_emit(k12) * PI(s + 1, k1) * PI(s + 1, k2);
-            }
-        }
-        // add transRate to constants
-        sumTmp1 *= transRate(1, s + 1);
-        sumTmp2 *= transRate(1, s + 1);
-        constTmp *= transRate(2, s + 1);
-        for(k1 = 0; k1 < C; k1++)
-        {
-            for(k2 = 0; k2 < C; k2++)
-            {
-                k12 = k1 * C + k2;
-                LikeBackwardInd(k12, s) =
-                    beta_mult_emit(k12) * transRate(0, s + 1) + sumTmp1(k1) + sumTmp2(k2) + constTmp;
-            }
-        }
-        // apply scaling
-        LikeBackwardInd.col(s) *= cs(s);
-    }
-
-    auto clusterLike = LikeForwardInd * LikeBackwardInd;
-    return clusterLike;
 }
 
 /*
@@ -236,14 +125,12 @@ inline double FastPhaseK2::forwardAndBackwards(int ind,
         LikeForwardInd.col(s) *= cs(s); // normalize it
     }
     // total likelhoods of the individual
-    double indLogLikeForwardAll = log((LikeForwardInd.col(M - 1) / cs(M - 1)).sum());
+    double indLogLikeForwardAll = log((LikeForwardInd.col(M - 1).sum() / cs).sum());
 
     // ======== backward recursion ===========
-    // set last site
-    s = M - 1;
+    s = M - 1; // set last site
     LikeBackwardInd.col(s).setOnes(); // not log scale
     LikeBackwardInd.col(s) *= cs(s);
-    // site M-2 to 0
     for(s = M - 2; s >= 0; s--)
     {
         // precompute outside of internal double loop
@@ -278,7 +165,7 @@ inline double FastPhaseK2::forwardAndBackwards(int ind,
         LikeBackwardInd.col(s) *= cs(s);
     }
 
-    cs *= LikeForwardInd.col(M - 1).sum(); // get back last forward likelihood
+    cs *= LikeForwardInd.col(M - 1).sum(); // get last forward likelihood back
 
     // std::lock_guard<std::mutex> lock(mutex_it); // lock here if RAM cost really matters
     // ======== post decoding get p(Z|X, G),  M x (C x C) ===========

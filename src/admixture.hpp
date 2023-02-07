@@ -145,7 +145,7 @@ inline double Admixture::runWithClusterLikelihoods(int ind,
         // apply scaling
         LikeBackwardInd.col(s) *= cs(s);
     }
-    auto icluster = LikeForwardInd * LikeBackwardInd;
+    auto icluster = LikeForwardInd * LikeBackwardInd; // C x C x M
 
     //============= ready to update Q ============
     double norm = 0, llike = 0;

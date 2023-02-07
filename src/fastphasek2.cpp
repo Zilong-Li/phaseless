@@ -48,8 +48,7 @@ int main(int argc, char * argv[])
 
     std::string in_beagle, in_vcf, out_vcf, out_cluster;
     std::string samples = "-", region = "";
-    int C;
-    int niters{40}, nthreads{4}, seed{1};
+    int C{0}, niters{40}, nthreads{4}, seed{1};
     double tol{1e-6};
     for(size_t i = 0; i < args.size(); i++)
     {
@@ -65,6 +64,7 @@ int main(int argc, char * argv[])
         if(args[i] == "-seed") seed = stoi(args[++i]);
         if(args[i] == "-tol") tol = stod(args[++i]);
     }
+    assert(C > 0);
 
     Logger log(out_vcf + ".log");
     log.cao << "Options in effect:\n";
