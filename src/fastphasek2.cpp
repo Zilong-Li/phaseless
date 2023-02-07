@@ -35,7 +35,7 @@ int main(int argc, char * argv[])
                   << "     -c      number of ancestral clusters\n"
                   << "     -f      input vcf/bcf format\n"
                   << "     -g      gziped beagle format\n"
-                  << "     -i      number of iterations\n"
+                  << "     -i      number of iterations of imputation\n"
                   << "     -n      number of threads\n"
                   << "     -o      output compressed/uncompressed vcf/bcf\n"
                   << "     -r      region in vcf/bcf to subset\n"
