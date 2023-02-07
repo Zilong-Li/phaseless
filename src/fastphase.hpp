@@ -20,11 +20,10 @@ class FastPhaseK2
     const int N, M, C, C2; // C2 = C x C
     ArrDouble2D GP; // genotype probabilies for all individuals, N x (M x 3)
     ArrDouble2D PI, Ek; // nsnps x C
-    ArrDouble2D F; // nsnps x C
+    ArrDouble2D F; // M x C
     ArrDouble2D Ekg; // M x C x 2
 
     void initIteration();
-    ArrDouble2D emissionCurIterInd(const ArrDouble2D & gli, bool use_log = false);
     ArrDouble2D getClusterLikelihoods(int ind, const DoubleVec1D & GL, const ArrDouble2D & transRate);
     void updateClusterFreqPI(double tol);
     void updateAlleleFreqWithinCluster(double tol);
@@ -66,7 +65,7 @@ inline void FastPhaseK2::initIteration()
 inline ArrDouble2D FastPhaseK2::getClusterLikelihoods(int ind, const DoubleVec1D & GL, const ArrDouble2D & transRate)
 {
     Eigen::Map<const ArrDouble2D> gli(GL.data() + ind * M * 3, 3, M);
-    auto emitDip = emissionCurIterInd(gli);
+    auto emitDip = emissionCurIterInd(gli, F, false);
     ArrDouble2D LikeForwardInd(C2, M); // likelihood of forward recursion for ind i, not log
     ArrDouble2D LikeBackwardInd(C2, M); // likelihood of backward recursion for ind i, not log
     ArrDouble1D sumTmp1(C), sumTmp2(C); // store sum over internal loop
@@ -176,7 +175,7 @@ inline double FastPhaseK2::forwardAndBackwards(int ind,
                                                bool call_geno)
 {
     Eigen::Map<const ArrDouble2D> gli(GL.data() + ind * M * 3, 3, M);
-    auto emitDip = emissionCurIterInd(gli);
+    auto emitDip = emissionCurIterInd(gli, F, false);
     ArrDouble2D LikeForwardInd(C2, M); // likelihood of forward recursion for ind i, not log
     ArrDouble2D LikeBackwardInd(C2, M); // likelihood of backward recursion for ind i, not log
     ArrDouble1D sumTmp1(C), sumTmp2(C); // store sum over internal loop
@@ -344,40 +343,6 @@ inline double FastPhaseK2::forwardAndBackwards(int ind,
     return indLogLikeForwardAll;
 }
 
-inline ArrDouble2D FastPhaseK2::emissionCurIterInd(const ArrDouble2D & gli, bool use_log)
-{
-    int k1, k2, g1, g2;
-    ArrDouble2D emitDip(M, C2); // emission probabilies, nsnps x (C x C)
-    for(k1 = 0; k1 < C; k1++)
-    {
-        for(k2 = 0; k2 < C; k2++)
-        {
-            emitDip.col(k1 * C + k2).setZero();
-            for(g1 = 0; g1 <= 1; g1++)
-            {
-                for(g2 = 0; g2 <= 1; g2++)
-                {
-                    emitDip.col(k1 * C + k2) += gli.row(g1 + g2).transpose()
-                                                * (g1 * F.col(k1) + (1 - g1) * (1 - F.col(k1)))
-                                                * (g2 * F.col(k2) + (1 - g2) * (1 - F.col(k2)));
-                }
-            }
-        }
-    }
-    if(use_log)
-        return emitDip.log();
-    else
-    {
-        // be careful with underflow
-        const double maxEmissionMatrixDifference = 1e-6;
-        auto x = emitDip.rowwise().maxCoeff();
-        emitDip = emitDip.colwise() / x;
-        emitDip = (emitDip < maxEmissionMatrixDifference).select(maxEmissionMatrixDifference, emitDip);
-
-        return emitDip;
-    }
-}
-
 inline void FastPhaseK2::updateClusterFreqPI(double tol)
 {
     PI = Ek / (2 * N);
@@ -420,7 +385,6 @@ class FastPhaseK4
     void updateClusterFreqPI(const ArrDouble2D & postProbsZ, double tol);
     void updateAlleleFreqWithinCluster(const ArrDouble2D & postProbsZandG, double tol);
     void transitionCurIter(const ArrDouble1D & distRate);
-    ArrDouble2D emissionCurIterInd(const ArrDouble2D & gli, bool use_log = true);
     ArrDouble2D callGenotypeInd(const ArrDouble2D & indPostProbsZandG);
     double forwardAndBackwards(int ind,
                                const DoubleVec1D & GL,
@@ -461,7 +425,7 @@ inline double FastPhaseK4::forwardAndBackwards(int ind,
                                                bool call_geno)
 {
     Eigen::Map<const ArrDouble2D> gli(GL.data() + ind * M * 3, 3, M);
-    auto emitDip = emissionCurIterInd(gli);
+    auto emitDip = emissionCurIterInd(gli, F, true);
     ArrDouble2D logLikeForwardInd(C2, M); // log likelihood of forward recursion for ind i
     ArrDouble2D logLikeBackwardInd(C2, M); // log likelihood of backward recursion for ind i
 
@@ -628,35 +592,6 @@ inline void FastPhaseK4::transitionCurIter(const ArrDouble1D & distRate)
             }
         }
     }
-}
-
-/*
-** @param gli  genotype likelihoods of current individual i,3 x nsnps
-*/
-inline ArrDouble2D FastPhaseK4::emissionCurIterInd(const ArrDouble2D & gli, bool use_log)
-{
-    int k1, k2, g1, g2;
-    ArrDouble2D emitDip(M, C2); // emission probabilies, nsnps x (C x C)
-    for(k1 = 0; k1 < C; k1++)
-    {
-        for(k2 = 0; k2 < C; k2++)
-        {
-            emitDip.col(k1 * C + k2).setZero();
-            for(g1 = 0; g1 <= 1; g1++)
-            {
-                for(g2 = 0; g2 <= 1; g2++)
-                {
-                    emitDip.col(k1 * C + k2) += gli.row(g1 + g2).transpose()
-                                                * (g1 * F.col(k1) + (1 - g1) * (1 - F.col(k1)))
-                                                * (g2 * F.col(k2) + (1 - g2) * (1 - F.col(k2)));
-                }
-            }
-        }
-    }
-    if(use_log)
-        return emitDip.log();
-    else
-        return emitDip;
 }
 
 inline void FastPhaseK4::updateClusterFreqPI(const ArrDouble2D & postProbsZ, double tol)

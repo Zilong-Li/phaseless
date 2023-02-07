@@ -27,4 +27,43 @@ inline MatrixType RandomUniform(const Eigen::Index numRows,
     return MatrixType::NullaryExpr(numRows, numCols, uniform);
 };
 
+/*
+** @param gli  genotype likelihoods of current individual i,3 x nsnps
+*/
+inline ArrDouble2D emissionCurIterInd(const ArrDouble2D & gli, const ArrDouble2D & F, bool use_log)
+{
+    int k1, k2, g1, g2;
+    int M = F.rows();
+    int C = F.cols();
+    ArrDouble2D emitDip(M, C * C); // emission probabilies, nsnps x (C x C)
+    for(k1 = 0; k1 < C; k1++)
+    {
+        for(k2 = 0; k2 < C; k2++)
+        {
+            emitDip.col(k1 * C + k2).setZero();
+            for(g1 = 0; g1 <= 1; g1++)
+            {
+                for(g2 = 0; g2 <= 1; g2++)
+                {
+                    emitDip.col(k1 * C + k2) += gli.row(g1 + g2).transpose()
+                                                * (g1 * F.col(k1) + (1 - g1) * (1 - F.col(k1)))
+                                                * (g2 * F.col(k2) + (1 - g2) * (1 - F.col(k2)));
+                }
+            }
+        }
+    }
+    if(use_log)
+        return emitDip.log();
+    else
+    {
+        // be careful with underflow
+        const double maxEmissionMatrixDifference = 1e-10;
+        auto x = emitDip.rowwise().maxCoeff();
+        emitDip = emitDip.colwise() / x;
+        emitDip = (emitDip < maxEmissionMatrixDifference).select(maxEmissionMatrixDifference, emitDip);
+
+        return emitDip;
+    }
+}
+
 #endif // COMMON_H_

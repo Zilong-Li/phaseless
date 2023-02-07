@@ -111,7 +111,7 @@ int main(int argc, char * argv[])
                                                   std::ref(transRate), false));
         }
         loglike = 0;
-        for(auto && l : llike) loglike += l.get();
+        for(auto && ll : llike) loglike += ll.get();
         llike.clear(); // clear future and renew
         nofaith.updateClusterFreqPI(tol);
         nofaith.updateAlleleFreqWithinCluster(tol);
@@ -119,7 +119,7 @@ int main(int argc, char * argv[])
                             << tm.reltime() << " ms" << endl;
     }
     write_bcf_genotype_probability(nofaith.GP.data(), out_vcf, in_vcf, sampleids, markers, chrs[0], N, M);
-    log.done(tm.date() + "-> output vcf and imputation done\n");
+    log.done(tm.date()) << "imputation done and outputting.\n";
 
     log.warn(tm.date() + "-> running admixture\n");
     Admixture admixer(N, M, C, K, seed);
@@ -128,17 +128,17 @@ int main(int argc, char * argv[])
         admixer.initIteration();
         for(int i = 0; i < N; i++)
         {
-            auto icluster = nofaith.getClusterLikelihoods(i, genolikes, transRate);
-            llike.emplace_back(poolit.enqueue(&Admixture::updateQ, &admixer, i, icluster));
+            llike.emplace_back(poolit.enqueue(&Admixture::runWithClusterLikelihoods, &admixer, i, std::ref(genolikes),
+                                              std::ref(transRate), std::ref(nofaith.PI), std::ref(nofaith.F)));
         }
         loglike = 0;
-        for(auto && l : llike) loglike += l.get();
+        for(auto && ll : llike) loglike += ll.get();
         llike.clear(); // clear future and renew
         admixer.updateF();
         log.done(tm.date()) << "iteration " << setw(2) << it << ", log likelihoods: " << std::fixed << loglike << "; "
                             << tm.reltime() << " ms" << endl;
     }
-    log.done(tm.date() + "-> admixture inference done\n");
+    log.done(tm.date()) << "admixture done and outputting.\n";
     log.warn(tm.date() + "-> have a nice day, bye!\n");
 
     return 0;
