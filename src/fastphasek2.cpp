@@ -77,7 +77,7 @@ int main(int argc, char * argv[])
     }
     Timer tm;
     log.warn(tm.date() + "-> program start\n");
-    log.cao.precision(4);
+    // log.cao.precision(4);
 
     // ========= core calculation part ===========================================
     int N, M;
