@@ -45,14 +45,9 @@ inline Admixture::~Admixture() {}
 
 inline void Admixture::initIteration()
 {
-    Ekg.setZero(M * K, N);
-    Ekc.setZero(M * C, K);
+    Ekg.setZero(N * K, M);
+    Ekc.setZero(K * C, M);
     NormF.setZero(K);
-}
-
-inline void Admixture::updateF()
-{
-    F = Ekc.rowwise() / NormF.transpose();
 }
 
 /*
@@ -192,10 +187,10 @@ inline double Admixture::runWithClusterLikelihoods(int ind,
                     {
                         k12 = k1 * K + k2;
                         std::lock_guard<std::mutex> lock(mutex_it);
-                        Ekg(k1 * M + s, ind) += w(c12, k12) / norm;
-                        Ekg(k2 * M + s, ind) += w(c12, k12) / norm;
-                        Ekc(s * C + c1, k1) += w(c12, k12) / norm;
-                        Ekc(s * C + c2, k2) += w(c12, k12) / norm;
+                        Ekg(ind * K + k1, s) += w(c12, k12) / norm;
+                        Ekg(ind * K + k2, s) += w(c12, k12) / norm;
+                        Ekc(k1 * C + c1, s) += w(c12, k12) / norm;
+                        Ekc(k2 * C + c2, s) += w(c12, k12) / norm;
                         NormF(k1) += w(c12, k12) / norm;
                         NormF(k2) += w(c12, k12) / norm;
                     }
@@ -204,9 +199,14 @@ inline double Admixture::runWithClusterLikelihoods(int ind,
         }
     }
     // update Q
-    for(k1 = 0; k1 < K; k1++) Q(k1, ind) = Ekg.middleRows(k1 * M, M).col(ind).sum() / (2 * M);
+    for(k1 = 0; k1 < K; k1++) Q(k1, ind) = Ekg.row(ind * K + k1).sum() / (2 * M);
 
     return norm;
+}
+
+inline void Admixture::updateF()
+{
+    F = Ekc.reshaped(M * C, K).rowwise() / NormF.transpose();
 }
 
 /*
