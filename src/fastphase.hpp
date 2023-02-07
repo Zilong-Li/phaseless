@@ -12,7 +12,7 @@ class FastPhaseK2
     std::mutex mutex_it; // in case of race condition
 
   public:
-    FastPhaseK2(int n, int m, int c, int seed, std::string out);
+    FastPhaseK2(int n, int m, int c, int seed);
     ~FastPhaseK2();
 
     // SHARED VARIBALES
@@ -23,6 +23,7 @@ class FastPhaseK2
     ArrDouble2D F; // M x C
     ArrDouble2D Ekg; // M x C x 2
 
+    void openClusterFile(std::string out);
     void initIteration();
     void updateClusterFreqPI(double tol);
     void updateAlleleFreqWithinCluster(double tol);
@@ -32,14 +33,9 @@ class FastPhaseK2
                                bool call_geno);
 };
 
-inline FastPhaseK2::FastPhaseK2(int n, int m, int c, int seed, std::string out)
+inline FastPhaseK2::FastPhaseK2(int n, int m, int c, int seed)
 : N(n), M(m), C(c), C2(c * c), GP(M * 3, N), Ek(M, C), Ekg(M, C * 2)
 {
-    ofs.open(out, std::ios::binary);
-    if(!ofs) throw std::runtime_error(out + ": " + strerror(errno));
-    ofs.write((char *)&N, 4);
-    ofs.write((char *)&M, 4);
-    ofs.write((char *)&C, 4);
     auto rng = std::default_random_engine{};
     rng.seed(seed);
     F = RandomUniform<ArrDouble2D, std::default_random_engine>(M, C, rng, 0.0, 1.0);
@@ -49,7 +45,16 @@ inline FastPhaseK2::FastPhaseK2(int n, int m, int c, int seed, std::string out)
 
 inline FastPhaseK2::~FastPhaseK2()
 {
-    ofs.close();
+    if(ofs.is_open()) ofs.close();
+}
+
+inline void FastPhaseK2::openClusterFile(std::string out)
+{
+    ofs.open(out, std::ios::binary);
+    if(!ofs) throw std::runtime_error(out + ": " + strerror(errno));
+    ofs.write((char *)&N, 4);
+    ofs.write((char *)&M, 4);
+    ofs.write((char *)&C, 4);
 }
 
 inline void FastPhaseK2::initIteration()
@@ -230,9 +235,11 @@ inline double FastPhaseK2::forwardAndBackwards(int ind,
     {
         std::lock_guard<std::mutex> lock(mutex_it);
         GP.col(ind) = geno;
-        // output likelihood of each cluster
-        ArrDouble2D likeCluster = (LikeBackwardInd * LikeForwardInd).transpose();
-        ofs.write((char *)likeCluster.data(), M * C2 * 8);
+        if(ofs.is_open()) // output likelihood of each cluster
+        {
+            ArrDouble2D likeCluster = (LikeBackwardInd * LikeForwardInd).transpose();
+            ofs.write((char *)likeCluster.data(), M * C2 * 8);
+        }
     }
 
     return indLogLikeForwardAll;

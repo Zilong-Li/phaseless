@@ -90,10 +90,11 @@ int main(int argc, char * argv[])
     log.done(tm.date()) << "parsing input -> N:" << N << ", M:" << M << ", C:" << C << "; " << tm.reltime()
                         << " ms" << endl;
     auto transRate = calc_transRate(markers, C);
+    nthreads = nthreads < N ? nthreads : N;
 
     double loglike{0};
-    FastPhaseK2 nofaith(N, M, C, seed, out_cluster);
-    nthreads = nthreads < N ? nthreads : N;
+    FastPhaseK2 nofaith(N, M, C, seed);
+    nofaith.openClusterFile(out_cluster);
     ThreadPool poolit(nthreads);
     vector<future<double>> llike;
     for(int it = 0; it < niters + 1; it++)
