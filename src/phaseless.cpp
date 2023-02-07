@@ -36,7 +36,8 @@ int main(int argc, char * argv[])
                   << "     -c      number of ancestral clusters\n"
                   << "     -f      input vcf/bcf format\n"
                   << "     -g      gziped beagle format\n"
-                  << "     -i      number of iterations\n"
+                  << "     -i      number of iterations of admixture [100]\n"
+                  << "     -I      number of iterations of imputation [40]\n"
                   << "     -k      number of ancestry\n"
                   << "     -n      number of threads\n"
                   << "     -o      output compressed/uncompressed vcf/bcf\n"
@@ -51,7 +52,7 @@ int main(int argc, char * argv[])
 
     std::string in_beagle, in_vcf, out_vcf, out_admixture, out_cluster;
     std::string samples = "-", region = "";
-    int K{0}, C{0}, niters{40}, nthreads{4}, seed{1};
+    int K{0}, C{0}, niters_admix{100}, niters_impute{40}, nthreads{4}, seed{1};
     double tol{1e-6};
     for(size_t i = 0; i < args.size(); i++)
     {
@@ -62,7 +63,8 @@ int main(int argc, char * argv[])
         if(args[i] == "-o") out_vcf = args[++i];
         if(args[i] == "-q") out_admixture = args[++i];
         if(args[i] == "-g") in_beagle = args[++i];
-        if(args[i] == "-i") niters = stoi(args[++i]);
+        if(args[i] == "-i") niters_admix = stoi(args[++i]);
+        if(args[i] == "-I") niters_impute = stoi(args[++i]);
         if(args[i] == "-n") nthreads = stoi(args[++i]);
         if(args[i] == "-r") region = args[++i];
         if(args[i] == "-s") samples = args[++i];
@@ -71,7 +73,7 @@ int main(int argc, char * argv[])
     }
     assert((K > 0) && (C > 0) && (C > K));
 
-    Logger log(out_vcf + ".log");
+    Logger log(out_admixture + ".log");
     log.cao << "Options in effect:\n";
     for(size_t i = 0; i < args.size(); i++) // print out options in effect
     {
@@ -89,7 +91,6 @@ int main(int argc, char * argv[])
     DoubleVec1D genolikes;
     IntVec1D markers;
     StringVec1D sampleids, chrs;
-
     tm.clock();
     read_beagle_genotype_likelihoods(in_beagle, genolikes, sampleids, chrs, markers, N, M);
     log.done(tm.date()) << "parsing input -> N:" << N << ", M:" << M << ", C:" << C << "; " << tm.reltime()
@@ -102,13 +103,13 @@ int main(int argc, char * argv[])
     if(!out_cluster.empty()) nofaith.openClusterFile(out_cluster);
     ThreadPool poolit(nthreads);
     vector<future<double>> llike;
-    for(int it = 0; it < niters + 1; it++)
+    for(int it = 0; it <= niters_impute; it++)
     {
         tm.clock();
         nofaith.initIteration();
         for(int i = 0; i < N; i++)
         {
-            if(it == niters)
+            if(it == niters_impute)
                 llike.emplace_back(poolit.enqueue(&FastPhaseK2::forwardAndBackwards, &nofaith, i,
                                                   std::ref(genolikes), std::ref(transRate), true));
             else
@@ -127,7 +128,8 @@ int main(int argc, char * argv[])
     log.done(tm.date()) << "imputation done and outputting.\n";
     log.warn(tm.date() + "-> running admixture\n");
     Admixture admixer(N, M, C, K, seed);
-    for(int it = 0; it < niters + 1; it++)
+    double loglike_prev = 0, diff;
+    for(int it = 0; it <= niters_admix; it++)
     {
         admixer.initIteration();
         for(int i = 0; i < N; i++)
@@ -139,9 +141,12 @@ int main(int argc, char * argv[])
         loglike = 0;
         for(auto && ll : llike) loglike += ll.get();
         llike.clear(); // clear future and renew
+        diff = loglike - loglike_prev;
+        log.done(tm.date()) << "iteration " << setw(3) << it << ", log likelihoods: " << std::fixed << loglike
+                            << ", diff=" << diff << ". " << tm.reltime() << " ms" << endl;
+        if(diff > 0 && diff < 0.1) break;
+        loglike_prev = loglike;
         admixer.updateF();
-        log.done(tm.date()) << "iteration " << setw(2) << it << ", log likelihoods: " << std::fixed << loglike
-                            << "; " << tm.reltime() << " ms" << endl;
     }
     admixer.writeQ(out_admixture);
     log.done(tm.date()) << "admixture done and outputting.\n";
