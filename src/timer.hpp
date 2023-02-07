@@ -33,7 +33,8 @@ inline void Timer::clock()
 
 inline unsigned int Timer::reltime()
 {
-    return std::chrono::duration_cast<std::chrono::milliseconds>(std::chrono::high_resolution_clock::now() - prev_clock)
+    return std::chrono::duration_cast<std::chrono::milliseconds>(std::chrono::high_resolution_clock::now()
+                                                                 - prev_clock)
         .count();
 }
 

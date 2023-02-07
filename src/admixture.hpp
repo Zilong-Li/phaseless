@@ -111,9 +111,10 @@ inline double Admixture::runWithClusterLikelihoods(int ind,
             for(k2 = 0; k2 < C; k2++)
             {
                 k12 = k1 * C + k2;
-                LikeForwardInd(k12, s) = emitDip(s, k12)
-                                         * (LikeForwardInd(k12, s - 1) * transRate(0, s) + PI(s, k1) * sumTmp1(k2)
-                                            + PI(s, k2) * sumTmp2(k1) + PI(s, k1) * PI(s, k2) * constTmp);
+                LikeForwardInd(k12, s) =
+                    emitDip(s, k12)
+                    * (LikeForwardInd(k12, s - 1) * transRate(0, s) + PI(s, k1) * sumTmp1(k2)
+                       + PI(s, k2) * sumTmp2(k1) + PI(s, k1) * PI(s, k2) * constTmp);
             }
         }
         cs(s) = 1 / LikeForwardInd.col(s).sum();
@@ -173,8 +174,8 @@ inline double Admixture::runWithClusterLikelihoods(int ind,
                     for(c2 = 0; c2 < C; c2++)
                     {
                         c12 = c1 * C + c2;
-                        w(c12, k12) =
-                            icluster(c12, s) * F(s * C + c1, k1) * Q(k1, ind) * F(s * C + c2, k2) * Q(k2, ind);
+                        w(c12, k12) = icluster(c12, s) * F(s * C + c1, k1) * Q(k1, ind) * F(s * C + c2, k2)
+                                      * Q(k2, ind);
                         norm += w(c12, k12);
                     }
                 }
@@ -230,8 +231,8 @@ inline double Admixture::updateQ(int ind, ArrDouble2D icluster)
                     for(c2 = 0; c2 < C; c2++)
                     {
                         c12 = c1 * C + c2;
-                        w(c12, k12) =
-                            icluster(c12, s) * F(s * C + c1, k1) * Q(k1, ind) * F(s * C + c2, k2) * Q(k2, ind);
+                        w(c12, k12) = icluster(c12, s) * F(s * C + c1, k1) * Q(k1, ind) * F(s * C + c2, k2)
+                                      * Q(k2, ind);
                         norm += w(c12, k12);
                     }
                 }
@@ -254,7 +255,8 @@ inline double Admixture::updateQ(int ind, ArrDouble2D icluster)
                     {
                         k12 = k1 * K + k2;
                         // w(c12, k12) =
-                        //     icluster(c12, s) * F(s * C + c1, k1) * Q(k1, ind) * F(s * C + c2, k2) * Q(k2, ind);
+                        //     icluster(c12, s) * F(s * C + c1, k1) * Q(k1, ind) * F(s * C + c2, k2) * Q(k2,
+                        //     ind);
                         std::lock_guard<std::mutex> lock(mutex_it);
                         Ekg(k1 * M + s, ind) += w(c12, k12) / norm;
                         Ekg(k2 * M + s, ind) += w(c12, k12) / norm;

@@ -27,7 +27,10 @@ class FastPhaseK2
     ArrDouble2D getClusterLikelihoods(int ind, const DoubleVec1D & GL, const ArrDouble2D & transRate);
     void updateClusterFreqPI(double tol);
     void updateAlleleFreqWithinCluster(double tol);
-    double forwardAndBackwards(int ind, const DoubleVec1D & GL, const ArrDouble2D & transRate, bool call_geno);
+    double forwardAndBackwards(int ind,
+                               const DoubleVec1D & GL,
+                               const ArrDouble2D & transRate,
+                               bool call_geno);
 };
 
 inline FastPhaseK2::FastPhaseK2(int n, int m, int c, int seed, const std::string & out)
@@ -62,7 +65,9 @@ inline void FastPhaseK2::initIteration()
 ** @param transRate (x^2, x(1-x), (1-x)^2),M x 3
 ** @return cluster likelihoods
 */
-inline ArrDouble2D FastPhaseK2::getClusterLikelihoods(int ind, const DoubleVec1D & GL, const ArrDouble2D & transRate)
+inline ArrDouble2D FastPhaseK2::getClusterLikelihoods(int ind,
+                                                      const DoubleVec1D & GL,
+                                                      const ArrDouble2D & transRate)
 {
     Eigen::Map<const ArrDouble2D> gli(GL.data() + ind * M * 3, 3, M);
     auto emitDip = emissionCurIterInd(gli, F, false);
@@ -110,9 +115,10 @@ inline ArrDouble2D FastPhaseK2::getClusterLikelihoods(int ind, const DoubleVec1D
             for(k2 = 0; k2 < C; k2++)
             {
                 k12 = k1 * C + k2;
-                LikeForwardInd(k12, s) = emitDip(s, k12)
-                                         * (LikeForwardInd(k12, s - 1) * transRate(0, s) + PI(s, k1) * sumTmp1(k2)
-                                            + PI(s, k2) * sumTmp2(k1) + PI(s, k1) * PI(s, k2) * constTmp);
+                LikeForwardInd(k12, s) =
+                    emitDip(s, k12)
+                    * (LikeForwardInd(k12, s - 1) * transRate(0, s) + PI(s, k1) * sumTmp1(k2)
+                       + PI(s, k2) * sumTmp2(k1) + PI(s, k1) * PI(s, k2) * constTmp);
             }
         }
         cs(s) = 1 / LikeForwardInd.col(s).sum();
@@ -220,9 +226,10 @@ inline double FastPhaseK2::forwardAndBackwards(int ind,
             for(k2 = 0; k2 < C; k2++)
             {
                 k12 = k1 * C + k2;
-                LikeForwardInd(k12, s) = emitDip(s, k12)
-                                         * (LikeForwardInd(k12, s - 1) * transRate(0, s) + PI(s, k1) * sumTmp1(k2)
-                                            + PI(s, k2) * sumTmp2(k1) + PI(s, k1) * PI(s, k2) * constTmp);
+                LikeForwardInd(k12, s) =
+                    emitDip(s, k12)
+                    * (LikeForwardInd(k12, s - 1) * transRate(0, s) + PI(s, k1) * sumTmp1(k2)
+                       + PI(s, k2) * sumTmp2(k1) + PI(s, k1) * PI(s, k2) * constTmp);
             }
         }
         cs(s) = 1 / LikeForwardInd.col(s).sum();
@@ -294,7 +301,8 @@ inline double FastPhaseK2::forwardAndBackwards(int ind,
                 for(g2 = 0; g2 < 2; g2++)
                 {
                     g12 = g1 * 2 + g2;
-                    ind_post_z_g.col(g12) = gli.row(g1 + g2).transpose() * (g1 * F.col(k1) + (1 - g1) * (1 - F.col(k1)))
+                    ind_post_z_g.col(g12) = gli.row(g1 + g2).transpose()
+                                            * (g1 * F.col(k1) + (1 - g1) * (1 - F.col(k1)))
                                             * (g2 * F.col(k2) + (1 - g2) * (1 - F.col(k2)));
                     tmpSum += ind_post_z_g.col(g12);
                 }
@@ -473,14 +481,16 @@ inline double FastPhaseK4::forwardAndBackwards(int ind,
     protect_me = 0;
     for(s = M - 2; s >= 0; s--)
     {
-        auto likeBackwardTmp = Eigen::exp(emitDip.row(s + 1).transpose() + logLikeBackwardInd.col(s + 1) - protect_me);
+        auto likeBackwardTmp =
+            Eigen::exp(emitDip.row(s + 1).transpose() + logLikeBackwardInd.col(s + 1) - protect_me);
         for(k1 = 0; k1 < C; k1++)
         {
             for(k2 = 0; k2 < C; k2++)
             {
                 k12 = k1 * C + k2;
                 logLikeBackwardInd(k12, s) =
-                    protect_me + log((likeBackwardTmp * transDip(s + 1, Eigen::seqN(k12, C2, C2)).transpose()).sum());
+                    protect_me
+                    + log((likeBackwardTmp * transDip(s + 1, Eigen::seqN(k12, C2, C2)).transpose()).sum());
             }
         }
         // protect_me = logLikeBackwardInd.row(s).maxCoeff();
@@ -491,7 +501,8 @@ inline double FastPhaseK4::forwardAndBackwards(int ind,
 
     // ======== post decoding get p(Z|X, G) ===========
     // ArrDouble2D indPostProbsZ; // post probabilities for ind i, M x (C x C)
-    ArrDouble2D indPostProbsZ = (logLikeBackwardInd + logLikeForwardInd - indLogLikeForwardAll).exp().transpose();
+    ArrDouble2D indPostProbsZ =
+        (logLikeBackwardInd + logLikeForwardInd - indLogLikeForwardAll).exp().transpose();
     // ======== post decoding get p(Z,G|X, theta) ===========
     // ArrDouble2D indPostProbsZandG, M x (C x C x 2 x 2)
     ArrDouble2D indPostProbsZandG(M, C2 * 4);

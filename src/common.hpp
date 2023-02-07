@@ -22,7 +22,8 @@ inline MatrixType RandomUniform(const Eigen::Index numRows,
                                 double a,
                                 double b)
 {
-    std::uniform_real_distribution<typename MatrixType::Scalar> uniform_real_distribution{a, b}; // or using 0.05, 0.95
+    std::uniform_real_distribution<typename MatrixType::Scalar> uniform_real_distribution{
+        a, b}; // or using 0.05, 0.95
     const auto uniform{[&](typename MatrixType::Scalar) { return uniform_real_distribution(engine); }};
     return MatrixType::NullaryExpr(numRows, numCols, uniform);
 };

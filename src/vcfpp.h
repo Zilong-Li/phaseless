@@ -11,8 +11,8 @@
  *
  * \section intro_sec Introduction
  *
- * This project https://github.com/Zilong-Li/vcfpp introduces a single C++ file as interface to the basic htslib, which
- * can be easily included in a C++ program for scripting high-performance genomic analyses.
+ * This project https://github.com/Zilong-Li/vcfpp introduces a single C++ file as interface to the basic
+ * htslib, which can be easily included in a C++ program for scripting high-performance genomic analyses.
  *
  * - vcfpp.BcfHeader keeps track of the header information in  VCF/BCF
  * - vcfpp.BcfRecord keeps track of the variants information in VCF/BCF
@@ -21,9 +21,10 @@
  *
  * \section install_sec Installation
  *
- * - <EM> include "vcfpp.h" </EM> to your program and compile it by <EM> g++ my.cpp -std=c++11 -Wall -I. -lhts -lz -lm
- * -lbz2 -llzma -lcurl </EM>
- * - make sure you have https://github.com/samtools/htslib installed on your system and the it is in your environment.
+ * - <EM> include "vcfpp.h" </EM> to your program and compile it by <EM> g++ my.cpp -std=c++11 -Wall -I. -lhts
+ * -lz -lm -lbz2 -llzma -lcurl </EM>
+ * - make sure you have https://github.com/samtools/htslib installed on your system and the it is in your
+ * environment.
  *
  *
  * \copyright Copyright (C) 2022 Zilong Li . This project is governed by the LICENSE file in
@@ -67,9 +68,9 @@ using isValidInfo =
                             bool>::type;
 
 template<typename T>
-using isInfoVector =
-    typename std::enable_if<std::is_same<T, std::vector<int>>::value || std::is_same<T, std::vector<float>>::value,
-                            bool>::type;
+using isInfoVector = typename std::enable_if<std::is_same<T, std::vector<int>>::value
+                                                 || std::is_same<T, std::vector<float>>::value,
+                                             bool>::type;
 
 template<typename T>
 using isScalar = typename std::enable_if<std::is_same<T, int>::value || std::is_same<T, float>::value
@@ -80,16 +81,16 @@ template<typename T>
 using isString = typename std::enable_if<std::is_same<T, std::string>::value, void>::type;
 
 template<typename T>
-using isValidGT =
-    typename std::enable_if<std::is_same<T, std::vector<bool>>::value || std::is_same<T, std::vector<char>>::value
-                                || std::is_same<T, std::vector<int>>::value,
-                            bool>::type;
+using isValidGT = typename std::enable_if<std::is_same<T, std::vector<bool>>::value
+                                              || std::is_same<T, std::vector<char>>::value
+                                              || std::is_same<T, std::vector<int>>::value,
+                                          bool>::type;
 
 template<typename T>
-using isFormatVector =
-    typename std::enable_if<std::is_same<T, std::vector<float>>::value || std::is_same<T, std::vector<char>>::value
-                                || std::is_same<T, std::vector<int>>::value,
-                            bool>::type;
+using isFormatVector = typename std::enable_if<std::is_same<T, std::vector<float>>::value
+                                                   || std::is_same<T, std::vector<char>>::value
+                                                   || std::is_same<T, std::vector<int>>::value,
+                                               bool>::type;
 
 template<typename T>
 isScalar<T> isMissing(T const & v)
@@ -153,7 +154,8 @@ class BcfHeader
                         const std::string & type,
                         const std::string & description)
     {
-        addLine("##INFO=<ID=" + id + ",Number=" + number + ",Type=" + type + ",Description=\"" + description + "\">");
+        addLine("##INFO=<ID=" + id + ",Number=" + number + ",Type=" + type + ",Description=\"" + description
+                + "\">");
     }
 
     /** @brief add FORMAT field to header
@@ -167,7 +169,8 @@ class BcfHeader
                           const std::string & type,
                           const std::string & description)
     {
-        addLine("##FORMAT=<ID=" + id + ",Number=" + number + ",Type=" + type + ",Description=\"" + description + "\">");
+        addLine("##FORMAT=<ID=" + id + ",Number=" + number + ",Type=" + type + ",Description=\"" + description
+                + "\">");
     }
 
     /**
@@ -364,12 +367,13 @@ class BcfRecord
         ndst = 0;
         ret = bcf_get_genotypes(header.hdr, line, &gts, &ndst);
         if(ret <= 1) return false; // gt not present
-        // if nploidy is not set manually. find the max nploidy using the first variant (eg. 2) resize v as max(nploidy)
+        // if nploidy is not set manually. find the max nploidy using the first variant (eg. 2) resize v as
+        // max(nploidy)
         // * nsamples (ret) NOTE: if ret == nsamples and only one sample then haploid
         if(ret != nploidy * nsamples && nploidy > 0)
         {
-            // rare case if noploidy is set manually. eg. only one sample. the first variant is '1' but the second is
-            // '1/0'. ret = 1 but nploidy should be 2
+            // rare case if noploidy is set manually. eg. only one sample. the first variant is '1' but the
+            // second is '1/0'. ret = 1 but nploidy should be 2
             v.resize(nploidy * nsamples);
         }
         else
@@ -719,8 +723,8 @@ class BcfRecord
     }
 
     /**
-     * @brief set tag for a single sample in FORMAT using given singular value. this works only when there is one
-     * sample in the vcf
+     * @brief set tag for a single sample in FORMAT using given singular value. this works only when there is
+     * one sample in the vcf
      * @param tag valid tag name in FORMAT column declared in the VCF header
      * @param v valid input include int, float or double
      * @return bool

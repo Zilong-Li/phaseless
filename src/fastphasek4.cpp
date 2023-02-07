@@ -25,7 +25,8 @@ int main(int argc, char * argv[])
     {
         std::cout << "Author: Zilong-Li (zilong.dk@gmail.com)\n"
                   << "Usage example:\n"
-                  << "     " + (std::string)argv[0] + " -g beagle.gz -c 10 -i 20 -n 10 -o out.vcf.gz -b cluster.bin\n"
+                  << "     " + (std::string)argv[0]
+                         + " -g beagle.gz -c 10 -i 20 -n 10 -o out.vcf.gz -b cluster.bin\n"
                   << "\nOptions:\n"
                   << "     -b      binary file with clusters likelihood\n"
                   << "     -c      number of ancestral clusters\n"
@@ -86,8 +87,8 @@ int main(int argc, char * argv[])
 
     tm.clock();
     read_beagle_genotype_likelihoods(in_beagle, genolikes, sampleids, chrs, markers, N, M);
-    log.done(tm.date()) << "parsing input -> N:" << N << ", M:" << M << ", C:" << C << "; " << tm.reltime() << " ms"
-                        << endl;
+    log.done(tm.date()) << "parsing input -> N:" << N << ", M:" << M << ", C:" << C << "; " << tm.reltime()
+                        << " ms" << endl;
     auto distRate = calc_distRate(markers, C);
 
     double loglike{0};
@@ -108,19 +109,21 @@ int main(int argc, char * argv[])
         {
             // loglike += nofaith.forwardAndBackwards(i, genolikes, postProbsZ, postProbsZandG);
             if(it == niters)
-                llike.emplace_back(poolit.enqueue(&FastPhaseK4::forwardAndBackwards, &nofaith, i, std::ref(genolikes),
-                                                  std::ref(postProbsZ), std::ref(postProbsZandG), true));
+                llike.emplace_back(poolit.enqueue(&FastPhaseK4::forwardAndBackwards, &nofaith, i,
+                                                  std::ref(genolikes), std::ref(postProbsZ),
+                                                  std::ref(postProbsZandG), true));
             else
-                llike.emplace_back(poolit.enqueue(&FastPhaseK4::forwardAndBackwards, &nofaith, i, std::ref(genolikes),
-                                                  std::ref(postProbsZ), std::ref(postProbsZandG), false));
+                llike.emplace_back(poolit.enqueue(&FastPhaseK4::forwardAndBackwards, &nofaith, i,
+                                                  std::ref(genolikes), std::ref(postProbsZ),
+                                                  std::ref(postProbsZandG), false));
         }
         loglike = 0;
         for(auto && l : llike) loglike += l.get();
         llike.clear(); // clear future and renew
         nofaith.updateClusterFreqPI(postProbsZ, tol);
         nofaith.updateAlleleFreqWithinCluster(postProbsZandG, tol);
-        log.done(tm.date()) << "iteration " << setw(2) << it << ", log likelihoods: " << std::fixed << loglike << "; "
-                            << tm.reltime() << " ms" << endl;
+        log.done(tm.date()) << "iteration " << setw(2) << it << ", log likelihoods: " << std::fixed << loglike
+                            << "; " << tm.reltime() << " ms" << endl;
     }
 
     write_bcf_genotype_probability(nofaith.GP.data(), out_vcf, in_vcf, sampleids, markers, chrs[0], N, M);
