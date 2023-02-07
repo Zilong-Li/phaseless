@@ -46,8 +46,10 @@ int main(int argc, char * argv[])
         return 1;
     }
 
-    std::string out_cluster, in_beagle = "", in_vcf = "", out_vcf = "", samples = "-", region = "";
-    int C{3}, niters{1}, nthreads{4}, seed{1};
+    std::string in_beagle, in_vcf, out_vcf, out_cluster;
+    std::string samples = "-", region = "";
+    int C;
+    int niters{40}, nthreads{4}, seed{1};
     double tol{1e-6};
     for(size_t i = 0; i < args.size(); i++)
     {

@@ -40,6 +40,7 @@ int main(int argc, char * argv[])
                   << "     -k      number of ancestry\n"
                   << "     -n      number of threads\n"
                   << "     -o      output compressed/uncompressed vcf/bcf\n"
+                  << "     -q      output estimated ancestry proportion\n"
                   << "     -r      region in vcf/bcf to subset\n"
                   << "     -s      samples in vcf/bcf to subset\n"
                   << "     -seed   for reproducing results [1]\n"
@@ -48,8 +49,10 @@ int main(int argc, char * argv[])
         return 1;
     }
 
-    std::string out_cluster, in_beagle = "", in_vcf = "", out_vcf = "", samples = "-", region = "";
-    int K, C, niters{1}, nthreads{4}, seed{1};
+    std::string in_beagle, in_vcf, out_vcf, out_admixture, out_cluster;
+    std::string samples = "-", region = "";
+    int K, C;
+    int niters{40}, nthreads{4}, seed{1};
     double tol{1e-6};
     for(size_t i = 0; i < args.size(); i++)
     {
@@ -58,6 +61,7 @@ int main(int argc, char * argv[])
         if(args[i] == "-k") K = stoi(args[++i]);
         if(args[i] == "-f") in_vcf = args[++i];
         if(args[i] == "-o") out_vcf = args[++i];
+        if(args[i] == "-q") out_admixture = args[++i];
         if(args[i] == "-g") in_beagle = args[++i];
         if(args[i] == "-i") niters = stoi(args[++i]);
         if(args[i] == "-n") nthreads = stoi(args[++i]);
@@ -121,10 +125,9 @@ int main(int argc, char * argv[])
     }
     write_bcf_genotype_probability(nofaith.GP.data(), out_vcf, in_vcf, sampleids, markers, chrs[0], N, M);
     log.done(tm.date()) << "imputation done and outputting.\n";
-
     log.warn(tm.date() + "-> running admixture\n");
     Admixture admixer(N, M, C, K, seed);
-    for(int it = 0; it < niters; it++)
+    for(int it = 0; it < niters + 1; it++)
     {
         admixer.initIteration();
         for(int i = 0; i < N; i++)
@@ -140,6 +143,7 @@ int main(int argc, char * argv[])
         log.done(tm.date()) << "iteration " << setw(2) << it << ", log likelihoods: " << std::fixed << loglike
                             << "; " << tm.reltime() << " ms" << endl;
     }
+    admixer.writeQ(out_admixture);
     log.done(tm.date()) << "admixture done and outputting.\n";
     log.warn(tm.date() + "-> have a nice day, bye!\n");
 

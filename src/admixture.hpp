@@ -2,6 +2,7 @@
 #define ADMIXTURE_H_
 
 #include "common.hpp"
+#include <fstream>
 #include <iostream>
 #include <mutex>
 
@@ -20,14 +21,14 @@ class Admixture
     ArrDouble2D Ekc; // (K x C) x M, expected number of alleles per c per k
     ArrDouble2D NormF; // K x M
 
-    double updateQ(int ind, ArrDouble2D clusters);
+    void initIteration();
+    void updateF();
+    void writeQ(std::string out);
     double runWithClusterLikelihoods(int ind,
                                      const DoubleVec1D & GL,
                                      const ArrDouble2D & transRate,
                                      const ArrDouble2D & PI,
                                      const ArrDouble2D & F);
-    void updateF();
-    void initIteration();
 };
 
 inline Admixture::Admixture(int n, int m, int c, int k, int seed) : N(n), M(m), C(c), K(k)
@@ -147,7 +148,7 @@ inline double Admixture::runWithClusterLikelihoods(int ind,
     auto icluster = LikeForwardInd * LikeBackwardInd;
 
     //============= ready to update Q ============
-    double norm;
+    double norm = 0, llike = 0;
     int c1, c2, c12;
     ArrDouble2D w(C * C, K * K);
     ArrDouble2D Ekc_i = ArrDouble2D::Zero(K * C, M);
@@ -172,6 +173,7 @@ inline double Admixture::runWithClusterLikelihoods(int ind,
                 }
             }
         }
+        llike += log(norm);
         for(c1 = 0; c1 < C; c1++)
         {
             for(c2 = 0; c2 < C; c2++)
@@ -198,7 +200,7 @@ inline double Admixture::runWithClusterLikelihoods(int ind,
     std::lock_guard<std::mutex> lock(mutex_it); // sum over all samples
     Ekc += Ekc_i;
     NormF += NormF_i;
-    return norm;
+    return llike;
 }
 
 inline void Admixture::initIteration()
@@ -215,70 +217,12 @@ inline void Admixture::updateF()
     // for(int k = 0; k < K; k++) std::cout << FI.middleRows(k * C, C).colwise().sum() << "\n";
 }
 
-/*
-** @params icluster cluster likelihoods for one individual, C x C x M
-*/
-inline double Admixture::updateQ(int ind, ArrDouble2D icluster)
+inline void Admixture::writeQ(std::string out)
 {
-    double norm;
-    int s, k1, k2, k12, c1, c2, c12;
-    ArrDouble2D w(C * C, K * K);
-    // std::cout << std::this_thread::get_id() << ": " << ind << '\n';
-    for(s = 0; s < M; s++)
-    {
-        norm = 0;
-        for(k1 = 0; k1 < K; k1++)
-        {
-            for(k2 = 0; k2 < K; k2++)
-            {
-                k12 = k1 * K + k2;
-                for(c1 = 0; c1 < C; c1++)
-                {
-                    for(c2 = 0; c2 < C; c2++)
-                    {
-                        c12 = c1 * C + c2;
-                        w(c12, k12) = icluster(c12, s) * FI(s * C + c1, k1) * Q(k1, ind) * FI(s * C + c2, k2)
-                                      * Q(k2, ind);
-                        norm += w(c12, k12);
-                    }
-                }
-            }
-        }
-        // norm = (icluster.col(s)
-        //         * ((F.middleRows(s * C, C).matrix() * Q.col(ind).matrix())
-        //            * (F.middleRows(s * C, C).matrix() * Q.col(ind).matrix()).transpose())
-        //               .array()
-        //               .reshaped())
-        //            .sum();
-        for(c1 = 0; c1 < C; c1++)
-        {
-            for(c2 = 0; c2 < C; c2++)
-            {
-                c12 = c1 * C + c2;
-                for(k1 = 0; k1 < K; k1++)
-                {
-                    for(k2 = 0; k2 < K; k2++)
-                    {
-                        k12 = k1 * K + k2;
-                        // w(c12, k12) =
-                        //     icluster(c12, s) * F(s * C + c1, k1) * Q(k1, ind) * F(s * C + c2, k2) * Q(k2,
-                        //     ind);
-                        std::lock_guard<std::mutex> lock(mutex_it);
-                        Ekg(k1 * M + s, ind) += w(c12, k12) / norm;
-                        Ekg(k2 * M + s, ind) += w(c12, k12) / norm;
-                        Ekc(s * C + c1, k1) += w(c12, k12) / norm;
-                        Ekc(s * C + c2, k2) += w(c12, k12) / norm;
-                        NormF(k1) += w(c12, k12) / norm;
-                        NormF(k2) += w(c12, k12) / norm;
-                    }
-                }
-            }
-        }
-    }
-    // update Q
-    for(k1 = 0; k1 < K; k1++) Q(k1, ind) = Ekg.middleRows(k1 * M, M).col(ind).sum() / (2 * M);
-
-    return norm;
+    std::ofstream ofs(out);
+    if(!ofs) throw std::runtime_error(out + ": " + strerror(errno));
+    Q = (Q * 1e6).round() / 1e6;
+    ofs << std::fixed << Q.transpose() << "\n";
+    ofs.close();
 }
-
 #endif // ADMIXTURE_H_

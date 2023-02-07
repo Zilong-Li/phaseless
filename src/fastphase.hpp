@@ -12,7 +12,7 @@ class FastPhaseK2
     std::mutex mutex_it; // in case of race condition
 
   public:
-    FastPhaseK2(int n, int m, int c, int seed, const std::string & out);
+    FastPhaseK2(int n, int m, int c, int seed, std::string out);
     ~FastPhaseK2();
 
     // SHARED VARIBALES
@@ -33,7 +33,7 @@ class FastPhaseK2
                                bool call_geno);
 };
 
-inline FastPhaseK2::FastPhaseK2(int n, int m, int c, int seed, const std::string & out)
+inline FastPhaseK2::FastPhaseK2(int n, int m, int c, int seed, std::string out)
 : N(n), M(m), C(c), C2(c * c), GP(M * 3, N), Ek(M, C), Ekg(M, C * 2)
 {
     ofs.open(out, std::ios::binary);
@@ -378,7 +378,7 @@ class FastPhaseK4
     std::mutex mutex_it; // in case of race condition
 
   public:
-    FastPhaseK4(int n, int m, int c, int seed, const std::string & out);
+    FastPhaseK4(int n, int m, int c, int seed, std::string out);
     ~FastPhaseK4();
 
     // SHARED VARIBALES
@@ -401,7 +401,7 @@ class FastPhaseK4
                                bool call_geno = false);
 };
 
-inline FastPhaseK4::FastPhaseK4(int n, int m, int c, int seed, const std::string & out)
+inline FastPhaseK4::FastPhaseK4(int n, int m, int c, int seed, std::string out)
 : N(n), M(m), C(c), C2(c * c), GP(M * 3, N), transHap(M, C2), transDip(M, C2 * C2)
 {
     ofs.open(out, std::ios::binary);
