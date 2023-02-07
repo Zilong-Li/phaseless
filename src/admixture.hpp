@@ -14,10 +14,10 @@ class Admixture
     Admixture(int n, int m, int c, int k, int seed);
     ~Admixture();
     const int N, M, C, K; // C2 = C x C
-    ArrDouble2D F; // (M x C) x K
+    ArrDouble2D F; // (K x C) x M
     ArrDouble2D Q; // K x N
     ArrDouble2D Ekg; // (M x K) x N, expected number of alleles per k per n
-    ArrDouble2D Ekc; // (M x C) x K, expected number of alleles per c per k
+    ArrDouble2D Ekc; // (K x C) x M, expected number of alleles per c per k
     ArrDouble1D NormF; // K
 
     double updateQ(int ind, ArrDouble2D clusters);
@@ -34,11 +34,11 @@ inline Admixture::Admixture(int n, int m, int c, int k, int seed) : N(n), M(m), 
 {
     auto rng = std::default_random_engine{};
     rng.seed(seed);
-    F = RandomUniform<ArrDouble2D, std::default_random_engine>(M * C, K, rng, 0.05, 0.95);
-    // normalize it per snp per K
-    for(int s = 0; s < M; s++) F.middleRows(s * C, C).rowwise() /= F.middleRows(s * C, C).colwise().sum();
+    F = RandomUniform<ArrDouble2D, std::default_random_engine>(K * C, M, rng, 0.05, 0.95);
+    for(int k = 0; k < K; k++) // normalize it per snp per k
+        F.middleRows(k * C, C).rowwise() /= F.middleRows(k * C, C).colwise().sum();
     Q = RandomUniform<ArrDouble2D, std::default_random_engine>(K, N, rng, 0.05, 0.95);
-    Q = Q.rowwise() / Q.colwise().sum(); // normalize it per N individual
+    Q.rowwise() /= Q.colwise().sum(); // normalize it per individual
 }
 
 inline Admixture::~Admixture() {}
@@ -169,7 +169,7 @@ inline double Admixture::runWithClusterLikelihoods(int ind,
                     for(c2 = 0; c2 < C; c2++)
                     {
                         c12 = c1 * C + c2;
-                        w(c12, k12) = icluster(c12, s) * F(s * C + c1, k1) * Q(k1, ind) * F(s * C + c2, k2)
+                        w(c12, k12) = icluster(c12, s) * F(k1 * C + c1, s) * Q(k1, ind) * F(k2 * C + c2, s)
                                       * Q(k2, ind);
                         norm += w(c12, k12);
                     }
@@ -198,15 +198,16 @@ inline double Admixture::runWithClusterLikelihoods(int ind,
             }
         }
     }
-    // update Q
-    for(k1 = 0; k1 < K; k1++) Q(k1, ind) = Ekg.row(ind * K + k1).sum() / (2 * M);
+    // update Q, Q.colwise().sum() should be 1
+    for(int k = 0; k < K; k++) Q(k, ind) = Ekg.row(ind * K + k).sum() / (2 * M);
 
     return norm;
 }
 
 inline void Admixture::updateF()
 {
-    F = Ekc.reshaped(M * C, K).rowwise() / NormF.transpose();
+    for(int k = 0; k < K; k++) F.middleRows(k * C, C) = Ekc.middleRows(k * C, C) / NormF(k);
+    // std::cout << F.middleRows(1 * C, C).colwise().sum() << "\n";
 }
 
 /*
