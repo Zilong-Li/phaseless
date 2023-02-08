@@ -23,7 +23,7 @@ class Admixture
     void initIteration();
     void updateF();
     void writeQ(std::string out);
-    double runWithBigAss(int ind, const Phaser & phase, const std::unique_ptr<BigAss> & genome);
+    double runWithBigAss(int ind, const std::unique_ptr<BigAss> & genome);
     double runWithClusterLikelihoods(int ind,
                                      const MyFloat1D & GL,
                                      const MyArr2D & transRate,
@@ -45,7 +45,7 @@ inline Admixture::Admixture(int n, int m, int c, int k, int seed) : N(n), M(m), 
 
 inline Admixture::~Admixture() {}
 
-inline double Admixture::runWithBigAss(int ind, const Phaser & phase, const std::unique_ptr<BigAss> & genome)
+inline double Admixture::runWithBigAss(int ind, const std::unique_ptr<BigAss> & genome)
 {
     MyArr2D w(C * C, K * K);
     MyArr2D iEkc = MyArr2D::Zero(K * C, M);
@@ -56,9 +56,9 @@ inline double Admixture::runWithBigAss(int ind, const Phaser & phase, const std:
     for(int ic = 0; ic < genome->nchunks; ic++)
     {
 
-        auto icluster =
-            getClusterLikelihoods(ind, genome->gls[ic], phase.transRate[ic], phase.PI[ic], phase.F[ic]);
-        const int iM = icluster.cols();
+        int iM = genome->pos[ic].size();
+        auto icluster = getClusterLikelihoods(ind, iM, C, genome->gls[ic], genome->transRate[ic],
+                                              genome->PI[ic], genome->F[ic]);
         for(s = 0; s < iM; s++)
         {
             norm = 0;

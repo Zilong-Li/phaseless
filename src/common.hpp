@@ -4,6 +4,7 @@
 #include <Eigen/Dense>
 #include <iostream>
 #include <map>
+#include <memory>
 #include <random>
 #include <vector>
 
@@ -51,11 +52,7 @@ struct BigAss
     MyFloat2D gls; // store gl of each chunk
     StringVec1D sampleids, chrs;
     int chunksize, nsamples, nsnps, nchunks;
-};
-
-struct Phaser
-{
-    std::vector<MyArr2D> PI, F, transRate;
+    MyFloat2D PI, F, transRate;
 };
 
 // check initialize_sigmaCurrent_m in STITCH
@@ -133,6 +130,108 @@ inline auto getClusterLikelihoods(int ind,
     const int C = F.cols();
     // ======== forward and backward recursion ===========
     Eigen::Map<const MyArr2D> gli(GL.data() + ind * M * 3, 3, M);
+    auto emitDip = emissionCurIterInd(gli, F, false);
+    MyArr2D LikeForwardInd(C * C, M); // likelihood of forward recursion for ind i, not log
+    MyArr2D LikeBackwardInd(C * C, M); // likelihood of backward recursion for ind i, not log
+    MyArr1D sumTmp1(C), sumTmp2(C); // store sum over internal loop
+    MyArr1D cs(M);
+    double constTmp;
+
+    // ======== forward recursion ===========
+    int s{0};
+    for(k1 = 0; k1 < C; k1++)
+    {
+        for(k2 = 0; k2 < C; k2++)
+        {
+            k12 = k1 * C + k2;
+            LikeForwardInd(k12, s) = emitDip(s, k12) * PI(s, k1) * PI(s, k2);
+        }
+    }
+    cs(s) = 1 / LikeForwardInd.col(s).sum();
+    LikeForwardInd.col(s) *= cs(s); // normalize it
+    for(s = 1; s < M; s++)
+    {
+        sumTmp1.setZero();
+        sumTmp2.setZero();
+        for(k1 = 0; k1 < C; k1++)
+        {
+            for(k2 = 0; k2 < C; k2++)
+            {
+                k12 = k1 * C + k2;
+                sumTmp1(k1) += LikeForwardInd(k12, s - 1);
+                sumTmp2(k2) += LikeForwardInd(k12, s - 1);
+            }
+        }
+        constTmp = LikeForwardInd.col(s - 1).sum() * transRate(2, s);
+        sumTmp1 *= transRate(1, s);
+        sumTmp2 *= transRate(1, s);
+        for(k1 = 0; k1 < C; k1++)
+        {
+            for(k2 = 0; k2 < C; k2++)
+            {
+                k12 = k1 * C + k2;
+                LikeForwardInd(k12, s) =
+                    emitDip(s, k12)
+                    * (LikeForwardInd(k12, s - 1) * transRate(0, s) + PI(s, k1) * sumTmp1(k2)
+                       + PI(s, k2) * sumTmp2(k1) + PI(s, k1) * PI(s, k2) * constTmp);
+            }
+        }
+        cs(s) = 1 / LikeForwardInd.col(s).sum();
+        LikeForwardInd.col(s) *= cs(s); // normalize it
+    }
+    // ======== backward recursion ===========
+    s = M - 1;
+    LikeBackwardInd.col(s).setOnes(); // not log scale
+    LikeBackwardInd.col(s) *= cs(s);
+    for(s = M - 2; s >= 0; s--)
+    {
+        sumTmp1.setZero();
+        sumTmp2.setZero();
+        constTmp = 0;
+        auto beta_mult_emit = emitDip.row(s + 1).transpose() * LikeBackwardInd.col(s + 1);
+        for(k1 = 0; k1 < C; k1++)
+        {
+            for(k2 = 0; k2 < C; k2++)
+            {
+                k12 = k1 * C + k2;
+                sumTmp1(k1) += beta_mult_emit(k12) * PI(s + 1, k2);
+                sumTmp2(k2) += beta_mult_emit(k12) * PI(s + 1, k1);
+                constTmp += beta_mult_emit(k12) * PI(s + 1, k1) * PI(s + 1, k2);
+            }
+        }
+        sumTmp1 *= transRate(1, s + 1);
+        sumTmp2 *= transRate(1, s + 1);
+        constTmp *= transRate(2, s + 1);
+        for(k1 = 0; k1 < C; k1++)
+        {
+            for(k2 = 0; k2 < C; k2++)
+            {
+                k12 = k1 * C + k2;
+                LikeBackwardInd(k12, s) =
+                    beta_mult_emit(k12) * transRate(0, s + 1) + sumTmp1(k1) + sumTmp2(k2) + constTmp;
+            }
+        }
+        // apply scaling
+        LikeBackwardInd.col(s) *= cs(s);
+    }
+    MyArr2D icluster = LikeForwardInd * LikeBackwardInd; // C x C x M
+    return icluster;
+}
+
+inline auto getClusterLikelihoods(int ind,
+                                  int M,
+                                  int C,
+                                  const MyFloat1D & GL,
+                                  const MyFloat1D & transRate_,
+                                  const MyFloat1D & PI_,
+                                  const MyFloat1D & F_)
+{
+    int k1, k2, k12;
+    Eigen::Map<const MyArr2D> gli(GL.data() + ind * M * 3, 3, M);
+    Eigen::Map<const MyArr2D> transRate(transRate_.data(), 3, M);
+    Eigen::Map<const MyArr2D> PI(PI_.data(), M, C);
+    Eigen::Map<const MyArr2D> F(F_.data(), M, C);
+    // ======== forward and backward recursion ===========
     auto emitDip = emissionCurIterInd(gli, F, false);
     MyArr2D LikeForwardInd(C * C, M); // likelihood of forward recursion for ind i, not log
     MyArr2D LikeBackwardInd(C * C, M); // likelihood of backward recursion for ind i, not log
