@@ -18,7 +18,7 @@ int main(int argc, char * argv[])
                   << "     " + (std::string)argv[0]
                          + " -g beagle.gz -c 10 -i 20 -n 10 -o out.vcf.gz -b cluster.bin\n"
                   << "\nOptions:\n"
-                  << "     -b      binary file with clusters likelihood\n"
+                  << "     -b      save parameters in binary file\n"
                   << "     -c      number of ancestral clusters\n"
                   << "     -f      input vcf/bcf format\n"
                   << "     -g      gziped beagle format\n"
@@ -29,20 +29,21 @@ int main(int argc, char * argv[])
                   << "     -o      output compressed/uncompressed vcf/bcf\n"
                   << "     -q      output estimated ancestry proportion\n"
                   << "     -r      region in vcf/bcf to subset\n"
-                  << "     -s      samples in vcf/bcf to subset\n"
+                  << "     -s      size of each chunk in sites unit\n"
                   << "     -seed   for reproducing results [1]\n"
                   << "     -tol    tolerance value [1e-6]\n"
                   << std::endl;
         return 1;
     }
 
-    std::string in_beagle, in_vcf, out_vcf, out_admixture, out_cluster;
+    std::string in_beagle, in_vcf, out_vcf, out_admixture, out_bin;
     std::string samples = "-", region = "";
     int K{0}, C{0}, niters_admix{100}, niters_impute{40}, nthreads{4}, seed{1};
+    int chunksize{100};
     double tol{1e-6};
     for(size_t i = 0; i < args.size(); i++)
     {
-        if(args[i] == "-b") out_cluster = args[++i];
+        if(args[i] == "-b") out_bin = args[++i];
         if(args[i] == "-c") C = stoi(args[++i]);
         if(args[i] == "-k") K = stoi(args[++i]);
         if(args[i] == "-f") in_vcf = args[++i];
@@ -53,7 +54,7 @@ int main(int argc, char * argv[])
         if(args[i] == "-I") niters_impute = stoi(args[++i]);
         if(args[i] == "-n") nthreads = stoi(args[++i]);
         if(args[i] == "-r") region = args[++i];
-        if(args[i] == "-s") samples = args[++i];
+        if(args[i] == "-s") chunksize = stoi(args[++i]);
         if(args[i] == "-seed") seed = stoi(args[++i]);
         if(args[i] == "-tol") tol = stod(args[++i]);
     }
@@ -73,72 +74,77 @@ int main(int argc, char * argv[])
     // log.cao.precision(4);
 
     // ========= core calculation part ===========================================
-    int N, M;
-    MyFloat1D genolikes;
-    MapStringInt1D chrs_pos;
-    StringVec1D sampleids;
+    std::unique_ptr<BigAss> genome = std::make_unique<BigAss>(chunksize);
     tm.clock();
-    read_beagle_genotype_likelihoods(in_beagle, genolikes, sampleids, chrs_pos, N, M);
-    log.done(tm.date()) << "parsing input -> N:" << N << ", M:" << M << ", C:" << C << "; " << tm.reltime()
-                        << " ms" << endl;
-    assert(chrs_pos.size() == 1);
-    auto ichr = chrs_pos.begin()->first;
-    auto transRate = calc_transRate(chrs_pos.begin()->second, C);
-    nthreads = nthreads < N ? nthreads : N;
-
-    double loglike{0};
-    FastPhaseK2 nofaith(N, M, C, seed);
-    if(!out_cluster.empty()) nofaith.openClusterFile(out_cluster);
+    chunk_beagle_genotype_likelihoods(genome, in_beagle);
+    log.done(tm.date()) << "parsing input -> C:" << C << ", N:" << genome->nsamples << ", M:" << genome->nsnps
+                        << ", nchunks:" << genome->nchunks << "; " << tm.reltime() << " ms" << endl;
+    auto allthreads = std::thread::hardware_concurrency();
+    nthreads = nthreads < genome->nsamples ? nthreads : genome->nsamples;
+    nthreads = nthreads < allthreads ? nthreads : allthreads;
+    log.done(tm.date()) << allthreads << " concurrent threads are supported. use " << nthreads
+                        << " threads\n";
     ThreadPool poolit(nthreads);
     vector<future<double>> llike;
-    for(int it = 0; it <= niters_impute; it++)
-    {
-        tm.clock();
-        nofaith.initIteration();
-        for(int i = 0; i < N; i++)
-        {
-            if(it == niters_impute)
-                llike.emplace_back(poolit.enqueue(&FastPhaseK2::forwardAndBackwards, &nofaith, i,
-                                                  std::ref(genolikes), std::ref(transRate), true));
-            else
-                llike.emplace_back(poolit.enqueue(&FastPhaseK2::forwardAndBackwards, &nofaith, i,
-                                                  std::ref(genolikes), std::ref(transRate), false));
-        }
-        loglike = 0;
-        for(auto && ll : llike) loglike += ll.get();
-        llike.clear(); // clear future and renew
-        nofaith.updateClusterFreqPI(tol);
-        nofaith.updateAlleleFreqWithinCluster(tol);
-        log.done(tm.date()) << "iteration " << setw(2) << it << ", log likelihoods: " << std::fixed << loglike
-                            << "; " << tm.reltime() << " ms" << endl;
-    }
-    write_bcf_genotype_probability(nofaith.GP.data(), out_vcf, in_vcf, sampleids, chrs_pos[ichr], ichr, N, M);
-    log.done(tm.date()) << "imputation done and outputting.\n";
 
-    log.warn(tm.date() + "-> running admixture\n");
-    Admixture admixer(N, M, C, K, seed);
-    double loglike_prev = 0, diff;
-    for(int it = 0; it <= niters_admix; it++)
+    double loglike{0};
+    for(int ic = 0; ic < genome->nchunks; ic++)
     {
-        tm.clock();
-        admixer.initIteration();
-        for(int i = 0; i < N; i++)
-            llike.emplace_back(poolit.enqueue(&Admixture::runWithClusterLikelihoods, &admixer, i,
-                                              std::ref(genolikes), std::ref(transRate), std::ref(nofaith.PI),
-                                              std::ref(nofaith.F)));
-        loglike = 0;
-        for(auto && ll : llike) loglike += ll.get();
-        llike.clear(); // clear future and renew
-        diff = loglike - loglike_prev;
-        log.done(tm.date()) << "iteration " << setw(3) << it << ", log likelihoods: " << std::fixed << loglike
-                            << ", diff=" << diff << ". " << tm.reltime() << " ms" << endl;
-        if(diff > 0 && diff < 0.1) break;
-        loglike_prev = loglike;
-        admixer.updateF();
+        FastPhaseK2 nofaith(genome->nsamples, genome->pos[ic].size(), C, seed);
+        auto transRate = calc_transRate(genome->pos[ic], C);
+        for(int it = 0; it <= niters_impute; it++)
+        {
+            tm.clock();
+            nofaith.initIteration();
+            for(int i = 0; i < genome->nsamples; i++)
+            {
+                if(it == niters_impute)
+                    llike.emplace_back(poolit.enqueue(&FastPhaseK2::forwardAndBackwards, &nofaith, i,
+                                                      std::ref(genome->gls[ic]), std::ref(transRate), true));
+                else
+                    llike.emplace_back(poolit.enqueue(&FastPhaseK2::forwardAndBackwards, &nofaith, i,
+                                                      std::ref(genome->gls[ic]), std::ref(transRate), false));
+            }
+            loglike = 0;
+            for(auto && ll : llike) loglike += ll.get();
+            llike.clear(); // clear future and renew
+            nofaith.updateClusterFreqPI(tol);
+            nofaith.updateAlleleFreqWithinCluster(tol);
+            log.done(tm.date()) << setw(2) << "run chunk " << ic << ", iteration " << setw(2) << it
+                                << ", log likelihoods: " << std::fixed << loglike << "; " << tm.reltime()
+                                << " ms" << endl;
+        }
     }
-    admixer.writeQ(out_admixture);
-    log.done(tm.date()) << "admixture done and outputting.\n";
-    log.warn(tm.date() + "-> have a nice day, bye!\n");
+
+    // write_bcf_genotype_probability(nofaith.GP.data(), out_vcf, in_vcf, sampleids, chrs_pos[ichr], ichr, N,
+    // M);
+    // log.done(tm.date()) << "imputation done and outputting.\n";
+
+    // log.warn(tm.date() + "-> running admixture\n");
+    // Admixture admixer(N, M, C, K, seed);
+    // double loglike_prev = 0, diff;
+    // for(int it = 0; it <= niters_admix; it++)
+    // {
+    //     tm.clock();
+    //     admixer.initIteration();
+    //     for(int i = 0; i < N; i++)
+    //         llike.emplace_back(poolit.enqueue(&Admixture::runWithClusterLikelihoods, &admixer, i,
+    //                                           std::ref(genolikes), std::ref(transRate),
+    //                                           std::ref(nofaith.PI), std::ref(nofaith.F)));
+    //     loglike = 0;
+    //     for(auto && ll : llike) loglike += ll.get();
+    //     llike.clear(); // clear future and renew
+    //     diff = loglike - loglike_prev;
+    //     log.done(tm.date()) << "iteration " << setw(3) << it << ", log likelihoods: " << std::fixed <<
+    //     loglike
+    //                         << ", diff=" << diff << ". " << tm.reltime() << " ms" << endl;
+    //     if(diff > 0 && diff < 0.1) break;
+    //     loglike_prev = loglike;
+    //     admixer.updateF();
+    // }
+    // admixer.writeQ(out_admixture);
+    // log.done(tm.date()) << "admixture done and outputting.\n";
+    // log.warn(tm.date() + "-> have a nice day, bye!\n");
 
     return 0;
 }
