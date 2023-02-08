@@ -47,12 +47,15 @@ inline MatrixType RandomUniform(const Eigen::Index numRows,
 
 struct BigAss
 {
-    BigAss(int chunksize_) : chunksize(chunksize_){};
     IntVec2D pos; // store position of markers of each chunk
     MyFloat2D gls; // store gl of each chunk
     StringVec1D sampleids, chrs;
-    const int chunksize;
-    int nsamples, nsnps, nchunks;
+    int chunksize, nsamples, nsnps, nchunks;
+};
+
+struct Phaser
+{
+    std::vector<MyArr2D> PI, F, transRate;
 };
 
 // check initialize_sigmaCurrent_m in STITCH

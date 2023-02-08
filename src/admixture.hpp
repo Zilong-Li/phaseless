@@ -23,6 +23,7 @@ class Admixture
     void initIteration();
     void updateF();
     void writeQ(std::string out);
+    double runWithBigAss(int ind, const Phaser & phase, const std::unique_ptr<BigAss> & genome);
     double runWithClusterLikelihoods(int ind,
                                      const MyFloat1D & GL,
                                      const MyArr2D & transRate,
@@ -44,6 +45,73 @@ inline Admixture::Admixture(int n, int m, int c, int k, int seed) : N(n), M(m), 
 
 inline Admixture::~Admixture() {}
 
+inline double Admixture::runWithBigAss(int ind, const Phaser & phase, const std::unique_ptr<BigAss> & genome)
+{
+    MyArr2D w(C * C, K * K);
+    MyArr2D iEkc = MyArr2D::Zero(K * C, M);
+    MyArr2D iNormF = MyArr2D::Zero(K, M);
+    double norm = 0, llike = 0;
+    int c1, c2, c12;
+    int k1, k2, k12, s;
+    for(int ic = 0; ic < genome->nchunks; ic++)
+    {
+
+        auto icluster =
+            getClusterLikelihoods(ind, genome->gls[ic], phase.transRate[ic], phase.PI[ic], phase.F[ic]);
+        const int iM = icluster.cols();
+        for(s = 0; s < iM; s++)
+        {
+            norm = 0;
+            for(k1 = 0; k1 < K; k1++)
+            {
+                for(k2 = 0; k2 < K; k2++)
+                {
+                    k12 = k1 * K + k2;
+                    for(c1 = 0; c1 < C; c1++)
+                    {
+                        for(c2 = 0; c2 < C; c2++)
+                        {
+                            c12 = c1 * C + c2;
+                            w(c12, k12) = icluster(c12, s) * FI(k1 * C + c1, s) * Q(k1, ind)
+                                          * FI(k2 * C + c2, s) * Q(k2, ind);
+                            norm += w(c12, k12);
+                        }
+                    }
+                }
+            }
+            llike += log(norm);
+            for(c1 = 0; c1 < C; c1++)
+            {
+                for(c2 = 0; c2 < C; c2++)
+                {
+                    c12 = c1 * C + c2;
+                    for(k1 = 0; k1 < K; k1++)
+                    {
+                        for(k2 = 0; k2 < K; k2++)
+                        {
+                            k12 = k1 * K + k2;
+                            Ekg(ind * K + k1, s) += w(c12, k12) / norm;
+                            Ekg(ind * K + k2, s) += w(c12, k12) / norm;
+                            iEkc(k1 * C + c1, s) += w(c12, k12) / norm;
+                            iEkc(k2 * C + c2, s) += w(c12, k12) / norm;
+                            iNormF(k1, s) += w(c12, k12) / norm;
+                            iNormF(k2, s) += w(c12, k12) / norm;
+                        }
+                    }
+                }
+            }
+        }
+    }
+    // update Q, Q.colwise().sum() should be 1
+    for(int k = 0; k < K; k++) Q(k, ind) = Ekg.row(ind * K + k).sum() / (2 * M);
+    {
+        std::lock_guard<std::mutex> lock(mutex_it); // sum over all samples
+        Ekc += iEkc;
+        NormF += iNormF;
+    }
+    return llike;
+}
+
 /*
 ** @param ind       current individual i
 ** @param GL        genotype likelihood of all individuals in snp major form
@@ -64,8 +132,8 @@ inline double Admixture::runWithClusterLikelihoods(int ind,
     int c1, c2, c12;
     int k1, k2, k12, s;
     MyArr2D w(C * C, K * K);
-    MyArr2D Ekc_i = MyArr2D::Zero(K * C, iM);
-    MyArr2D NormF_i = MyArr2D::Zero(K, iM);
+    MyArr2D iEkc = MyArr2D::Zero(K * C, iM);
+    MyArr2D iNormF = MyArr2D::Zero(K, iM);
     for(s = 0; s < iM; s++)
     {
         norm = 0;
@@ -99,10 +167,10 @@ inline double Admixture::runWithClusterLikelihoods(int ind,
                         k12 = k1 * K + k2;
                         Ekg(ind * K + k1, s) += w(c12, k12) / norm;
                         Ekg(ind * K + k2, s) += w(c12, k12) / norm;
-                        Ekc_i(k1 * C + c1, s) += w(c12, k12) / norm;
-                        Ekc_i(k2 * C + c2, s) += w(c12, k12) / norm;
-                        NormF_i(k1, s) += w(c12, k12) / norm;
-                        NormF_i(k2, s) += w(c12, k12) / norm;
+                        iEkc(k1 * C + c1, s) += w(c12, k12) / norm;
+                        iEkc(k2 * C + c2, s) += w(c12, k12) / norm;
+                        iNormF(k1, s) += w(c12, k12) / norm;
+                        iNormF(k2, s) += w(c12, k12) / norm;
                     }
                 }
             }
@@ -112,8 +180,8 @@ inline double Admixture::runWithClusterLikelihoods(int ind,
     for(int k = 0; k < K; k++) Q(k, ind) = Ekg.row(ind * K + k).sum() / (2 * M);
     {
         std::lock_guard<std::mutex> lock(mutex_it); // sum over all samples
-        Ekc += Ekc_i;
-        NormF += NormF_i;
+        Ekc += iEkc;
+        NormF += iNormF;
     }
     return llike;
 }

@@ -1,4 +1,5 @@
 #include "admixture.hpp"
+#include "alpaca/alpaca.h"
 #include "fastphase.hpp"
 #include "io.hpp"
 #include "log.hpp"
@@ -74,7 +75,8 @@ int main(int argc, char * argv[])
     // log.cao.precision(4);
 
     // ========= core calculation part ===========================================
-    std::unique_ptr<BigAss> genome = std::make_unique<BigAss>(chunksize);
+    std::unique_ptr<BigAss> genome = std::make_unique<BigAss>();
+    genome->chunksize = chunksize;
     tm.clock();
     chunk_beagle_genotype_likelihoods(genome, in_beagle);
     log.done(tm.date()) << "parsing input -> C:" << C << ", N:" << genome->nsamples << ", M:" << genome->nsnps
@@ -87,11 +89,13 @@ int main(int argc, char * argv[])
     ThreadPool poolit(nthreads);
     vector<future<double>> llike;
 
+    Phaser phase;
     double loglike{0};
     for(int ic = 0; ic < genome->nchunks; ic++)
     {
         FastPhaseK2 nofaith(genome->nsamples, genome->pos[ic].size(), C, seed);
         auto transRate = calc_transRate(genome->pos[ic], C);
+        phase.transRate.push_back(transRate);
         for(int it = 0; it <= niters_impute; it++)
         {
             tm.clock();
@@ -114,37 +118,41 @@ int main(int argc, char * argv[])
                                 << ", log likelihoods: " << std::fixed << loglike << "; " << tm.reltime()
                                 << " ms" << endl;
         }
+        phase.PI.push_back(nofaith.PI);
+        phase.F.push_back(nofaith.F);
     }
+    log.done(tm.date()) << "imputation done and outputting.\n";
+
+    // std::ofstream os;
+    // os.open("foo.bin", std::ios::out | std::ios::binary);
+    // auto bytes_written = alpaca::serialize<BigAss>(*genome, os);
 
     // write_bcf_genotype_probability(nofaith.GP.data(), out_vcf, in_vcf, sampleids, chrs_pos[ichr], ichr, N,
     // M);
-    // log.done(tm.date()) << "imputation done and outputting.\n";
 
-    // log.warn(tm.date() + "-> running admixture\n");
-    // Admixture admixer(N, M, C, K, seed);
-    // double loglike_prev = 0, diff;
-    // for(int it = 0; it <= niters_admix; it++)
-    // {
-    //     tm.clock();
-    //     admixer.initIteration();
-    //     for(int i = 0; i < N; i++)
-    //         llike.emplace_back(poolit.enqueue(&Admixture::runWithClusterLikelihoods, &admixer, i,
-    //                                           std::ref(genolikes), std::ref(transRate),
-    //                                           std::ref(nofaith.PI), std::ref(nofaith.F)));
-    //     loglike = 0;
-    //     for(auto && ll : llike) loglike += ll.get();
-    //     llike.clear(); // clear future and renew
-    //     diff = loglike - loglike_prev;
-    //     log.done(tm.date()) << "iteration " << setw(3) << it << ", log likelihoods: " << std::fixed <<
-    //     loglike
-    //                         << ", diff=" << diff << ". " << tm.reltime() << " ms" << endl;
-    //     if(diff > 0 && diff < 0.1) break;
-    //     loglike_prev = loglike;
-    //     admixer.updateF();
-    // }
-    // admixer.writeQ(out_admixture);
-    // log.done(tm.date()) << "admixture done and outputting.\n";
-    // log.warn(tm.date() + "-> have a nice day, bye!\n");
+    log.warn(tm.date() + "-> running admixture\n");
+    Admixture admixer(genome->nsamples, genome->nsnps, C, K, seed);
+    double loglike_prev = 0, diff;
+    for(int it = 0; it <= niters_admix; it++)
+    {
+        tm.clock();
+        admixer.initIteration();
+        for(int i = 0; i < genome->nsamples; i++)
+            llike.emplace_back(
+                poolit.enqueue(&Admixture::runWithBigAss, &admixer, i, std::ref(phase), std::ref(genome)));
+        loglike = 0;
+        for(auto && ll : llike) loglike += ll.get();
+        llike.clear(); // clear future and renew
+        diff = loglike - loglike_prev;
+        log.done(tm.date()) << "iteration " << setw(3) << it << ", log likelihoods: " << std::fixed << loglike
+                            << ", diff=" << diff << ". " << tm.reltime() << " ms" << endl;
+        if(diff > 0 && diff < 0.1) break;
+        loglike_prev = loglike;
+        admixer.updateF();
+    }
+    admixer.writeQ(out_admixture);
+    log.done(tm.date()) << "admixture done and outputting.\n";
+    log.warn(tm.date() + "-> have a nice day, bye!\n");
 
     return 0;
 }
