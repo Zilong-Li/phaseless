@@ -11,12 +11,11 @@ TEST_CASE("fastphasek4", "[test-fastphasek4]")
     double tol{1e-6};
     int N, M, C{5}, seed{1}, niters{5};
     MyFloat1D genolikes;
-    uMapStringInt1D chrs_map;
-    uMapStringUint chrs_starts;
+    MapStringInt1D chrs_pos;
     StringVec1D sampleids;
-    read_beagle_genotype_likelihoods("../data/bgl.gz", genolikes, sampleids, chrs_map, chrs_starts, N, M);
-    auto ichr = chrs_map.begin()->first;
-    auto distRate = calc_distRate(chrs_map[ichr], C);
+    read_beagle_genotype_likelihoods("../data/bgl.gz", genolikes, sampleids, chrs_pos, N, M);
+    auto ichr = chrs_pos.begin()->first;
+    auto distRate = calc_distRate(chrs_pos[ichr], C);
     MyArr2D postProbsZ(M, C * C);
     MyArr2D postProbsZandG(M, C * C * 4);
 

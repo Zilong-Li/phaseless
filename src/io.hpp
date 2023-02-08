@@ -130,8 +130,7 @@ inline int zlgets(gzFile gz, char ** buf, uint64_t * size)
 inline void read_beagle_genotype_likelihoods(const std::string & beagle,
                                              MyFloat1D & GL,
                                              StringVec1D & sampleids,
-                                             uMapStringInt1D & chrs,
-                                             uMapStringUint & starts,
+                                             MapStringInt1D & chrs,
                                              int & nsamples,
                                              int & nsnps,
                                              bool snp_major = true)
@@ -166,7 +165,6 @@ inline void read_beagle_genotype_likelihoods(const std::string & beagle,
         tok = strtok_r(buffer, delims, &buffer); // id: chr_pos
         chr = strtok(tok, "_");
         pos = strtok(NULL, "_");
-        if(starts.count(chr) == 0) starts[chr] = nsnps; // assume chr ordered
         chrs[chr].push_back(std::stoi(pos));
         tok = strtok_r(NULL, delims, &buffer); // ref
         tok = strtok_r(NULL, delims, &buffer); // alt
@@ -319,33 +317,6 @@ inline void chunk_beagle_genotype_likelihoods(const std::unique_ptr<BigAss> & ge
         glchunk.clear();
         genome->gls.push_back(gl);
     }
-}
-
-/*
-** @params GL genotype likelihoods, sample-majored
-** @return GL chunked genotype likelihoods, snp-majored
-*/
-inline auto subset_genotype_likelihoods(const std::string & ichr,
-                                        const MyFloat1D & GL,
-                                        const uMapStringInt1D & chrs,
-                                        const uMapStringUint & starts,
-                                        int N)
-{
-    int M = chrs.at(ichr).size();
-    MyFloat1D chunkGL(M * N * 3);
-    int i, j;
-    uint64_t step = (uint64_t)starts.at(ichr) * N * 3;
-    for(i = 0; i < N; i++)
-    {
-        for(j = 0; j < M; j++)
-        {
-            chunkGL[i * M * 3 + j * 3 + 0] = GL[step + j * N * 3 + i * 3 + 0];
-            chunkGL[i * M * 3 + j * 3 + 1] = GL[step + j * N * 3 + i * 3 + 1];
-            chunkGL[i * M * 3 + j * 3 + 2] = GL[step + j * N * 3 + i * 3 + 2];
-        }
-    }
-
-    return chunkGL;
 }
 
 #endif // PHASELESS_IO_H_

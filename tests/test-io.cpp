@@ -7,34 +7,28 @@ TEST_CASE("test beagle parser for single contig", "[test-io]")
 {
     int N, M;
     MyFloat1D genolikes;
-    uMapStringInt1D chrs_map;
-    uMapStringUint chrs_starts;
+    MapStringInt1D chrs_pos;
     StringVec1D sampleids;
-    read_beagle_genotype_likelihoods("../data/bgl.gz", genolikes, sampleids, chrs_map, chrs_starts, N, M);
+    read_beagle_genotype_likelihoods("../data/bgl.gz", genolikes, sampleids, chrs_pos, N, M);
     REQUIRE(N == 60);
     REQUIRE(M == 1000);
-    REQUIRE(chrs_map.size() == 1);
-    REQUIRE(chrs_starts.size() == 1);
-    auto ichr = chrs_map.begin()->first;
+    REQUIRE(chrs_pos.size() == 1);
+    auto ichr = chrs_pos.begin()->first;
     REQUIRE(ichr == "5");
-    auto isnp = chrs_starts[ichr];
-    REQUIRE(isnp == 0);
 }
 
 TEST_CASE("test beagle parser for multiple contigs", "[test-io]")
 {
     int N, M;
     MyFloat1D genolikes;
-    uMapStringInt1D chrs_map;
-    uMapStringUint chrs_starts;
+    MapStringInt1D chrs_pos;
     StringVec1D sampleids;
-    read_beagle_genotype_likelihoods("../data/all.bgl.gz", genolikes, sampleids, chrs_map, chrs_starts, N, M);
+    read_beagle_genotype_likelihoods("../data/all.bgl.gz", genolikes, sampleids, chrs_pos, N, M);
     REQUIRE(N == 60);
     REQUIRE(M == 1000);
-    REQUIRE(chrs_map.size() == 2);
-    REQUIRE(chrs_starts.size() == 2);
-    // REQUIRE(chrs_map.begin()->first == "4");
-    // REQUIRE(next(chrs_map.begin())->first == "5");
+    REQUIRE(chrs_pos.size() == 2);
+    REQUIRE(chrs_pos.begin()->first == "4");
+    REQUIRE(next(chrs_pos.begin())->first == "5");
 }
 
 TEST_CASE("test beagle parser for bigass genome with balanced chunksize", "[test-io]")

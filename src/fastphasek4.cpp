@@ -69,15 +69,14 @@ int main(int argc, char * argv[])
     int N, M;
     MyFloat1D genolikes;
     StringVec1D sampleids;
-    uMapStringInt1D chrs_map;
-    uMapStringUint chrs_starts;
+    MapStringInt1D chrs_pos;
     tm.clock();
-    read_beagle_genotype_likelihoods(in_beagle, genolikes, sampleids, chrs_map, chrs_starts, N, M);
+    read_beagle_genotype_likelihoods(in_beagle, genolikes, sampleids, chrs_pos, N, M);
     log.done(tm.date()) << "parsing input -> N:" << N << ", M:" << M << ", C:" << C << "; " << tm.reltime()
                         << " ms" << endl;
-    assert(chrs_map.size() == 1);
-    auto ichr = chrs_map.begin()->first;
-    auto distRate = calc_distRate(chrs_map.begin()->second, C);
+    assert(chrs_pos.size() == 1);
+    auto ichr = chrs_pos.begin()->first;
+    auto distRate = calc_distRate(chrs_pos.begin()->second, C);
 
     double loglike{0};
     MyArr2D postProbsZ(M, C * C);
@@ -114,7 +113,7 @@ int main(int argc, char * argv[])
         log.done(tm.date()) << "iteration " << setw(2) << it << ", log likelihoods: " << std::fixed << loglike
                             << "; " << tm.reltime() << " ms" << endl;
     }
-    write_bcf_genotype_probability(nofaith.GP.data(), out_vcf, in_vcf, sampleids, chrs_map[ichr], ichr, N, M);
+    write_bcf_genotype_probability(nofaith.GP.data(), out_vcf, in_vcf, sampleids, chrs_pos[ichr], ichr, N, M);
     log.warn(tm.date() + "-> have a nice day, bye!\n");
 
     return 0;

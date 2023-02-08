@@ -3,8 +3,8 @@
 
 #include <Eigen/Dense>
 #include <iostream>
+#include <map>
 #include <random>
-#include <unordered_map>
 #include <vector>
 
 using MatDouble2D = Eigen::MatrixXd; // use matrix for linear algebra operations
@@ -19,8 +19,7 @@ using FloatVec2D = std::vector<FloatVec1D>;
 using DoubleVec1D = std::vector<double>;
 using DoubleVec2D = std::vector<DoubleVec1D>;
 using StringVec1D = std::vector<std::string>;
-using uMapStringInt1D = std::unordered_map<std::string, IntVec1D>;
-using uMapStringUint = std::unordered_map<std::string, uint64_t>;
+using MapStringInt1D = std::map<std::string, IntVec1D>;
 
 // using MyMat2D = Eigen::MatrixXd; // use MatrixXf if no accuracy drop
 // using MyMat1D = Eigen::VectorXd; // use MatrixXf if no accuracy drop
