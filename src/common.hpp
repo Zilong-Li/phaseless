@@ -4,6 +4,7 @@
 #include <Eigen/Dense>
 #include <iostream>
 #include <random>
+#include <unordered_map>
 #include <vector>
 
 using MatDouble2D = Eigen::MatrixXd; // use matrix for linear algebra operations
@@ -11,10 +12,15 @@ using ArrDouble2D = Eigen::ArrayXXd; // use array for element-wise operations
 using ArrDouble1D = Eigen::ArrayXd;
 using ArrFloat2D = Eigen::ArrayXXf;
 using ArrFloat1D = Eigen::ArrayXf;
-using DoubleVec1D = std::vector<double>;
-using FloatVec1D = std::vector<float>;
 using IntVec1D = std::vector<int>;
-
+using IntVec2D = std::vector<IntVec1D>;
+using FloatVec1D = std::vector<float>;
+using FloatVec2D = std::vector<FloatVec1D>;
+using DoubleVec1D = std::vector<double>;
+using DoubleVec2D = std::vector<DoubleVec1D>;
+using StringVec1D = std::vector<std::string>;
+using uMapStringInt1D = std::unordered_map<std::string, IntVec1D>;
+using uMapStringUint = std::unordered_map<std::string, uint64_t>;
 
 // using MyMat2D = Eigen::MatrixXd; // use MatrixXf if no accuracy drop
 // using MyMat1D = Eigen::VectorXd; // use MatrixXf if no accuracy drop
@@ -24,7 +30,8 @@ using MyMat2D = Eigen::MatrixXf;
 using MyMat1D = Eigen::VectorXf;
 using MyArr2D = Eigen::ArrayXXf;
 using MyArr1D = Eigen::ArrayXf;
-using MyFloat1D = std::vector<float>;
+using MyFloat1D = FloatVec1D;
+using MyFloat2D = FloatVec2D;
 
 template<typename MatrixType, typename RandomEngineType>
 inline MatrixType RandomUniform(const Eigen::Index numRows,
@@ -37,6 +44,16 @@ inline MatrixType RandomUniform(const Eigen::Index numRows,
         a, b}; // or using 0.05, 0.95
     const auto uniform{[&](typename MatrixType::Scalar) { return uniform_real_distribution(engine); }};
     return MatrixType::NullaryExpr(numRows, numCols, uniform);
+};
+
+struct BigAss
+{
+    BigAss(int chunksize_) : chunksize(chunksize_){};
+    IntVec2D pos; // store position of markers of each chunk
+    MyFloat2D gls; // store gl of each chunk
+    StringVec1D sampleids, chrs;
+    const int chunksize;
+    int nsamples, nsnps, nchunks;
 };
 
 // check initialize_sigmaCurrent_m in STITCH

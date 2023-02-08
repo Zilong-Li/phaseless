@@ -1,24 +1,10 @@
 #ifndef PHASELESS_IO_H_
 #define PHASELESS_IO_H_
 
+#include "common.hpp"
 #include "vcfpp.h"
 #include <cmath>
-#include <map>
-#include <unordered_map>
 #include <zlib.h>
-
-using IntVec1D = std::vector<int>;
-using IntVec2D = std::vector<IntVec1D>;
-using FloatVec1D = std::vector<float>;
-using FloatVec2D = std::vector<FloatVec1D>;
-using DoubleVec1D = std::vector<double>;
-using DoubleVec2D = std::vector<DoubleVec1D>;
-using StringVec1D = std::vector<std::string>;
-using uMapStringInt1D = std::unordered_map<std::string, IntVec1D>;
-using uMapStringUint = std::unordered_map<std::string, uint64_t>;
-
-using MyFloat1D = FloatVec1D;
-using MyFloat2D = FloatVec2D;
 
 /*
 ** @GP maps Eigen matrix layout, (3 x nsnps) x nsamples
@@ -166,10 +152,7 @@ inline void read_beagle_genotype_likelihoods(const std::string & beagle,
     int nCol = 1;
     strtok_r(buffer, delims, &buffer);
     while((tok = strtok_r(NULL, delims, &buffer)))
-    {
-        if(nCol % 3 == 0) sampleids.push_back(std::string(tok));
-        nCol++;
-    }
+        if(nCol++ % 3 == 0) sampleids.push_back(std::string(tok));
     if(nCol % 3) throw std::runtime_error("Number of columns should be a multiple of 3.\n");
     nsamples = nCol / 3 - 1;
     FloatVec1D gli(nsamples * 3); // current line
@@ -217,6 +200,124 @@ inline void read_beagle_genotype_likelihoods(const std::string & beagle,
                 GL[i * nsnps * 3 + j * 3 + 2] = GL2[j][i * 3 + 2];
             }
         }
+    }
+}
+
+/*
+** @return GL genotype likelihoods, nsnps x (nsamples x 3)
+*/
+inline void chunk_beagle_genotype_likelihoods(const std::unique_ptr<BigAss> & genome,
+                                              const std::string & beagle)
+{
+    // VARIBLES
+    gzFile fp = nullptr;
+    char *original, *buffer, *tok, *pos;
+    std::string chr0 = "", chr1 = "";
+    uint64_t bufsize = (uint64_t)128 * 1024 * 1024;
+    const char * delims = "\t \n";
+
+    // PARSE BEAGLE FILE
+    fp = gzopen(beagle.c_str(), "r");
+    original = buffer = (char *)calloc(bufsize, sizeof(char));
+    zlgets(fp, &buffer, &bufsize);
+    if(buffer != original) original = buffer;
+    int nCol = 1;
+    strtok_r(buffer, delims, &buffer);
+    while((tok = strtok_r(NULL, delims, &buffer)))
+        if(nCol++ % 3 == 0) genome->sampleids.push_back(std::string(tok));
+    if(nCol % 3) throw std::runtime_error("Number of columns should be a multiple of 3.\n");
+    genome->nsamples = nCol / 3 - 1;
+    FloatVec2D glchunk; // gl for one chunk
+    FloatVec1D gli(genome->nsamples * 3); // current line
+    genome->nsnps = 0;
+    buffer = original;
+    IntVec1D markers;
+    genome->nchunks = 0;
+    bool samechr;
+    int i, j, im, isnp{0};
+    while(zlgets(fp, &buffer, &bufsize))
+    {
+        if(buffer != original) original = buffer;
+        tok = strtok_r(buffer, delims, &buffer); // id: chr_pos
+        chr1 = (std::string)strtok(tok, "_");
+        if(chr0.empty() || chr0 == chr1)
+            samechr = true;
+        else
+            samechr = false;
+        pos = strtok(NULL, "_");
+        tok = strtok_r(NULL, delims, &buffer); // ref
+        tok = strtok_r(NULL, delims, &buffer); // alt
+        for(i = 0; i < genome->nsamples; i++)
+        {
+            tok = strtok_r(NULL, delims, &buffer);
+            gli[3 * i + 0] = strtod(tok, NULL);
+            tok = strtok_r(NULL, delims, &buffer);
+            gli[3 * i + 1] = strtod(tok, NULL);
+            tok = strtok_r(NULL, delims, &buffer);
+            gli[3 * i + 2] = strtod(tok, NULL);
+        }
+        if(samechr || isnp == 0)
+        {
+            markers.push_back(std::stoi(pos));
+            glchunk.push_back(gli);
+        }
+        if(((++isnp % genome->chunksize == 0) || (samechr == false)) && isnp != 1)
+        {
+            genome->nchunks++;
+            genome->chrs.push_back(chr0);
+            im = markers.size();
+            genome->pos.push_back(markers);
+            markers.clear();
+            // transpose glchunk into genome->gl then clear it
+            FloatVec1D gl(genome->nsamples * im * 3);
+            for(i = 0; i < genome->nsamples; i++)
+            {
+                for(j = 0; j < im; j++)
+                {
+                    gl[i * im * 3 + j * 3 + 0] = glchunk[j][i * 3 + 0];
+                    gl[i * im * 3 + j * 3 + 1] = glchunk[j][i * 3 + 1];
+                    gl[i * im * 3 + j * 3 + 2] = glchunk[j][i * 3 + 2];
+                }
+            }
+            glchunk.clear();
+            genome->gls.push_back(gl);
+            if((isnp % genome->chunksize != 0) && samechr == false)
+            {
+                markers.push_back(std::stoi(pos));
+                glchunk.push_back(gli);
+                isnp = 1;
+            }
+            else
+            {
+                isnp = 0;
+            }
+        }
+        genome->nsnps++;
+        chr0 = chr1;
+        buffer = original;
+    }
+    gzclose(fp);
+    // add the rest into genome
+    if(!markers.empty())
+    {
+        im = markers.size();
+        genome->pos.push_back(markers);
+        markers.clear();
+        genome->nchunks++;
+        genome->chrs.push_back(chr0);
+        // transpose glchunk into genome->gl then clear it
+        FloatVec1D gl(genome->nsamples * im * 3);
+        for(i = 0; i < genome->nsamples; i++)
+        {
+            for(j = 0; j < im; j++)
+            {
+                gl[i * im * 3 + j * 3 + 0] = glchunk[j][i * 3 + 0];
+                gl[i * im * 3 + j * 3 + 1] = glchunk[j][i * 3 + 1];
+                gl[i * im * 3 + j * 3 + 2] = glchunk[j][i * 3 + 2];
+            }
+        }
+        glchunk.clear();
+        genome->gls.push_back(gl);
     }
 }
 
