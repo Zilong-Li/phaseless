@@ -268,7 +268,7 @@ class FastPhaseK4
     std::mutex mutex_it; // in case of race condition
 
   public:
-    FastPhaseK4(int n, int m, int c, int seed, std::string out);
+    FastPhaseK4(int n, int m, int c, int seed);
     ~FastPhaseK4();
 
     // SHARED VARIBALES
@@ -283,7 +283,8 @@ class FastPhaseK4
     void updateClusterFreqPI(const MyArr2D & postProbsZ, double tol);
     void updateAlleleFreqWithinCluster(const MyArr2D & postProbsZandG, double tol);
     void transitionCurIter(const MyArr1D & distRate);
-    MyArr2D callGenotypeInd(const MyArr2D & indPostProbsZandG);
+    auto callGenotypeInd(const MyArr2D & indPostProbsZandG);
+    void openClusterFile(std::string out);
     double forwardAndBackwards(int ind,
                                const MyFloat1D & GL,
                                MyArr2D & postProbsZ,
@@ -291,14 +292,9 @@ class FastPhaseK4
                                bool call_geno = false);
 };
 
-inline FastPhaseK4::FastPhaseK4(int n, int m, int c, int seed, std::string out)
+inline FastPhaseK4::FastPhaseK4(int n, int m, int c, int seed)
 : N(n), M(m), C(c), C2(c * c), GP(M * 3, N), transHap(M, C2), transDip(M, C2 * C2)
 {
-    ofs.open(out, std::ios::binary);
-    if(!ofs) throw std::runtime_error(out + ": " + strerror(errno));
-    ofs.write((char *)&N, 4);
-    ofs.write((char *)&M, 4);
-    ofs.write((char *)&C, 4);
     auto rng = std::default_random_engine{};
     rng.seed(seed);
     F = RandomUniform<MyArr2D, std::default_random_engine>(M, C, rng, 0.0, 1.0);
@@ -308,7 +304,39 @@ inline FastPhaseK4::FastPhaseK4(int n, int m, int c, int seed, std::string out)
 
 inline FastPhaseK4::~FastPhaseK4()
 {
-    ofs.close();
+    if(ofs.is_open()) ofs.close();
+}
+
+inline void FastPhaseK4::openClusterFile(std::string out)
+{
+    ofs.open(out, std::ios::binary);
+    if(!ofs) throw std::runtime_error(out + ": " + strerror(errno));
+    ofs.write((char *)&N, 4);
+    ofs.write((char *)&M, 4);
+    ofs.write((char *)&C, 4);
+}
+
+inline auto FastPhaseK4::callGenotypeInd(const MyArr2D & indPostProbsZandG)
+{
+    MyArr1D geno = MyArr1D::Zero(M * 3);
+    int k1, k2, k12, g1, g2, g12, g3;
+    for(k1 = 0; k1 < C; k1++)
+    {
+        for(k2 = 0; k2 < C; k2++)
+        {
+            k12 = k1 * C + k2;
+            for(g1 = 0; g1 < 2; g1++)
+            {
+                for(g2 = 0; g2 < 2; g2++)
+                {
+                    g12 = g1 * 2 + g2;
+                    g3 = g1 + g2;
+                    geno(Eigen::seqN(g3, M, 3)) += indPostProbsZandG.col(k12 * 4 + g12);
+                }
+            }
+        }
+    }
+    return geno;
 }
 
 /*
@@ -432,29 +460,6 @@ inline double FastPhaseK4::forwardAndBackwards(int ind,
     // std::cout << std::this_thread::get_id() << ": " << ind << '\n';
 
     return indLogLikeForwardAll;
-}
-
-inline MyArr2D FastPhaseK4::callGenotypeInd(const MyArr2D & indPostProbsZandG)
-{
-    MyArr1D geno = MyArr1D::Zero(M * 3);
-    int k1, k2, k12, g1, g2, g12, g3;
-    for(k1 = 0; k1 < C; k1++)
-    {
-        for(k2 = 0; k2 < C; k2++)
-        {
-            k12 = k1 * C + k2;
-            for(g1 = 0; g1 < 2; g1++)
-            {
-                for(g2 = 0; g2 < 2; g2++)
-                {
-                    g12 = g1 * 2 + g2;
-                    g3 = g1 + g2;
-                    geno(Eigen::seqN(g3, M, 3)) += indPostProbsZandG.col(k12 * 4 + g12);
-                }
-            }
-        }
-    }
-    return geno;
 }
 
 /*

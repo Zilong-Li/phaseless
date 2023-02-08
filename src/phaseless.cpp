@@ -75,8 +75,8 @@ int main(int argc, char * argv[])
     // ========= core calculation part ===========================================
     int N, M;
     MyFloat1D genolikes;
-    StringIntVecMapU chrs_map;
-    StringIntMapU chrs_starts;
+    uMapStringInt1D chrs_map;
+    uMapStringUint chrs_starts;
     StringVec1D sampleids;
     std::string ichr;
     tm.clock();

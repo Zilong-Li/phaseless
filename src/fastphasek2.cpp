@@ -68,8 +68,8 @@ int main(int argc, char * argv[])
     // ========= core calculation part ===========================================
     int N, M;
     MyFloat1D genolikes;
-    StringIntVecMapU chrs_map;
-    StringIntMapU chrs_starts;
+    uMapStringInt1D chrs_map;
+    uMapStringUint chrs_starts;
     StringVec1D sampleids;
     std::string ichr;
     tm.clock();
@@ -83,7 +83,7 @@ int main(int argc, char * argv[])
 
     double loglike{0};
     FastPhaseK2 nofaith(N, M, C, seed);
-    nofaith.openClusterFile(out_cluster);
+    if(!out_cluster.empty()) nofaith.openClusterFile(out_cluster);
     ThreadPool poolit(nthreads);
     vector<future<double>> llike;
     for(int it = 0; it < niters + 1; it++)

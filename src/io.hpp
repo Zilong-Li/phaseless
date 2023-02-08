@@ -14,9 +14,8 @@ using FloatVec2D = std::vector<FloatVec1D>;
 using DoubleVec1D = std::vector<double>;
 using DoubleVec2D = std::vector<DoubleVec1D>;
 using StringVec1D = std::vector<std::string>;
-using StringIntVecMapU = std::unordered_map<std::string, IntVec1D>;
-using StringIntMapU = std::unordered_map<std::string, uint64_t>;
-using StringIntPairMapU = std::unordered_map<std::string, std::pair<int, int>>;
+using uMapStringInt1D = std::unordered_map<std::string, IntVec1D>;
+using uMapStringUint = std::unordered_map<std::string, uint64_t>;
 
 using MyFloat1D = FloatVec1D;
 using MyFloat2D = FloatVec2D;
@@ -145,8 +144,8 @@ inline int zlgets(gzFile gz, char ** buf, uint64_t * size)
 inline void read_beagle_genotype_likelihoods(const std::string & beagle,
                                              MyFloat1D & GL,
                                              StringVec1D & sampleids,
-                                             StringIntVecMapU & chrs,
-                                             StringIntMapU & starts,
+                                             uMapStringInt1D & chrs,
+                                             uMapStringUint & starts,
                                              int & nsamples,
                                              int & nsnps,
                                              bool snp_major = true)
@@ -227,8 +226,8 @@ inline void read_beagle_genotype_likelihoods(const std::string & beagle,
 */
 inline auto subset_genotype_likelihoods(const std::string & ichr,
                                         const MyFloat1D & GL,
-                                        const StringIntVecMapU & chrs,
-                                        const StringIntMapU & starts,
+                                        const uMapStringInt1D & chrs,
+                                        const uMapStringUint & starts,
                                         int N)
 {
     int M = chrs.at(ichr).size();
