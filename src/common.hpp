@@ -6,14 +6,6 @@
 #include <random>
 #include <vector>
 
-// using MyMat2D = Eigen::MatrixXd; // use MatrixXf if no accuracy drop
-// using MyMat1D = Eigen::VectorXd; // use MatrixXf if no accuracy drop
-// using MyArr2D = Eigen::ArrayXXd; // use ArrayXf if no accuracy drop
-// using MyArr1D = Eigen::ArrayXd; // use ArrayXf if no accuracy drop
-using MyMat2D = Eigen::MatrixXf;
-using MyMat1D = Eigen::VectorXf;
-using MyArr2D = Eigen::ArrayXXf;
-using MyArr1D = Eigen::ArrayXf;
 using MatDouble2D = Eigen::MatrixXd; // use matrix for linear algebra operations
 using ArrDouble2D = Eigen::ArrayXXd; // use array for element-wise operations
 using ArrDouble1D = Eigen::ArrayXd;
@@ -23,12 +15,23 @@ using DoubleVec1D = std::vector<double>;
 using FloatVec1D = std::vector<float>;
 using IntVec1D = std::vector<int>;
 
+
+// using MyMat2D = Eigen::MatrixXd; // use MatrixXf if no accuracy drop
+// using MyMat1D = Eigen::VectorXd; // use MatrixXf if no accuracy drop
+// using MyArr2D = Eigen::ArrayXXd; // use ArrayXf if no accuracy drop
+// using MyArr1D = Eigen::ArrayXd; // use ArrayXf if no accuracy drop
+using MyMat2D = Eigen::MatrixXf;
+using MyMat1D = Eigen::VectorXf;
+using MyArr2D = Eigen::ArrayXXf;
+using MyArr1D = Eigen::ArrayXf;
+using MyFloat1D = std::vector<float>;
+
 template<typename MatrixType, typename RandomEngineType>
 inline MatrixType RandomUniform(const Eigen::Index numRows,
                                 const Eigen::Index numCols,
                                 RandomEngineType & engine,
-                                double a,
-                                double b)
+                                typename MatrixType::Scalar a,
+                                typename MatrixType::Scalar b)
 {
     std::uniform_real_distribution<typename MatrixType::Scalar> uniform_real_distribution{
         a, b}; // or using 0.05, 0.95
@@ -39,7 +42,7 @@ inline MatrixType RandomUniform(const Eigen::Index numRows,
 // check initialize_sigmaCurrent_m in STITCH
 inline auto calc_distRate(const IntVec1D & markers, int C, int Ne = 20000, double expRate = 0.5)
 {
-    ArrDouble1D distRate(markers.size());
+    MyArr1D distRate(markers.size());
     distRate(0) = 1e20;
     // int nGen = 4 * Ne / C;
     for(size_t i = 1; i < markers.size(); i++) distRate(i) = (markers[i] - markers[i - 1]) / 1e6;
@@ -49,11 +52,11 @@ inline auto calc_distRate(const IntVec1D & markers, int C, int Ne = 20000, doubl
 
 inline auto calc_transRate(const IntVec1D & markers, int C, int Ne = 20000, double expRate = 0.5)
 {
-    ArrDouble1D distRate(markers.size());
+    MyArr1D distRate(markers.size());
     distRate(0) = exp(-1e20);
     // int nGen = 4 * Ne / C;
     for(size_t i = 1; i < markers.size(); i++) distRate(i) = exp(-(markers[i] - markers[i - 1]) / 1e6);
-    ArrDouble2D transRate(3, markers.size());
+    MyArr2D transRate(3, markers.size());
     transRate.row(0) = distRate.square();
     transRate.row(1) = distRate * (1 - distRate);
     transRate.row(2) = (1 - distRate).square();
@@ -63,12 +66,12 @@ inline auto calc_transRate(const IntVec1D & markers, int C, int Ne = 20000, doub
 /*
 ** @param gli  genotype likelihoods of current individual i,3 x nsnps
 */
-inline auto emissionCurIterInd(const ArrDouble2D & gli, const ArrDouble2D & F, bool use_log)
+inline auto emissionCurIterInd(const MyArr2D & gli, const MyArr2D & F, bool use_log)
 {
     int k1, k2, g1, g2;
     const int M = F.rows();
     const int C = F.cols();
-    ArrDouble2D emitDip(M, C * C); // emission probabilies, nsnps x (C x C)
+    MyArr2D emitDip(M, C * C); // emission probabilies, nsnps x (C x C)
     for(k1 = 0; k1 < C; k1++)
     {
         for(k2 = 0; k2 < C; k2++)
@@ -101,21 +104,21 @@ inline auto emissionCurIterInd(const ArrDouble2D & gli, const ArrDouble2D & F, b
 }
 
 inline auto getClusterLikelihoods(int ind,
-                                  const DoubleVec1D & GL,
-                                  const ArrDouble2D & transRate,
-                                  const ArrDouble2D & PI,
-                                  const ArrDouble2D & F)
+                                  const MyFloat1D & GL,
+                                  const MyArr2D & transRate,
+                                  const MyArr2D & PI,
+                                  const MyArr2D & F)
 {
     int k1, k2, k12;
     const int M = F.rows();
     const int C = F.cols();
     // ======== forward and backward recursion ===========
-    Eigen::Map<const ArrDouble2D> gli(GL.data() + ind * M * 3, 3, M);
+    Eigen::Map<const MyArr2D> gli(GL.data() + ind * M * 3, 3, M);
     auto emitDip = emissionCurIterInd(gli, F, false);
-    ArrDouble2D LikeForwardInd(C * C, M); // likelihood of forward recursion for ind i, not log
-    ArrDouble2D LikeBackwardInd(C * C, M); // likelihood of backward recursion for ind i, not log
-    ArrDouble1D sumTmp1(C), sumTmp2(C); // store sum over internal loop
-    ArrDouble1D cs(M);
+    MyArr2D LikeForwardInd(C * C, M); // likelihood of forward recursion for ind i, not log
+    MyArr2D LikeBackwardInd(C * C, M); // likelihood of backward recursion for ind i, not log
+    MyArr1D sumTmp1(C), sumTmp2(C); // store sum over internal loop
+    MyArr1D cs(M);
     double constTmp;
 
     // ======== forward recursion ===========
@@ -195,7 +198,7 @@ inline auto getClusterLikelihoods(int ind,
         // apply scaling
         LikeBackwardInd.col(s) *= cs(s);
     }
-    ArrDouble2D icluster = LikeForwardInd * LikeBackwardInd; // C x C x M
+    MyArr2D icluster = LikeForwardInd * LikeBackwardInd; // C x C x M
     return icluster;
 }
 

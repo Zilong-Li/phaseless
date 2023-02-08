@@ -67,7 +67,7 @@ int main(int argc, char * argv[])
 
     // ========= core calculation part ===========================================
     int N, M;
-    DoubleVec1D genolikes;
+    MyFloat1D genolikes;
     StringIntVecMapU chrs_map;
     StringIntMapU chrs_starts;
     StringVec1D sampleids;

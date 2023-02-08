@@ -14,31 +14,31 @@ class Admixture
     Admixture(int n, int m, int c, int k, int seed);
     ~Admixture();
     const int N, M, C, K; // C2 = C x C
-    ArrDouble2D FI; // (K x C) x M
-    ArrDouble2D Q; // K x N
-    ArrDouble2D Ekg; // (M x K) x N, expected number of alleles per k per n
-    ArrDouble2D Ekc; // (K x C) x M, expected number of alleles per c per k
-    ArrDouble2D NormF; // K x M
+    MyArr2D FI; // (K x C) x M
+    MyArr2D Q; // K x N
+    MyArr2D Ekg; // (M x K) x N, expected number of alleles per k per n
+    MyArr2D Ekc; // (K x C) x M, expected number of alleles per c per k
+    MyArr2D NormF; // K x M
 
     void initIteration();
     void updateF();
     void writeQ(std::string out);
     double runWithClusterLikelihoods(int ind,
-                                     const DoubleVec1D & GL,
-                                     const ArrDouble2D & transRate,
-                                     const ArrDouble2D & PI,
-                                     const ArrDouble2D & F);
+                                     const MyFloat1D & GL,
+                                     const MyArr2D & transRate,
+                                     const MyArr2D & PI,
+                                     const MyArr2D & F);
 };
 
 inline Admixture::Admixture(int n, int m, int c, int k, int seed) : N(n), M(m), C(c), K(k)
 {
     auto rng = std::default_random_engine{};
     rng.seed(seed);
-    FI = RandomUniform<ArrDouble2D, std::default_random_engine>(K * C, M, rng, 0.05, 0.95);
+    FI = RandomUniform<MyArr2D, std::default_random_engine>(K * C, M, rng, 0.05, 0.95);
     for(int k = 0; k < K; k++) // normalize it per snp per k
         FI.middleRows(k * C, C).rowwise() /= FI.middleRows(k * C, C).colwise().sum();
     // for(int k = 0; k < K; k++) std::cout << FI.middleRows(k * C, C).colwise().sum() << "\n";
-    Q = RandomUniform<ArrDouble2D, std::default_random_engine>(K, N, rng, 0.05, 0.95);
+    Q = RandomUniform<MyArr2D, std::default_random_engine>(K, N, rng, 0.05, 0.95);
     Q.rowwise() /= Q.colwise().sum(); // normalize it per individual
 }
 
@@ -53,19 +53,19 @@ inline Admixture::~Admixture() {}
 ** @return individual total likelihood
 */
 inline double Admixture::runWithClusterLikelihoods(int ind,
-                                                   const DoubleVec1D & GL,
-                                                   const ArrDouble2D & transRate,
-                                                   const ArrDouble2D & PI,
-                                                   const ArrDouble2D & F)
+                                                   const MyFloat1D & GL,
+                                                   const MyArr2D & transRate,
+                                                   const MyArr2D & PI,
+                                                   const MyArr2D & F)
 {
     auto icluster = getClusterLikelihoods(ind, GL, transRate, PI, F);
     const int iM = icluster.cols();
     double norm = 0, llike = 0;
     int c1, c2, c12;
     int k1, k2, k12, s;
-    ArrDouble2D w(C * C, K * K);
-    ArrDouble2D Ekc_i = ArrDouble2D::Zero(K * C, iM);
-    ArrDouble2D NormF_i = ArrDouble2D::Zero(K, iM);
+    MyArr2D w(C * C, K * K);
+    MyArr2D Ekc_i = MyArr2D::Zero(K * C, iM);
+    MyArr2D NormF_i = MyArr2D::Zero(K, iM);
     for(s = 0; s < iM; s++)
     {
         norm = 0;

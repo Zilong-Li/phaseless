@@ -24,7 +24,7 @@ using MyFloat2D = FloatVec2D;
 /*
 ** @GP maps Eigen matrix layout, (3 x nsnps) x nsamples
 */
-inline void write_bcf_genotype_probability(double * GP,
+inline void write_bcf_genotype_probability(float * GP,
                                            const std::string & vcfout,
                                            const std::string & vcfin,
                                            const StringVec1D & sampleids,
@@ -76,7 +76,7 @@ inline void write_bcf_genotype_probability(double * GP,
 inline void read_bcf_genotype_likelihoods(const std::string & vcffile,
                                           const std::string & samples,
                                           const std::string & region,
-                                          DoubleVec1D & GL,
+                                          MyFloat1D & GL,
                                           IntVec1D & markers,
                                           int & nsamples,
                                           int & nsnps,
@@ -143,7 +143,7 @@ inline int zlgets(gzFile gz, char ** buf, uint64_t * size)
 ** @return GL genotype likelihoods, nsnps x (nsamples x 3)
 */
 inline void read_beagle_genotype_likelihoods(const std::string & beagle,
-                                             DoubleVec1D & GL,
+                                             MyFloat1D & GL,
                                              StringVec1D & sampleids,
                                              StringIntVecMapU & chrs,
                                              StringIntMapU & starts,
@@ -225,14 +225,14 @@ inline void read_beagle_genotype_likelihoods(const std::string & beagle,
 ** @params GL genotype likelihoods, sample-majored
 ** @return GL chunked genotype likelihoods, snp-majored
 */
-inline DoubleVec1D subset_genotype_likelihoods(const std::string & ichr,
-                                               const DoubleVec1D & GL,
-                                               const StringIntVecMapU & chrs,
-                                               const StringIntMapU & starts,
-                                               int N)
+inline auto subset_genotype_likelihoods(const std::string & ichr,
+                                        const MyFloat1D & GL,
+                                        const StringIntVecMapU & chrs,
+                                        const StringIntMapU & starts,
+                                        int N)
 {
     int M = chrs.at(ichr).size();
-    DoubleVec1D chunkGL(M * N * 3);
+    MyFloat1D chunkGL(M * N * 3);
     int i, j;
     uint64_t step = (uint64_t)starts.at(ichr) * N * 3;
     for(i = 0; i < N; i++)

@@ -67,7 +67,7 @@ int main(int argc, char * argv[])
 
     // ========= core calculation part ===========================================
     int N, M;
-    DoubleVec1D genolikes;
+    MyFloat1D genolikes;
     StringVec1D sampleids;
     StringIntVecMapU chrs_map;
     StringIntMapU chrs_starts;
@@ -81,8 +81,8 @@ int main(int argc, char * argv[])
     auto distRate = calc_distRate(chrs_map[ichr], C);
 
     double loglike{0};
-    ArrDouble2D postProbsZ(M, C * C);
-    ArrDouble2D postProbsZandG(M, C * C * 4);
+    MyArr2D postProbsZ(M, C * C);
+    MyArr2D postProbsZandG(M, C * C * 4);
 
     FastPhaseK4 nofaith(N, M, C, seed, out_cluster);
     nthreads = nthreads < N ? nthreads : N;

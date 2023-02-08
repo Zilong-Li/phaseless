@@ -17,19 +17,16 @@ class FastPhaseK2
     // SHARED VARIBALES
     std::ofstream ofs;
     const int N, M, C, C2; // C2 = C x C
-    ArrDouble2D GP; // genotype probabilies for all individuals, N x (M x 3)
-    ArrDouble2D PI, Ek; // nsnps x C
-    ArrDouble2D F; // M x C
-    ArrDouble2D Ekg; // M x C x 2
+    MyArr2D GP; // genotype probabilies for all individuals, N x (M x 3)
+    MyArr2D PI, Ek; // nsnps x C
+    MyArr2D F; // M x C
+    MyArr2D Ekg; // M x C x 2
 
     void openClusterFile(std::string out);
     void initIteration();
     void updateClusterFreqPI(double tol);
     void updateAlleleFreqWithinCluster(double tol);
-    double forwardAndBackwards(int ind,
-                               const DoubleVec1D & GL,
-                               const ArrDouble2D & transRate,
-                               bool call_geno);
+    double forwardAndBackwards(int ind, const MyFloat1D & GL, const MyArr2D & transRate, bool call_geno);
 };
 
 inline FastPhaseK2::FastPhaseK2(int n, int m, int c, int seed)
@@ -37,8 +34,8 @@ inline FastPhaseK2::FastPhaseK2(int n, int m, int c, int seed)
 {
     auto rng = std::default_random_engine{};
     rng.seed(seed);
-    F = RandomUniform<ArrDouble2D, std::default_random_engine>(M, C, rng, 0.0, 1.0);
-    PI = RandomUniform<ArrDouble2D, std::default_random_engine>(M, C, rng, 0.0, 1.0);
+    F = RandomUniform<MyArr2D, std::default_random_engine>(M, C, rng, 0.0, 1.0);
+    PI = RandomUniform<MyArr2D, std::default_random_engine>(M, C, rng, 0.0, 1.0);
     PI = PI.colwise() / PI.rowwise().sum(); // normalize it
 }
 
@@ -69,16 +66,16 @@ inline void FastPhaseK2::initIteration()
 ** @return individual total likelihood
 */
 inline double FastPhaseK2::forwardAndBackwards(int ind,
-                                               const DoubleVec1D & GL,
-                                               const ArrDouble2D & transRate,
+                                               const MyFloat1D & GL,
+                                               const MyArr2D & transRate,
                                                bool call_geno)
 {
-    Eigen::Map<const ArrDouble2D> gli(GL.data() + ind * M * 3, 3, M);
+    Eigen::Map<const MyArr2D> gli(GL.data() + ind * M * 3, 3, M);
     auto emitDip = emissionCurIterInd(gli, F, false);
-    ArrDouble2D LikeForwardInd(C2, M); // likelihood of forward recursion for ind i, not log
-    ArrDouble2D LikeBackwardInd(C2, M); // likelihood of backward recursion for ind i, not log
-    ArrDouble1D sumTmp1(C), sumTmp2(C); // store sum over internal loop
-    ArrDouble1D cs(M);
+    MyArr2D LikeForwardInd(C2, M); // likelihood of forward recursion for ind i, not log
+    MyArr2D LikeBackwardInd(C2, M); // likelihood of backward recursion for ind i, not log
+    MyArr1D sumTmp1(C), sumTmp2(C); // store sum over internal loop
+    MyArr1D cs(M);
     double constTmp;
 
     // ======== forward recursion ===========
@@ -174,10 +171,10 @@ inline double FastPhaseK2::forwardAndBackwards(int ind,
     // std::lock_guard<std::mutex> lock(mutex_it); // lock here if RAM cost really matters
     // ======== post decoding get p(Z|X, G),  M x (C x C) ===========
     // ======== post decoding get p(Z,G|X, theta), M x (C x C x 2 x 2) =======
-    ArrDouble1D ind_post_z_col(M); // col of indPostProbsZ
-    ArrDouble2D ind_post_z_g(M, 4); // cols of indPostProbsZandG
-    ArrDouble1D tmpSum(M);
-    ArrDouble1D geno;
+    MyArr1D ind_post_z_col(M); // col of indPostProbsZ
+    MyArr2D ind_post_z_g(M, 4); // cols of indPostProbsZandG
+    MyArr1D tmpSum(M);
+    MyArr1D geno;
     if(call_geno) geno.setZero(M * 3);
     int g1, g2, g12, g3;
     for(k1 = 0; k1 < C; k1++)
@@ -236,7 +233,7 @@ inline double FastPhaseK2::forwardAndBackwards(int ind,
         GP.col(ind) = geno;
         if(ofs.is_open()) // output likelihood of each cluster
         {
-            ArrDouble2D likeCluster = (LikeBackwardInd * LikeForwardInd).transpose();
+            MyArr2D likeCluster = (LikeBackwardInd * LikeForwardInd).transpose();
             ofs.write((char *)likeCluster.data(), M * C2 * 8);
         }
     }
@@ -277,20 +274,20 @@ class FastPhaseK4
     // SHARED VARIBALES
     std::ofstream ofs;
     const int N, M, C, C2; // C2 = C x C
-    ArrDouble2D GP; // genotype probabilies for all individuals, N x (M x 3)
-    ArrDouble2D PI; // nsnps x C
-    ArrDouble2D F; // nsnps x C
-    ArrDouble2D transHap; // nsnps x (C x C)
-    ArrDouble2D transDip; // nsnps x (C x C x C x C)
+    MyArr2D GP; // genotype probabilies for all individuals, N x (M x 3)
+    MyArr2D PI; // nsnps x C
+    MyArr2D F; // nsnps x C
+    MyArr2D transHap; // nsnps x (C x C)
+    MyArr2D transDip; // nsnps x (C x C x C x C)
 
-    void updateClusterFreqPI(const ArrDouble2D & postProbsZ, double tol);
-    void updateAlleleFreqWithinCluster(const ArrDouble2D & postProbsZandG, double tol);
-    void transitionCurIter(const ArrDouble1D & distRate);
-    ArrDouble2D callGenotypeInd(const ArrDouble2D & indPostProbsZandG);
+    void updateClusterFreqPI(const MyArr2D & postProbsZ, double tol);
+    void updateAlleleFreqWithinCluster(const MyArr2D & postProbsZandG, double tol);
+    void transitionCurIter(const MyArr1D & distRate);
+    MyArr2D callGenotypeInd(const MyArr2D & indPostProbsZandG);
     double forwardAndBackwards(int ind,
-                               const DoubleVec1D & GL,
-                               ArrDouble2D & postProbsZ,
-                               ArrDouble2D & postProbsZandG,
+                               const MyFloat1D & GL,
+                               MyArr2D & postProbsZ,
+                               MyArr2D & postProbsZandG,
                                bool call_geno = false);
 };
 
@@ -304,8 +301,8 @@ inline FastPhaseK4::FastPhaseK4(int n, int m, int c, int seed, std::string out)
     ofs.write((char *)&C, 4);
     auto rng = std::default_random_engine{};
     rng.seed(seed);
-    F = RandomUniform<ArrDouble2D, std::default_random_engine>(M, C, rng, 0.0, 1.0);
-    PI = RandomUniform<ArrDouble2D, std::default_random_engine>(M, C, rng, 0.0, 1.0);
+    F = RandomUniform<MyArr2D, std::default_random_engine>(M, C, rng, 0.0, 1.0);
+    PI = RandomUniform<MyArr2D, std::default_random_engine>(M, C, rng, 0.0, 1.0);
     PI = PI.colwise() / PI.rowwise().sum(); // normalize it
 }
 
@@ -320,15 +317,15 @@ inline FastPhaseK4::~FastPhaseK4()
 ** @return individual total likelihood
 */
 inline double FastPhaseK4::forwardAndBackwards(int ind,
-                                               const DoubleVec1D & GL,
-                                               ArrDouble2D & postProbsZ,
-                                               ArrDouble2D & postProbsZandG,
+                                               const MyFloat1D & GL,
+                                               MyArr2D & postProbsZ,
+                                               MyArr2D & postProbsZandG,
                                                bool call_geno)
 {
-    Eigen::Map<const ArrDouble2D> gli(GL.data() + ind * M * 3, 3, M);
+    Eigen::Map<const MyArr2D> gli(GL.data() + ind * M * 3, 3, M);
     auto emitDip = emissionCurIterInd(gli, F, true);
-    ArrDouble2D logLikeForwardInd(C2, M); // log likelihood of forward recursion for ind i
-    ArrDouble2D logLikeBackwardInd(C2, M); // log likelihood of backward recursion for ind i
+    MyArr2D logLikeForwardInd(C2, M); // log likelihood of forward recursion for ind i
+    MyArr2D logLikeBackwardInd(C2, M); // log likelihood of backward recursion for ind i
 
     // ======== forward recursion ===========
     int k1, k2, k12, k12s, k12e;
@@ -347,7 +344,7 @@ inline double FastPhaseK4::forwardAndBackwards(int ind,
     // do forward recursion
     for(s = 1; s < M; s++)
     {
-        // ArrDouble1D likeForwardTmp;
+        // MyArr1D likeForwardTmp;
         auto likeForwardTmp = Eigen::exp(logLikeForwardInd.col(s - 1) - protect_me);
         for(k1 = 0; k1 < C; k1++)
         {
@@ -393,13 +390,12 @@ inline double FastPhaseK4::forwardAndBackwards(int ind,
     std::lock_guard<std::mutex> lock(mutex_it); // lock here if RAM cost really matters
 
     // ======== post decoding get p(Z|X, G) ===========
-    // ArrDouble2D indPostProbsZ; // post probabilities for ind i, M x (C x C)
-    ArrDouble2D indPostProbsZ =
-        (logLikeBackwardInd + logLikeForwardInd - indLogLikeForwardAll).exp().transpose();
+    // MyArr2D indPostProbsZ; // post probabilities for ind i, M x (C x C)
+    MyArr2D indPostProbsZ = (logLikeBackwardInd + logLikeForwardInd - indLogLikeForwardAll).exp().transpose();
     // ======== post decoding get p(Z,G|X, theta) ===========
-    // ArrDouble2D indPostProbsZandG, M x (C x C x 2 x 2)
-    ArrDouble2D indPostProbsZandG(M, C2 * 4);
-    ArrDouble1D tmpSum(M);
+    // MyArr2D indPostProbsZandG, M x (C x C x 2 x 2)
+    MyArr2D indPostProbsZandG(M, C2 * 4);
+    MyArr1D tmpSum(M);
     int g1, g2, g12;
     for(k1 = 0; k1 < C; k1++)
     {
@@ -428,7 +424,7 @@ inline double FastPhaseK4::forwardAndBackwards(int ind,
         // std::lock_guard<std::mutex> lock(mutex_it);
         GP.col(ind) = callGenotypeInd(indPostProbsZandG);
         // output likelihood of each cluster
-        ArrDouble2D likeCluster = (logLikeBackwardInd + logLikeForwardInd).exp().transpose();
+        MyArr2D likeCluster = (logLikeBackwardInd + logLikeForwardInd).exp().transpose();
         ofs.write((char *)likeCluster.data(), M * C2 * 8);
     }
     postProbsZ += indPostProbsZ;
@@ -438,9 +434,9 @@ inline double FastPhaseK4::forwardAndBackwards(int ind,
     return indLogLikeForwardAll;
 }
 
-inline ArrDouble2D FastPhaseK4::callGenotypeInd(const ArrDouble2D & indPostProbsZandG)
+inline MyArr2D FastPhaseK4::callGenotypeInd(const MyArr2D & indPostProbsZandG)
 {
-    ArrDouble1D geno = ArrDouble1D::Zero(M * 3);
+    MyArr1D geno = MyArr1D::Zero(M * 3);
     int k1, k2, k12, g1, g2, g12, g3;
     for(k1 = 0; k1 < C; k1++)
     {
@@ -464,7 +460,7 @@ inline ArrDouble2D FastPhaseK4::callGenotypeInd(const ArrDouble2D & indPostProbs
 /*
 ** @param distRate distance or recombination rate between two markers
 */
-inline void FastPhaseK4::transitionCurIter(const ArrDouble1D & distRate)
+inline void FastPhaseK4::transitionCurIter(const MyArr1D & distRate)
 {
     int to1, to2, from1, from2;
     int k4d, k2d1, k2d2;
@@ -498,7 +494,7 @@ inline void FastPhaseK4::transitionCurIter(const ArrDouble1D & distRate)
     }
 }
 
-inline void FastPhaseK4::updateClusterFreqPI(const ArrDouble2D & postProbsZ, double tol)
+inline void FastPhaseK4::updateClusterFreqPI(const MyArr2D & postProbsZ, double tol)
 {
     int k1, k2, k12;
     PI.setZero();
@@ -520,10 +516,10 @@ inline void FastPhaseK4::updateClusterFreqPI(const ArrDouble2D & postProbsZ, dou
     PI = PI.colwise() / PI.rowwise().sum();
 }
 
-inline void FastPhaseK4::updateAlleleFreqWithinCluster(const ArrDouble2D & postProbsZandG, double tol)
+inline void FastPhaseK4::updateAlleleFreqWithinCluster(const MyArr2D & postProbsZandG, double tol)
 {
     int k1, k2, k12, g1, g2, g12;
-    ArrDouble2D Ekg = ArrDouble2D::Zero(M, C * 2);
+    MyArr2D Ekg = MyArr2D::Zero(M, C * 2);
     for(k1 = 0; k1 < C; k1++)
     {
         for(k2 = 0; k2 < C; k2++)
