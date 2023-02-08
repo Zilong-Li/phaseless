@@ -1,0 +1,38 @@
+[
+  {
+    "arguments": [
+      "/usr/bin/g++",
+      "-c",
+      "-std=c++17",
+      "-Wall",
+      "-O3",
+      "-g",
+      "-I/usr/local/include",
+      "-Wl,-rpath,/usr/local/lib",
+      "-o",
+      "fastphasek4",
+      "fastphasek4.cpp"
+    ],
+    "directory": "/Users/zilong/Project/phaseless/src",
+    "file": "/Users/zilong/Project/phaseless/src/fastphasek4.cpp",
+    "output": "/Users/zilong/Project/phaseless/src/fastphasek4"
+  },
+  {
+    "arguments": [
+      "/usr/bin/g++",
+      "-c",
+      "-std=c++17",
+      "-Wall",
+      "-O3",
+      "-g",
+      "-I/usr/local/include",
+      "-Wl,-rpath,/usr/local/lib",
+      "-o",
+      "test-beagle",
+      "test-beagle.cpp"
+    ],
+    "directory": "/Users/zilong/Project/phaseless/src",
+    "file": "/Users/zilong/Project/phaseless/src/test-beagle.cpp",
+    "output": "/Users/zilong/Project/phaseless/src/test-beagle"
+  }
+]

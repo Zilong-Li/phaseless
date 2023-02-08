@@ -6,6 +6,7 @@
 !*/
 ### Above combination will ignore all files without extension ###
 
+!Makefile
 .DS_Store
 .idea
 *.log
@@ -15,7 +16,6 @@ a-*
 .cache
 tmp/
 *.bin
-compile_commands.json
 *.o
 *log
 *dSYM

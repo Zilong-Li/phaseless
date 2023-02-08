@@ -71,14 +71,13 @@ int main(int argc, char * argv[])
     StringVec1D sampleids;
     uMapStringInt1D chrs_map;
     uMapStringUint chrs_starts;
-    std::string ichr;
     tm.clock();
     read_beagle_genotype_likelihoods(in_beagle, genolikes, sampleids, chrs_map, chrs_starts, N, M);
     log.done(tm.date()) << "parsing input -> N:" << N << ", M:" << M << ", C:" << C << "; " << tm.reltime()
                         << " ms" << endl;
     assert(chrs_map.size() == 1);
-    ichr = chrs_map.begin()->first;
-    auto distRate = calc_distRate(chrs_map[ichr], C);
+    auto ichr = chrs_map.begin()->first;
+    auto distRate = calc_distRate(chrs_map.begin()->second, C);
 
     double loglike{0};
     MyArr2D postProbsZ(M, C * C);

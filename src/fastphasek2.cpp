@@ -71,14 +71,13 @@ int main(int argc, char * argv[])
     uMapStringInt1D chrs_map;
     uMapStringUint chrs_starts;
     StringVec1D sampleids;
-    std::string ichr;
     tm.clock();
     read_beagle_genotype_likelihoods(in_beagle, genolikes, sampleids, chrs_map, chrs_starts, N, M);
     log.done(tm.date()) << "parsing input -> N:" << N << ", M:" << M << ", C:" << C << "; " << tm.reltime()
                         << " ms" << endl;
     assert(chrs_map.size() == 1);
-    ichr = chrs_map.begin()->first;
-    auto transRate = calc_transRate(chrs_map[ichr], C);
+    auto ichr = chrs_map.begin()->first;
+    auto transRate = calc_transRate(chrs_map.begin()->second, C);
     nthreads = nthreads < N ? nthreads : N;
 
     double loglike{0};
@@ -107,7 +106,8 @@ int main(int argc, char * argv[])
         log.done(tm.date()) << "iteration " << setw(2) << it << ", log likelihoods: " << std::fixed << loglike
                             << "; " << tm.reltime() << " ms" << endl;
     }
-    write_bcf_genotype_probability(nofaith.GP.data(), out_vcf, in_vcf, sampleids, chrs_map[ichr], ichr, N, M);
+    write_bcf_genotype_probability(nofaith.GP.data(), out_vcf, in_vcf, sampleids, chrs_map.begin()->second,
+                                   ichr, N, M);
     log.warn(tm.date() + "-> have a nice day, bye!\n");
 
     return 0;
