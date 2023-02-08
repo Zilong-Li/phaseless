@@ -7,20 +7,6 @@
 
 using namespace std;
 
-// check initialize_sigmaCurrent_m in STITCH
-ArrDouble2D calc_transRate(const IntVec1D & markers, int C, int Ne = 20000, double expRate = 0.5)
-{
-    ArrDouble1D distRate(markers.size());
-    distRate(0) = exp(-1e20);
-    // int nGen = 4 * Ne / C;
-    for(size_t i = 1; i < markers.size(); i++) distRate(i) = exp(-(markers[i] - markers[i - 1]) / 1e6);
-    ArrDouble2D transRate(3, markers.size());
-    transRate.row(0) = distRate.square();
-    transRate.row(1) = distRate * (1 - distRate);
-    transRate.row(2) = (1 - distRate).square();
-    return transRate;
-}
-
 int main(int argc, char * argv[])
 {
     // ========= helper message and parameters parsing ============================
@@ -90,10 +76,11 @@ int main(int argc, char * argv[])
     int N, M;
     DoubleVec1D genolikes;
     StringIntVecMapU chrs_map;
+    StringIntMapU chrs_starts;
     StringVec1D sampleids;
     std::string ichr;
     tm.clock();
-    read_beagle_genotype_likelihoods(in_beagle, genolikes, sampleids, chrs_map, N, M);
+    read_beagle_genotype_likelihoods(in_beagle, genolikes, sampleids, chrs_map, chrs_starts, N, M);
     log.done(tm.date()) << "parsing input -> N:" << N << ", M:" << M << ", C:" << C << "; " << tm.reltime()
                         << " ms" << endl;
     assert(chrs_map.size() == 1);
@@ -129,6 +116,7 @@ int main(int argc, char * argv[])
     }
     write_bcf_genotype_probability(nofaith.GP.data(), out_vcf, in_vcf, sampleids, chrs_map[ichr], ichr, N, M);
     log.done(tm.date()) << "imputation done and outputting.\n";
+
     log.warn(tm.date() + "-> running admixture\n");
     Admixture admixer(N, M, C, K, seed);
     double loglike_prev = 0, diff;
@@ -137,11 +125,9 @@ int main(int argc, char * argv[])
         tm.clock();
         admixer.initIteration();
         for(int i = 0; i < N; i++)
-        {
             llike.emplace_back(poolit.enqueue(&Admixture::runWithClusterLikelihoods, &admixer, i,
                                               std::ref(genolikes), std::ref(transRate), std::ref(nofaith.PI),
                                               std::ref(nofaith.F)));
-        }
         loglike = 0;
         for(auto && ll : llike) loglike += ll.get();
         llike.clear(); // clear future and renew

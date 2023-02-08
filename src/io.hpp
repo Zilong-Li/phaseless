@@ -3,6 +3,7 @@
 
 #include "vcfpp.h"
 #include <cmath>
+#include <map>
 #include <unordered_map>
 #include <zlib.h>
 
@@ -14,7 +15,11 @@ using DoubleVec1D = std::vector<double>;
 using DoubleVec2D = std::vector<DoubleVec1D>;
 using StringVec1D = std::vector<std::string>;
 using StringIntVecMapU = std::unordered_map<std::string, IntVec1D>;
+using StringIntMapU = std::unordered_map<std::string, uint64_t>;
 using StringIntPairMapU = std::unordered_map<std::string, std::pair<int, int>>;
+
+using MyFloat1D = FloatVec1D;
+using MyFloat2D = FloatVec2D;
 
 /*
 ** @GP maps Eigen matrix layout, (3 x nsnps) x nsamples
@@ -24,7 +29,7 @@ inline void write_bcf_genotype_probability(double * GP,
                                            const std::string & vcfin,
                                            const StringVec1D & sampleids,
                                            const IntVec1D & markers,
-                                           std::string & chr,
+                                           const std::string & chr,
                                            int N,
                                            int M)
 {
@@ -33,7 +38,6 @@ inline void write_bcf_genotype_probability(double * GP,
     if(vcfin.empty())
     {
         vcfpp::BcfWriter bw(vcfout, "VCF4.1");
-        if(chr.empty()) chr = "1";
         bw.header.addContig(chr);
         // add GT,GP,DS tag into the header
         bw.header.addFORMAT("GT", "1", "String", "Unphased genotype");
@@ -142,13 +146,14 @@ inline void read_beagle_genotype_likelihoods(const std::string & beagle,
                                              DoubleVec1D & GL,
                                              StringVec1D & sampleids,
                                              StringIntVecMapU & chrs,
+                                             StringIntMapU & starts,
                                              int & nsamples,
                                              int & nsnps,
                                              bool snp_major = true)
 {
     // VARIBLES
     gzFile fp = nullptr;
-    char *original, *buffer, *tok,  *chr, *pos;
+    char *original, *buffer, *tok, *chr, *pos;
     uint64_t bufsize = (uint64_t)128 * 1024 * 1024;
     int i, j;
     const char * delims = "\t \n";
@@ -178,8 +183,8 @@ inline void read_beagle_genotype_likelihoods(const std::string & beagle,
         if(buffer != original) original = buffer;
         tok = strtok_r(buffer, delims, &buffer); // id: chr_pos
         chr = strtok(tok, "_");
-        // chrs.push_back(id);
         pos = strtok(NULL, "_");
+        if(starts.count(chr) == 0) starts[chr] = nsnps; // assume chr ordered
         chrs[chr].push_back(std::stoi(pos));
         tok = strtok_r(NULL, delims, &buffer); // ref
         tok = strtok_r(NULL, delims, &buffer); // alt
@@ -214,6 +219,33 @@ inline void read_beagle_genotype_likelihoods(const std::string & beagle,
             }
         }
     }
+}
+
+/*
+** @params GL genotype likelihoods, sample-majored
+** @return GL chunked genotype likelihoods, snp-majored
+*/
+inline DoubleVec1D subset_genotype_likelihoods(const std::string & ichr,
+                                               const DoubleVec1D & GL,
+                                               const StringIntVecMapU & chrs,
+                                               const StringIntMapU & starts,
+                                               int N)
+{
+    int M = chrs.at(ichr).size();
+    DoubleVec1D chunkGL(M * N * 3);
+    int i, j;
+    uint64_t step = (uint64_t)starts.at(ichr) * N * 3;
+    for(i = 0; i < N; i++)
+    {
+        for(j = 0; j < M; j++)
+        {
+            chunkGL[i * M * 3 + j * 3 + 0] = GL[step + j * N * 3 + i * 3 + 0];
+            chunkGL[i * M * 3 + j * 3 + 1] = GL[step + j * N * 3 + i * 3 + 1];
+            chunkGL[i * M * 3 + j * 3 + 2] = GL[step + j * N * 3 + i * 3 + 2];
+        }
+    }
+
+    return chunkGL;
 }
 
 #endif // PHASELESS_IO_H_

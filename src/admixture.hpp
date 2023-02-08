@@ -3,7 +3,6 @@
 
 #include "common.hpp"
 #include <fstream>
-#include <iostream>
 #include <mutex>
 
 class Admixture
@@ -59,101 +58,15 @@ inline double Admixture::runWithClusterLikelihoods(int ind,
                                                    const ArrDouble2D & PI,
                                                    const ArrDouble2D & F)
 {
-    int k1, k2, k12;
-    // ======== forward and backward recursion ===========
-    Eigen::Map<const ArrDouble2D> gli(GL.data() + ind * M * 3, 3, M);
-    auto emitDip = emissionCurIterInd(gli, F, false);
-    ArrDouble2D LikeForwardInd(C * C, M); // likelihood of forward recursion for ind i, not log
-    ArrDouble2D LikeBackwardInd(C * C, M); // likelihood of backward recursion for ind i, not log
-    ArrDouble1D sumTmp1(C), sumTmp2(C); // store sum over internal loop
-    ArrDouble1D cs(M);
-    double constTmp;
-    // ======== forward recursion ===========
-    int s{0};
-    for(k1 = 0; k1 < C; k1++)
-    {
-        for(k2 = 0; k2 < C; k2++)
-        {
-            k12 = k1 * C + k2;
-            LikeForwardInd(k12, s) = emitDip(s, k12) * PI(s, k1) * PI(s, k2);
-        }
-    }
-    cs(s) = 1 / LikeForwardInd.col(s).sum();
-    LikeForwardInd.col(s) *= cs(s); // normalize it
-    for(s = 1; s < M; s++)
-    {
-        sumTmp1.setZero();
-        sumTmp2.setZero();
-        for(k1 = 0; k1 < C; k1++)
-        {
-            for(k2 = 0; k2 < C; k2++)
-            {
-                k12 = k1 * C + k2;
-                sumTmp1(k1) += LikeForwardInd(k12, s - 1);
-                sumTmp2(k2) += LikeForwardInd(k12, s - 1);
-            }
-        }
-        constTmp = LikeForwardInd.col(s - 1).sum() * transRate(2, s);
-        sumTmp1 *= transRate(1, s);
-        sumTmp2 *= transRate(1, s);
-        for(k1 = 0; k1 < C; k1++)
-        {
-            for(k2 = 0; k2 < C; k2++)
-            {
-                k12 = k1 * C + k2;
-                LikeForwardInd(k12, s) =
-                    emitDip(s, k12)
-                    * (LikeForwardInd(k12, s - 1) * transRate(0, s) + PI(s, k1) * sumTmp1(k2)
-                       + PI(s, k2) * sumTmp2(k1) + PI(s, k1) * PI(s, k2) * constTmp);
-            }
-        }
-        cs(s) = 1 / LikeForwardInd.col(s).sum();
-        LikeForwardInd.col(s) *= cs(s); // normalize it
-    }
-    // ======== backward recursion ===========
-    s = M - 1;
-    LikeBackwardInd.col(s).setOnes(); // not log scale
-    LikeBackwardInd.col(s) *= cs(s);
-    for(s = M - 2; s >= 0; s--)
-    {
-        sumTmp1.setZero();
-        sumTmp2.setZero();
-        constTmp = 0;
-        auto beta_mult_emit = emitDip.row(s + 1).transpose() * LikeBackwardInd.col(s + 1);
-        for(k1 = 0; k1 < C; k1++)
-        {
-            for(k2 = 0; k2 < C; k2++)
-            {
-                k12 = k1 * C + k2;
-                sumTmp1(k1) += beta_mult_emit(k12) * PI(s + 1, k2);
-                sumTmp2(k2) += beta_mult_emit(k12) * PI(s + 1, k1);
-                constTmp += beta_mult_emit(k12) * PI(s + 1, k1) * PI(s + 1, k2);
-            }
-        }
-        sumTmp1 *= transRate(1, s + 1);
-        sumTmp2 *= transRate(1, s + 1);
-        constTmp *= transRate(2, s + 1);
-        for(k1 = 0; k1 < C; k1++)
-        {
-            for(k2 = 0; k2 < C; k2++)
-            {
-                k12 = k1 * C + k2;
-                LikeBackwardInd(k12, s) =
-                    beta_mult_emit(k12) * transRate(0, s + 1) + sumTmp1(k1) + sumTmp2(k2) + constTmp;
-            }
-        }
-        // apply scaling
-        LikeBackwardInd.col(s) *= cs(s);
-    }
-    auto icluster = LikeForwardInd * LikeBackwardInd; // C x C x M
-
-    //============= ready to update Q ============
+    auto icluster = getClusterLikelihoods(ind, GL, transRate, PI, F);
+    const int iM = icluster.cols();
     double norm = 0, llike = 0;
     int c1, c2, c12;
+    int k1, k2, k12, s;
     ArrDouble2D w(C * C, K * K);
-    ArrDouble2D Ekc_i = ArrDouble2D::Zero(K * C, M);
-    ArrDouble2D NormF_i = ArrDouble2D::Zero(K, M);
-    for(s = 0; s < M; s++)
+    ArrDouble2D Ekc_i = ArrDouble2D::Zero(K * C, iM);
+    ArrDouble2D NormF_i = ArrDouble2D::Zero(K, iM);
+    for(s = 0; s < iM; s++)
     {
         norm = 0;
         for(k1 = 0; k1 < K; k1++)

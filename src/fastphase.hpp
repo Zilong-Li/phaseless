@@ -3,7 +3,6 @@
 
 #include "common.hpp"
 #include <fstream>
-#include <iostream>
 #include <mutex>
 
 class FastPhaseK2
