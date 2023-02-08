@@ -9,9 +9,9 @@ INC      = -I. -I../src -I$(HTSINC) -I$(EIGEN)
 LDFLAGS  =  -L$(HTSLIB) -Wl,-rpath,$(HTSLIB)
 LIBS     = -lhts -lz -lm -lbz2 -llzma -lcurl -lpthread
 
-OBJS = test-main.o test-io.o
+OBJS = test-main.o test-io.o test-fastphasek4.o
 
-BINS = test-io.bin
+BINS = test-io.bin test-fastphasek4.bin
 
 .PHONY: all test clean
 
