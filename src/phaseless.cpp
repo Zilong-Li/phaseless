@@ -32,7 +32,6 @@ int main(int argc, char * argv[])
                   << "     -r      region in vcf/bcf to subset\n"
                   << "     -s      size of each chunk in sites unit\n"
                   << "     -seed   for reproducing results [1]\n"
-                  << "     -tol    tolerance value [1e-6]\n"
                   << std::endl;
         return 1;
     }
@@ -40,8 +39,7 @@ int main(int argc, char * argv[])
     std::string in_beagle, in_vcf, out_vcf, out_admixture, out_bin;
     std::string samples = "-", region = "";
     int K{0}, C{0}, niters_admix{100}, niters_impute{40}, nthreads{4}, seed{1};
-    int chunksize{100};
-    double tol{1e-6};
+    int chunksize{100000};
     for(size_t i = 0; i < args.size(); i++)
     {
         if(args[i] == "-b") out_bin = args[++i];
@@ -57,7 +55,6 @@ int main(int argc, char * argv[])
         if(args[i] == "-r") region = args[++i];
         if(args[i] == "-s") chunksize = stoi(args[++i]);
         if(args[i] == "-seed") seed = stoi(args[++i]);
-        if(args[i] == "-tol") tol = stod(args[++i]);
     }
     assert((K > 0) && (C > 0) && (C > K));
 
@@ -111,8 +108,7 @@ int main(int argc, char * argv[])
             loglike = 0;
             for(auto && ll : llike) loglike += ll.get();
             llike.clear(); // clear future and renew
-            nofaith.updateClusterFreqPI(tol);
-            nofaith.updateAlleleFreqWithinCluster(tol);
+            nofaith.updateIteration();
             log.done(tm.date()) << setw(2) << "run chunk " << ic << ", iteration " << setw(2) << it
                                 << ", log likelihoods: " << std::fixed << loglike << "; " << tm.reltime()
                                 << " ms" << endl;
@@ -148,7 +144,7 @@ int main(int argc, char * argv[])
                             << ", diff=" << diff << ". " << tm.reltime() << " ms" << endl;
         if(diff > 0 && diff < 0.1) break;
         loglike_prev = loglike;
-        admixer.updateF();
+        admixer.updateIteration();
     }
     admixer.writeQ(out_admixture);
     log.done(tm.date()) << "admixture done and outputting.\n";

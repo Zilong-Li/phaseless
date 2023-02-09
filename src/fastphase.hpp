@@ -23,9 +23,8 @@ class FastPhaseK2
     MyArr2D Ekg; // M x C x 2
 
     void openClusterFile(std::string out);
-    void initIteration();
-    void updateClusterFreqPI(double tol);
-    void updateAlleleFreqWithinCluster(double tol);
+    void initIteration(double tol = 1e-6);
+    void updateIteration();
     double forwardAndBackwards(int ind, const MyFloat1D & GL, const MyArr2D & transRate, bool call_geno);
 };
 
@@ -36,7 +35,6 @@ inline FastPhaseK2::FastPhaseK2(int n, int m, int c, int seed)
     rng.seed(seed);
     F = RandomUniform<MyArr2D, std::default_random_engine>(M, C, rng, 0.0, 1.0);
     PI = RandomUniform<MyArr2D, std::default_random_engine>(M, C, rng, 0.0, 1.0);
-    PI = PI.colwise() / PI.rowwise().sum(); // normalize it
 }
 
 inline FastPhaseK2::~FastPhaseK2()
@@ -53,8 +51,18 @@ inline void FastPhaseK2::openClusterFile(std::string out)
     ofs.write((char *)&C, 4);
 }
 
-inline void FastPhaseK2::initIteration()
+inline void FastPhaseK2::initIteration(double tol)
 {
+    // map PI to domain with normalization
+    if(PI.isNaN().any()) throw std::runtime_error("NaN in PI\n");
+    PI = (PI < tol).select(tol, PI); // lower bound
+    PI = (PI > 1 - tol).select(1 - tol, PI); // upper bound
+    // normalize it now
+    PI = PI.colwise() / PI.rowwise().sum();
+    // map F to domain but no normalization
+    if(F.isNaN().any()) throw std::runtime_error("NaN in F\n");
+    F = (F < tol).select(tol, F); // lower bound
+    F = (F > 1 - tol).select(1 - tol, F); // upper bound
     Ek.setZero();
     Ekg.setZero();
 }
@@ -241,25 +249,11 @@ inline double FastPhaseK2::forwardAndBackwards(int ind,
     return indLogLikeForwardAll;
 }
 
-inline void FastPhaseK2::updateClusterFreqPI(double tol)
+inline void FastPhaseK2::updateIteration()
 {
     PI = Ek / (2 * N);
-    // map to domain
-    if(PI.isNaN().any()) throw std::runtime_error("NaN in PI\n");
-    PI = (PI < tol).select(tol, PI); // lower bound
-    PI = (PI > 1 - tol).select(1 - tol, PI); // upper bound
-    // normalize it now
-    PI = PI.colwise() / PI.rowwise().sum();
-}
-
-inline void FastPhaseK2::updateAlleleFreqWithinCluster(double tol)
-{
     F = Ekg(Eigen::all, Eigen::seq(1, Eigen::last, 2))
         / (Ekg(Eigen::all, Eigen::seq(1, Eigen::last, 2)) + Ekg(Eigen::all, Eigen::seq(0, Eigen::last, 2)));
-    // map to domain but no normalization
-    if(F.isNaN().any()) throw std::runtime_error("NaN in PI\n");
-    F = (F < tol).select(tol, F); // lower bound
-    F = (F > 1 - tol).select(1 - tol, F); // upper bound
 }
 
 class FastPhaseK4

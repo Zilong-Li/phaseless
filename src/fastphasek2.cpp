@@ -27,7 +27,6 @@ int main(int argc, char * argv[])
                   << "     -r      region in vcf/bcf to subset\n"
                   << "     -s      samples in vcf/bcf to subset\n"
                   << "     -seed   for reproducing results [1]\n"
-                  << "     -tol    tolerance value [1e-6]\n"
                   << std::endl;
         return 1;
     }
@@ -35,7 +34,6 @@ int main(int argc, char * argv[])
     std::string in_beagle, in_vcf, out_vcf, out_cluster;
     std::string samples = "-", region = "";
     int C{0}, niters{40}, nthreads{4}, seed{1};
-    double tol{1e-6};
     for(size_t i = 0; i < args.size(); i++)
     {
         if(args[i] == "-b") out_cluster = args[++i];
@@ -48,7 +46,6 @@ int main(int argc, char * argv[])
         if(args[i] == "-r") region = args[++i];
         if(args[i] == "-s") samples = args[++i];
         if(args[i] == "-seed") seed = stoi(args[++i]);
-        if(args[i] == "-tol") tol = stod(args[++i]);
     }
     assert(C > 0);
 
@@ -100,8 +97,7 @@ int main(int argc, char * argv[])
         loglike = 0;
         for(auto && l : llike) loglike += l.get();
         llike.clear(); // clear future and renew
-        nofaith.updateClusterFreqPI(tol);
-        nofaith.updateAlleleFreqWithinCluster(tol);
+        nofaith.updateIteration();
         log.done(tm.date()) << "iteration " << setw(2) << it << ", log likelihoods: " << std::fixed << loglike
                             << "; " << tm.reltime() << " ms" << endl;
     }
