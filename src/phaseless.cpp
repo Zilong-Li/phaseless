@@ -35,7 +35,7 @@ int main(int argc, char * argv[])
         return 1;
     }
 
-    filesystem::path outdir, in_beagle, in_vcf, out_vcf, out_admixture, in_bin;
+    filesystem::path outdir, in_beagle, in_vcf, in_bin;
     string samples = "-", region = "";
     int K{0}, C{0}, niters_admix{100}, niters_impute{40}, nthreads{4}, seed{1};
     int chunksize{100000};
@@ -56,7 +56,12 @@ int main(int argc, char * argv[])
     }
     assert((K > 0) && (C > 0) && (C > K));
 
-    if(!outdir.empty()) filesystem::create_directories(outdir);
+    if(!outdir.empty())
+        filesystem::create_directories(outdir);
+    else if(!in_bin.empty())
+        outdir = in_bin.parent_path();
+    else
+        throw invalid_argument("please check the input and output options\n");
 
     Logger log(outdir / "phaseless.log");
     log.cao << "Options in effect:\n";
@@ -114,10 +119,13 @@ int main(int argc, char * argv[])
                 loglike = 0;
                 for(auto && ll : llike) loglike += ll.get();
                 llike.clear(); // clear future and renew
-                nofaith.updateIteration();
+                diff = loglike - prevlike;
                 log.done(tm.date()) << setw(2) << "run chunk " << ic << ", iteration " << setw(2) << it
-                                    << ", log likelihoods: " << std::fixed << loglike << "; " << tm.reltime()
-                                    << " ms" << endl;
+                                    << ", log likelihoods: " << std::fixed << loglike << ", diff=" << diff
+                                    << ". " << tm.reltime() << " secs" << endl;
+                prevlike = loglike;
+                if(diff > 0 && diff < 0.1) break;
+                nofaith.updateIteration();
             }
             genome->PI.emplace_back(MyFloat1D(nofaith.PI.data(), nofaith.PI.data() + nofaith.PI.size()));
             genome->F.emplace_back(MyFloat1D(nofaith.F.data(), nofaith.F.data() + nofaith.F.size()));
@@ -140,8 +148,10 @@ int main(int argc, char * argv[])
         genome = std::make_unique<BigAss>(alpaca::deserialize<BigAss>(ifs, filesize, ec));
         ifs.close();
     }
+
     log.warn(tm.date() + "-> running admixture\n");
     Admixture admixer(genome->nsamples, genome->nsnps, C, K, seed);
+    prevlike = 0;
     for(int it = 0; it <= niters_admix; it++)
     {
         tm.clock();
@@ -153,7 +163,7 @@ int main(int argc, char * argv[])
         llike.clear(); // clear future and renew
         diff = loglike - prevlike;
         log.done(tm.date()) << "iteration " << setw(3) << it << ", log likelihoods: " << std::fixed << loglike
-                            << ", diff=" << diff << ". " << tm.reltime() << " ms" << endl;
+                            << ", diff=" << diff << ". " << tm.reltime() << " secs" << endl;
         if(diff > 0 && diff < 0.1) break;
         prevlike = loglike;
         admixer.updateIteration();
