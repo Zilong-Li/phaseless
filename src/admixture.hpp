@@ -48,7 +48,7 @@ inline double Admixture::runWithBigAss(int ind, const std::unique_ptr<BigAss> & 
     MyArr2D iNormF = MyArr2D::Zero(K, M);
     double norm = 0, llike = 0;
     int c1, c2, c12;
-    int k1, k2, k12, s;
+    int k1, k2, k12, s, m{0};
     for(int ic = 0; ic < genome->nchunks; ic++)
     {
 
@@ -86,18 +86,20 @@ inline double Admixture::runWithBigAss(int ind, const std::unique_ptr<BigAss> & 
                         for(k2 = 0; k2 < K; k2++)
                         {
                             k12 = k1 * K + k2;
-                            Ekg(ind * K + k1, s) += w(c12, k12) / norm;
-                            Ekg(ind * K + k2, s) += w(c12, k12) / norm;
-                            iEkc(k1 * C + c1, s) += w(c12, k12) / norm;
-                            iEkc(k2 * C + c2, s) += w(c12, k12) / norm;
-                            iNormF(k1, s) += w(c12, k12) / norm;
-                            iNormF(k2, s) += w(c12, k12) / norm;
+                            Ekg(ind * K + k1, m + s) += w(c12, k12) / norm;
+                            Ekg(ind * K + k2, m + s) += w(c12, k12) / norm;
+                            iEkc(k1 * C + c1, m + s) += w(c12, k12) / norm;
+                            iEkc(k2 * C + c2, m + s) += w(c12, k12) / norm;
+                            iNormF(k1, m + s) += w(c12, k12) / norm;
+                            iNormF(k2, m + s) += w(c12, k12) / norm;
                         }
                     }
                 }
             }
         }
+        m += iM;
     }
+    // assert(m == M);
     // update Q, Q.colwise().sum() should be 1
     for(int k = 0; k < K; k++) Q(k, ind) = Ekg.row(ind * K + k).sum() / (2 * M);
     {
