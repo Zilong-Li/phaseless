@@ -5,6 +5,7 @@
 #include "log.hpp"
 #include "threadpool.hpp"
 #include "timer.hpp"
+#include <filesystem>
 
 using namespace std;
 
@@ -16,10 +17,9 @@ int main(int argc, char * argv[])
     {
         std::cout << "Author: Zilong-Li (zilong.dk@gmail.com)\n"
                   << "Usage example:\n"
-                  << "     " + (std::string)argv[0]
-                         + " -g beagle.gz -c 10 -i 20 -n 10 -o out.vcf.gz -b cluster.bin\n"
+                  << "     " + (std::string)argv[0] + " -g beagle.gz -o dir -c 10 -k 3 -i 100 -n 10\n"
                   << "\nOptions:\n"
-                  << "     -b      save parameters in binary file\n"
+                  << "     -b      input binary file with all parameters\n"
                   << "     -c      number of ancestral clusters\n"
                   << "     -f      input vcf/bcf format\n"
                   << "     -g      gziped beagle format\n"
@@ -27,8 +27,7 @@ int main(int argc, char * argv[])
                   << "     -I      number of iterations of imputation [40]\n"
                   << "     -k      number of ancestry\n"
                   << "     -n      number of threads\n"
-                  << "     -o      output compressed/uncompressed vcf/bcf\n"
-                  << "     -q      output estimated ancestry proportion\n"
+                  << "     -o      output directory\n"
                   << "     -r      region in vcf/bcf to subset\n"
                   << "     -s      size of each chunk in sites unit\n"
                   << "     -seed   for reproducing results [1]\n"
@@ -36,19 +35,18 @@ int main(int argc, char * argv[])
         return 1;
     }
 
-    std::string in_beagle, in_vcf, out_vcf, out_admixture, out_bin;
-    std::string samples = "-", region = "";
+    filesystem::path outdir, in_beagle, in_vcf, out_vcf, out_admixture, in_bin;
+    string samples = "-", region = "";
     int K{0}, C{0}, niters_admix{100}, niters_impute{40}, nthreads{4}, seed{1};
     int chunksize{100000};
     for(size_t i = 0; i < args.size(); i++)
     {
-        if(args[i] == "-b") out_bin = args[++i];
+        if(args[i] == "-b") in_bin = args[++i];
         if(args[i] == "-c") C = stoi(args[++i]);
         if(args[i] == "-k") K = stoi(args[++i]);
         if(args[i] == "-f") in_vcf = args[++i];
-        if(args[i] == "-o") out_vcf = args[++i];
-        if(args[i] == "-q") out_admixture = args[++i];
-        if(args[i] == "-g") in_beagle = args[++i];
+        if(args[i] == "-o") outdir.assign(args[++i]);
+        if(args[i] == "-g") in_beagle.assign(args[++i]);
         if(args[i] == "-i") niters_admix = stoi(args[++i]);
         if(args[i] == "-I") niters_impute = stoi(args[++i]);
         if(args[i] == "-n") nthreads = stoi(args[++i]);
@@ -58,7 +56,9 @@ int main(int argc, char * argv[])
     }
     assert((K > 0) && (C > 0) && (C > K));
 
-    Logger log(out_admixture + ".log");
+    if(!outdir.empty()) filesystem::create_directories(outdir);
+
+    Logger log(outdir / "phaseless.log");
     log.cao << "Options in effect:\n";
     for(size_t i = 0; i < args.size(); i++) // print out options in effect
     {
@@ -72,64 +72,76 @@ int main(int argc, char * argv[])
     // log.cao.precision(4);
 
     // ========= core calculation part ===========================================
-    std::unique_ptr<BigAss> genome = std::make_unique<BigAss>();
-    genome->chunksize = chunksize;
-    tm.clock();
-    chunk_beagle_genotype_likelihoods(genome, in_beagle);
-    log.done(tm.date()) << "parsing input -> C:" << C << ", N:" << genome->nsamples << ", M:" << genome->nsnps
-                        << ", nchunks:" << genome->nchunks << "; " << tm.reltime() << " ms" << endl;
     auto allthreads = std::thread::hardware_concurrency();
-    nthreads = nthreads < genome->nsamples ? nthreads : genome->nsamples;
+    // nthreads = nthreads < genome->nsamples ? nthreads : genome->nsamples;
     nthreads = nthreads < allthreads ? nthreads : allthreads;
     log.done(tm.date()) << allthreads << " concurrent threads are supported. use " << nthreads
                         << " threads\n";
     ThreadPool poolit(nthreads);
     vector<future<double>> llike;
+    double loglike{0}, prevlike{0}, diff;
 
-    double loglike{0};
-    for(int ic = 0; ic < genome->nchunks; ic++)
+    std::unique_ptr<BigAss> genome;
+    if(in_bin.empty())
     {
-        FastPhaseK2 nofaith(genome->nsamples, genome->pos[ic].size(), C, seed);
-        auto transRate = calc_transRate(genome->pos[ic], C);
-        genome->transRate.emplace_back(MyFloat1D(transRate.data(), transRate.data() + transRate.size()));
-        for(int it = 0; it <= niters_impute; it++)
+        genome = std::make_unique<BigAss>();
+        genome->chunksize = chunksize;
+        tm.clock();
+        chunk_beagle_genotype_likelihoods(genome, in_beagle);
+        log.done(tm.date()) << "parsing input -> C:" << C << ", N:" << genome->nsamples
+                            << ", M:" << genome->nsnps << ", nchunks:" << genome->nchunks << "; "
+                            << tm.reltime() << " ms" << endl;
+        for(int ic = 0; ic < genome->nchunks; ic++)
         {
-            tm.clock();
-            nofaith.initIteration();
-            for(int i = 0; i < genome->nsamples; i++)
+            FastPhaseK2 nofaith(genome->nsamples, genome->pos[ic].size(), C, seed);
+            auto transRate = calc_transRate(genome->pos[ic], C);
+            genome->transRate.emplace_back(MyFloat1D(transRate.data(), transRate.data() + transRate.size()));
+            for(int it = 0; it <= niters_impute; it++)
             {
-                if(it == niters_impute)
-                    llike.emplace_back(poolit.enqueue(&FastPhaseK2::forwardAndBackwards, &nofaith, i,
-                                                      std::ref(genome->gls[ic]), std::ref(transRate), true));
-                else
-                    llike.emplace_back(poolit.enqueue(&FastPhaseK2::forwardAndBackwards, &nofaith, i,
-                                                      std::ref(genome->gls[ic]), std::ref(transRate), false));
+                tm.clock();
+                nofaith.initIteration();
+                for(int i = 0; i < genome->nsamples; i++)
+                {
+                    if(it == niters_impute)
+                        llike.emplace_back(poolit.enqueue(&FastPhaseK2::forwardAndBackwards, &nofaith, i,
+                                                          std::ref(genome->gls[ic]), std::ref(transRate),
+                                                          true));
+                    else
+                        llike.emplace_back(poolit.enqueue(&FastPhaseK2::forwardAndBackwards, &nofaith, i,
+                                                          std::ref(genome->gls[ic]), std::ref(transRate),
+                                                          false));
+                }
+                loglike = 0;
+                for(auto && ll : llike) loglike += ll.get();
+                llike.clear(); // clear future and renew
+                nofaith.updateIteration();
+                log.done(tm.date()) << setw(2) << "run chunk " << ic << ", iteration " << setw(2) << it
+                                    << ", log likelihoods: " << std::fixed << loglike << "; " << tm.reltime()
+                                    << " ms" << endl;
             }
-            loglike = 0;
-            for(auto && ll : llike) loglike += ll.get();
-            llike.clear(); // clear future and renew
-            nofaith.updateIteration();
-            log.done(tm.date()) << setw(2) << "run chunk " << ic << ", iteration " << setw(2) << it
-                                << ", log likelihoods: " << std::fixed << loglike << "; " << tm.reltime()
-                                << " ms" << endl;
+            genome->PI.emplace_back(MyFloat1D(nofaith.PI.data(), nofaith.PI.data() + nofaith.PI.size()));
+            genome->F.emplace_back(MyFloat1D(nofaith.F.data(), nofaith.F.data() + nofaith.F.size()));
         }
-        genome->PI.emplace_back(MyFloat1D(nofaith.PI.data(), nofaith.PI.data() + nofaith.PI.size()));
-        genome->F.emplace_back(MyFloat1D(nofaith.F.data(), nofaith.F.data() + nofaith.F.size()));
-    }
-    // write_bcf_genotype_probability(nofaith.GP.data(), out_vcf, in_vcf, sampleids, chrs_pos[ichr], ichr, N,
-    // M);
-    log.done(tm.date()) << "imputation done and outputting.\n";
-
-    if(!out_bin.empty())
-    {
-        std::ofstream os(out_bin, std::ios::out | std::ios::binary);
-        auto bytes_written = alpaca::serialize<BigAss>(*genome, os);
+        // write_bcf_genotype_probability(nofaith.GP.data(), out_vcf, in_vcf, sampleids, chrs_pos[ichr], ichr,
+        // N, M);
+        log.done(tm.date()) << "imputation done and outputting.\n";
+        std::ofstream ofs(outdir / "pars.bin", std::ios::out | std::ios::binary);
+        auto bytes_written = alpaca::serialize<BigAss>(*genome, ofs);
         log.done(tm.date()) << bytes_written << " bytes written to file\n";
+        ofs.close();
     }
-
+    else
+    {
+        // Deserialize from file
+        auto filesize = std::filesystem::file_size(in_bin);
+        std::error_code ec;
+        std::ifstream ifs(in_bin, std::ios::in | std::ios::binary);
+        log.done(tm.date()) << filesize << " bytes deserialized from file. skip imputation\n";
+        genome = std::make_unique<BigAss>(alpaca::deserialize<BigAss>(ifs, filesize, ec));
+        ifs.close();
+    }
     log.warn(tm.date() + "-> running admixture\n");
     Admixture admixer(genome->nsamples, genome->nsnps, C, K, seed);
-    double loglike_prev = 0, diff;
     for(int it = 0; it <= niters_admix; it++)
     {
         tm.clock();
@@ -139,14 +151,14 @@ int main(int argc, char * argv[])
         loglike = 0;
         for(auto && ll : llike) loglike += ll.get();
         llike.clear(); // clear future and renew
-        diff = loglike - loglike_prev;
+        diff = loglike - prevlike;
         log.done(tm.date()) << "iteration " << setw(3) << it << ", log likelihoods: " << std::fixed << loglike
                             << ", diff=" << diff << ". " << tm.reltime() << " ms" << endl;
         if(diff > 0 && diff < 0.1) break;
-        loglike_prev = loglike;
+        prevlike = loglike;
         admixer.updateIteration();
     }
-    admixer.writeQ(out_admixture);
+    admixer.writeQ(outdir / "admixture.q");
     log.done(tm.date()) << "admixture done and outputting.\n";
     log.warn(tm.date() + "-> have a nice day, bye!\n");
 
