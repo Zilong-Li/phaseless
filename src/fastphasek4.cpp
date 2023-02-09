@@ -113,7 +113,7 @@ int main(int argc, char * argv[])
         log.done(tm.date()) << "iteration " << setw(2) << it << ", log likelihoods: " << std::fixed << loglike
                             << "; " << tm.reltime() << " ms" << endl;
     }
-    write_bcf_genotype_probability(nofaith.GP.data(), out_vcf, in_vcf, sampleids, chrs_pos[ichr], ichr, N, M);
+    write_bcf_genotype_probability(nofaith.GP.data(), ichr, chrs_pos.begin()->second, sampleids, out_vcf);
     log.warn(tm.date() + "-> have a nice day, bye!\n");
 
     return 0;

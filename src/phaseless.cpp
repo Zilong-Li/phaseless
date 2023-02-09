@@ -95,7 +95,7 @@ int main(int argc, char * argv[])
         chunk_beagle_genotype_likelihoods(genome, in_beagle);
         log.done(tm.date()) << "parsing input -> C:" << C << ", N:" << genome->nsamples
                             << ", M:" << genome->nsnps << ", nchunks:" << genome->nchunks << "; "
-                            << tm.reltime() << " ms" << endl;
+                            << tm.reltime() << " secs" << endl;
         for(int ic = 0; ic < genome->nchunks; ic++)
         {
             FastPhaseK2 nofaith(genome->nsamples, genome->pos[ic].size(), C, seed);
@@ -124,14 +124,15 @@ int main(int argc, char * argv[])
                                     << ", log likelihoods: " << std::fixed << loglike << ", diff=" << diff
                                     << ". " << tm.reltime() << " secs" << endl;
                 prevlike = loglike;
-                if(diff > 0 && diff < 0.1) break;
+                // if(diff > 0 && diff < 0.1) break;
                 nofaith.updateIteration();
             }
+            write_bcf_genotype_probability(nofaith.GP.data(), genome->chrs[ic], genome->pos[ic],
+                                           genome->sampleids,
+                                           outdir / string("chunk." + to_string(ic) + ".vcf.gz"));
             genome->PI.emplace_back(MyFloat1D(nofaith.PI.data(), nofaith.PI.data() + nofaith.PI.size()));
             genome->F.emplace_back(MyFloat1D(nofaith.F.data(), nofaith.F.data() + nofaith.F.size()));
         }
-        // write_bcf_genotype_probability(nofaith.GP.data(), out_vcf, in_vcf, sampleids, chrs_pos[ichr], ichr,
-        // N, M);
         log.done(tm.date()) << "imputation done and outputting.\n";
         std::ofstream ofs(outdir / "pars.bin", std::ios::out | std::ios::binary);
         auto bytes_written = alpaca::serialize<BigAss>(*genome, ofs);
@@ -147,12 +148,13 @@ int main(int argc, char * argv[])
         log.done(tm.date()) << filesize << " bytes deserialized from file. skip imputation\n";
         genome = std::make_unique<BigAss>(alpaca::deserialize<BigAss>(ifs, filesize, ec));
         ifs.close();
+        log.done(tm.date()) << "parsing input -> C:" << C << ", N:" << genome->nsamples
+                            << ", M:" << genome->nsnps << ", nchunks:" << genome->nchunks << "; " << endl;
     }
 
     log.warn(tm.date() + "-> running admixture\n");
     Admixture admixer(genome->nsamples, genome->nsnps, C, K, seed);
-    prevlike = 0;
-    for(int it = 0; it <= niters_admix; it++)
+    for(int it = 0, prevlike = 0; it <= niters_admix; it++)
     {
         tm.clock();
         admixer.initIteration();

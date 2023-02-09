@@ -10,51 +10,47 @@
 ** @GP maps Eigen matrix layout, (3 x nsnps) x nsamples
 */
 inline void write_bcf_genotype_probability(float * GP,
-                                           const std::string & vcfout,
-                                           const std::string & vcfin,
-                                           const StringVec1D & sampleids,
+                                           std::string chr,
                                            const IntVec1D & markers,
-                                           const std::string & chr,
-                                           int N,
-                                           int M)
+                                           const StringVec1D & sampleids,
+                                           std::string vcfout)
 {
+    int N = sampleids.size();
+    int M = markers.size();
     FloatVec1D gp(N * 3), ds(N);
     IntVec1D gt(N * 2);
-    if(vcfin.empty())
+    vcfpp::BcfWriter bw(vcfout, "VCF4.1");
+    bw.header.addContig(chr);
+    // add GT,GP,DS tag into the header
+    bw.header.addFORMAT("GT", "1", "String", "Unphased genotype");
+    bw.header.addFORMAT("GP", "3", "Float", "Posterior genotype probability of 0/0, 0/1, and 1/1");
+    bw.header.addFORMAT("DS", "1", "Float", "Diploid dosage");
+    // add all samples in the header
+    for(int i = 0; i < N; i++)
     {
-        vcfpp::BcfWriter bw(vcfout, "VCF4.1");
-        bw.header.addContig(chr);
-        // add GT,GP,DS tag into the header
-        bw.header.addFORMAT("GT", "1", "String", "Unphased genotype");
-        bw.header.addFORMAT("GP", "3", "Float", "Posterior genotype probability of 0/0, 0/1, and 1/1");
-        bw.header.addFORMAT("DS", "1", "Float", "Diploid dosage");
-        // add all samples in the header
+        if(sampleids.empty())
+            bw.header.addSample(std::string("id_" + std::to_string(i)));
+        else
+            bw.header.addSample(sampleids[i]);
+    }
+    bw.writeHeader();
+    vcfpp::BcfRecord var(bw.header); // construct a variant record from the header
+    for(int m = 0; m < M; m++)
+    {
+        var.setPOS(markers[m]);
         for(int i = 0; i < N; i++)
         {
-            if(sampleids.empty())
-                bw.header.addSample(std::string("id_" + std::to_string(i)));
-            else
-                bw.header.addSample(sampleids[i]);
+            gp[i * 3 + 0] = std::lround(1e3 * GP[i * M * 3 + m * 3 + 0]) / 1e3;
+            gp[i * 3 + 1] = std::lround(1e3 * GP[i * M * 3 + m * 3 + 1]) / 1e3;
+            gp[i * 3 + 2] = std::lround(1e3 * GP[i * M * 3 + m * 3 + 2]) / 1e3;
+            ds[i] = gp[i * 3 + 1] + gp[i * 3 + 2] * 2;
+            gt[i * 2 + 0] = !(gp[i * 3 + 0] > gp[i * 3 + 1] && gp[i * 3 + 0] > gp[i * 3 + 2]);
+            gt[i * 2 + 1] = (gp[i * 3 + 2] > gp[i * 3 + 1] && gt[i * 2 + 0]);
         }
-        bw.writeHeader();
-        vcfpp::BcfRecord var(bw.header); // construct a variant record from the header
-        for(int m = 0; m < M; m++)
-        {
-            var.setPOS(markers[m]);
-            for(int i = 0; i < N; i++)
-            {
-                gp[i * 3 + 0] = std::lround(1e3 * GP[i * M * 3 + m * 3 + 0]) / 1e3;
-                gp[i * 3 + 1] = std::lround(1e3 * GP[i * M * 3 + m * 3 + 1]) / 1e3;
-                gp[i * 3 + 2] = std::lround(1e3 * GP[i * M * 3 + m * 3 + 2]) / 1e3;
-                ds[i] = gp[i * 3 + 1] + gp[i * 3 + 2] * 2;
-                gt[i * 2 + 0] = !(gp[i * 3 + 0] > gp[i * 3 + 1] && gp[i * 3 + 0] > gp[i * 3 + 2]);
-                gt[i * 2 + 1] = (gp[i * 3 + 2] > gp[i * 3 + 1] && gt[i * 2 + 0]);
-            }
-            var.setGenotypes(gt);
-            var.setFORMAT("GP", gp);
-            var.setFORMAT("DS", ds);
-            bw.writeRecord(var);
-        }
+        var.setGenotypes(gt);
+        var.setFORMAT("GP", gp);
+        var.setFORMAT("DS", ds);
+        bw.writeRecord(var);
     }
 }
 
