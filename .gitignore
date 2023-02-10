@@ -19,3 +19,4 @@ tmp/
 *.o
 *log
 *dSYM
+compile_commands.json

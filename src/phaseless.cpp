@@ -66,12 +66,7 @@ int main(int argc, char * argv[])
     Logger cao(outdir / "phaseless.log");
     cao.cao << "Options in effect:\n";
     for(size_t i = 0; i < args.size(); i++) // print out options in effect
-    {
-        if(i % 2)
-            cao.cao << args[i] + "\n";
-        else
-            cao.cao << "  " + args[i] + " ";
-    }
+        i % 2 ? cao.cao << args[i] + "\n" : cao.cao << "  " + args[i] + " ";
     Timer tm;
     cao.warn(tm.date(), "-> running fastphase");
     int allthreads = std::thread::hardware_concurrency();
@@ -82,13 +77,11 @@ int main(int argc, char * argv[])
     ThreadPool poolit(nthreads);
     vector<future<double>> llike;
     double loglike{0}, diff, prevlike;
-
     std::unique_ptr<BigAss> genome;
     if(in_bin.empty())
     {
         genome = std::make_unique<BigAss>();
-        genome->chunksize = chunksize;
-        genome->C = C;
+        genome->chunksize = chunksize, genome->C = C;
         tm.clock();
         chunk_beagle_genotype_likelihoods(genome, in_beagle);
         cao.print(tm.date(), "parsing input -> C =", genome->C, ", N =", genome->nsamples,
@@ -117,10 +110,7 @@ int main(int argc, char * argv[])
                 loglike = 0;
                 for(auto && ll : llike) loglike += ll.get();
                 llike.clear(); // clear future and renew
-                if(it)
-                    diff = loglike - prevlike;
-                else
-                    diff = 0;
+                diff = it ? loglike - prevlike : 0;
                 cao.print(tm.date(), "run chunk", ic, ", iteration", it, ", log likelihoods =", loglike,
                           ", diff =", diff, ",", tm.reltime(), " sec");
                 prevlike = loglike;
@@ -153,7 +143,7 @@ int main(int argc, char * argv[])
 
     cao.warn(tm.date(), "-> running admixture");
     Admixture admixer(genome->nsamples, genome->nsnps, genome->C, K, seed);
-    for(int it = 0, prevlike = 0; it <= niters_admix; it++)
+    for(int it = 0; it <= niters_admix; it++)
     {
         tm.clock();
         admixer.initIteration();
@@ -162,10 +152,7 @@ int main(int argc, char * argv[])
         loglike = 0;
         for(auto && ll : llike) loglike += ll.get();
         llike.clear(); // clear future and renew
-        if(it)
-            diff = loglike - prevlike;
-        else
-            diff = 0;
+        diff = it ? loglike - prevlike : 0;
         cao.print(tm.date(), "iteration", it, ", log likelihoods =", loglike, ", diff =", diff, ",",
                   tm.reltime(), " sec");
         if(diff > 0 && diff < 0.1) break;

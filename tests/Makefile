@@ -12,9 +12,9 @@ OBJS = test-main.o test-io.o test-fastphasek2.o test-fastphasek4.o
 
 BINS = test-io.bin test-fastphasek2.bin test-fastphasek4.bin
 
-.PHONY: all test clean
+.PHONY: all clean
 
-all: $(BINS) $(OBJS) test
+all: test
 
 %.o: %.cpp
 	$(CXX) $(CXXFLAGS) -o $@ -c $< ${INC}
@@ -22,7 +22,7 @@ all: $(BINS) $(OBJS) test
 %.bin: %.o test-main.o
 	${CXX} ${CXXFLAGS} -o $@ $< test-main.o $(LDFLAGS) $(LIBS)
 
-test:
+test: $(BINS)
 	./test-io.bin --success
 	./test-fastphasek2.bin --success
 	./test-fastphasek4.bin --success

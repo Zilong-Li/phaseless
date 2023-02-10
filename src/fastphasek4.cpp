@@ -55,12 +55,7 @@ int main(int argc, char * argv[])
     Logger cao(out_vcf + ".log");
     cao.cao << "Options in effect:\n";
     for(size_t i = 0; i < args.size(); i++) // print out options in effect
-    {
-        if(i % 2)
-            cao.cao << args[i] + "\n";
-        else
-            cao.cao << "  " + args[i] + " ";
-    }
+        i % 2 ? cao.cao << args[i] + "\n" : cao.cao << "  " + args[i] + " ";
     Timer tm;
     cao.warn(tm.date(), "-> running fastphase");
     int allthreads = std::thread::hardware_concurrency();
@@ -79,13 +74,13 @@ int main(int argc, char * argv[])
     auto ichr = chrs_pos.begin()->first;
     auto distRate = calc_distRate(chrs_pos.begin()->second, C);
 
-    double loglike, prevlike, diff;
     MyArr2D postProbsZ(M, C * C);
     MyArr2D postProbsZandG(M, C * C * 4);
     FastPhaseK4 nofaith(N, M, C, seed);
     if(!out_cluster.empty()) nofaith.openClusterFile(out_cluster);
     ThreadPool poolit(nthreads);
     vector<future<double>> llike;
+    double loglike, prevlike, diff;
     for(int it = 0; it < niters + 1; it++)
     {
         tm.clock();
@@ -107,10 +102,7 @@ int main(int argc, char * argv[])
         loglike = 0;
         for(auto && l : llike) loglike += l.get();
         llike.clear(); // clear future and renew
-        if(it)
-            diff = loglike - prevlike;
-        else
-            diff = 0;
+        diff = it ? loglike - prevlike : 0;
         cao.print(tm.date(), "iteration", it, ", log likelihoods =", loglike, ", diff =", diff, ",",
                   tm.reltime(), " sec");
         prevlike = loglike;
