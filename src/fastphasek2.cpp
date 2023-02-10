@@ -49,18 +49,22 @@ int main(int argc, char * argv[])
     }
     assert(C > 0);
 
-    Logger log(out_vcf + ".log");
-    log.cao << "Options in effect:\n";
+    Logger cao(out_vcf + ".log");
+    cao.cao << "Options in effect:\n";
     for(size_t i = 0; i < args.size(); i++) // print out options in effect
     {
         if(i % 2)
-            log.cao << args[i] + "\n";
+            cao.cao << args[i] + "\n";
         else
-            log.cao << "  " + args[i] + " ";
+            cao.cao << "  " + args[i] + " ";
     }
     Timer tm;
-    log.warn(tm.date() + "-> program start\n");
-    // log.cao.precision(4);
+    cao.warn(tm.date(), "-> running fastphase");
+    cout.flags(std::ios::fixed | std::ios::right);
+    int allthreads = std::thread::hardware_concurrency();
+    // nthreads = nthreads < genome->nsamples ? nthreads : genome->nsamples;
+    nthreads = nthreads < allthreads ? nthreads : allthreads;
+    cao.print(tm.date(), allthreads, " concurrent threads are supported. use", nthreads, " threads");
 
     // ========= core calculation part ===========================================
     int N, M;
@@ -69,14 +73,12 @@ int main(int argc, char * argv[])
     StringVec1D sampleids;
     tm.clock();
     read_beagle_genotype_likelihoods(in_beagle, genolikes, sampleids, chrs_pos, N, M);
-    log.done(tm.date()) << "parsing input -> N:" << N << ", M:" << M << ", C:" << C << "; " << tm.reltime()
-                        << " ms" << endl;
+    cao.print(tm.date(), "parsing input -> C =", C, ", N =", N, ", M =", M);
     assert(chrs_pos.size() == 1);
     auto ichr = chrs_pos.begin()->first;
     auto transRate = calc_transRate(chrs_pos.begin()->second, C);
-    nthreads = nthreads < N ? nthreads : N;
 
-    double loglike{0};
+    double loglike{0}, prevlike, diff;
     FastPhaseK2 nofaith(N, M, C, seed);
     if(!out_cluster.empty()) nofaith.openClusterFile(out_cluster);
     ThreadPool poolit(nthreads);
@@ -97,12 +99,19 @@ int main(int argc, char * argv[])
         loglike = 0;
         for(auto && l : llike) loglike += l.get();
         llike.clear(); // clear future and renew
+        if(it)
+            diff = loglike - prevlike;
+        else
+            diff = 0;
+        cao.print(tm.date(), "iteration", it, ", log likelihoods =", loglike, ", diff =", diff, ",",
+                  tm.reltime(), " sec");
+        prevlike = loglike;
+        // if(diff > 0 && diff < 0.1) break;
         nofaith.updateIteration();
-        log.done(tm.date()) << "iteration " << setw(2) << it << ", log likelihoods: " << std::fixed << loglike
-                            << "; " << tm.reltime() << " ms" << endl;
     }
+    cao.done(tm.date(), "imputation done and outputting.");
     write_bcf_genotype_probability(nofaith.GP.data(), ichr, chrs_pos.begin()->second, sampleids, out_vcf);
-    log.warn(tm.date() + "-> have a nice day, bye!\n");
+    cao.done(tm.date(), "-> good job. have a nice day, bye!");
 
     return 0;
 }

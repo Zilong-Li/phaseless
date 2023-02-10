@@ -15,8 +15,8 @@ class Timer
     ~Timer();
     void clock();
     std::string date();
-    unsigned int reltime();
-    unsigned int abstime();
+    double reltime();
+    double abstime();
 };
 
 inline Timer::Timer()
@@ -31,18 +31,20 @@ inline void Timer::clock()
     prev_clock = std::chrono::high_resolution_clock::now();
 }
 
-inline unsigned int Timer::reltime()
+inline double Timer::reltime()
 {
-    return std::chrono::duration_cast<std::chrono::seconds>(std::chrono::high_resolution_clock::now()
-                                                            - prev_clock)
-        .count();
+    return std::chrono::duration_cast<std::chrono::milliseconds>(std::chrono::high_resolution_clock::now()
+                                                                 - prev_clock)
+               .count()
+           / 1e3;
 }
 
-inline unsigned int Timer::abstime()
+inline double Timer::abstime()
 {
-    return std::chrono::duration_cast<std::chrono::seconds>(std::chrono::high_resolution_clock::now()
-                                                            - start_clock)
-        .count();
+    return std::chrono::duration_cast<std::chrono::milliseconds>(std::chrono::high_resolution_clock::now()
+                                                                 - start_clock)
+               .count()
+           / 1e3;
 }
 
 inline std::string Timer::date()
@@ -50,7 +52,7 @@ inline std::string Timer::date()
     auto now = std::chrono::system_clock::now();
     auto in_time_t = std::chrono::system_clock::to_time_t(now);
     std::stringstream ss;
-    ss << std::put_time(std::localtime(&in_time_t), "[%d/%m/%Y-%X] ");
+    ss << std::put_time(std::localtime(&in_time_t), "[%d/%m/%Y-%X]");
     return ss.str();
 }
 

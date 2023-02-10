@@ -63,28 +63,26 @@ int main(int argc, char * argv[])
     else
         throw invalid_argument("please check the input and output options\n");
 
-    Logger log(outdir / "phaseless.log");
-    log.cao << "Options in effect:\n";
+    Logger cao(outdir / "phaseless.log");
+    cao.cao << "Options in effect:\n";
     for(size_t i = 0; i < args.size(); i++) // print out options in effect
     {
         if(i % 2)
-            log.cao << args[i] + "\n";
+            cao.cao << args[i] + "\n";
         else
-            log.cao << "  " + args[i] + " ";
+            cao.cao << "  " + args[i] + " ";
     }
     Timer tm;
-    log.warn(tm.date() + "-> running fastphase\n");
-    // log.cao.precision(4);
+    cao.warn(tm.date(), "-> running fastphase");
+    cout.flags(std::ios::fixed | std::ios::right);
 
     // ========= core calculation part ===========================================
-    auto allthreads = std::thread::hardware_concurrency();
-    // nthreads = nthreads < genome->nsamples ? nthreads : genome->nsamples;
+    int allthreads = std::thread::hardware_concurrency();
     nthreads = nthreads < allthreads ? nthreads : allthreads;
-    log.done(tm.date()) << allthreads << " concurrent threads are supported. use " << nthreads
-                        << " threads\n";
+    cao.print(tm.date(), allthreads, " concurrent threads are supported. use", nthreads, " threads");
     ThreadPool poolit(nthreads);
     vector<future<double>> llike;
-    double loglike{0}, prevlike{0}, diff;
+    double loglike{0}, diff, prevlike;
 
     std::unique_ptr<BigAss> genome;
     if(in_bin.empty())
@@ -93,9 +91,9 @@ int main(int argc, char * argv[])
         genome->chunksize = chunksize;
         tm.clock();
         chunk_beagle_genotype_likelihoods(genome, in_beagle);
-        log.done(tm.date()) << "parsing input -> C:" << C << ", N:" << genome->nsamples
-                            << ", M:" << genome->nsnps << ", nchunks:" << genome->nchunks << "; "
-                            << tm.reltime() << " secs" << endl;
+        cao.print(tm.date(), "parsing input -> C =", C, ", N =", genome->nsamples, ", M =", genome->nsnps,
+                  ", nchunks =", genome->nchunks);
+        cao.done(tm.date(), "elapsed time for parsing beagle file", tm.reltime(), " secs");
         for(int ic = 0; ic < genome->nchunks; ic++)
         {
             FastPhaseK2 nofaith(genome->nsamples, genome->pos[ic].size(), C, seed);
@@ -119,10 +117,12 @@ int main(int argc, char * argv[])
                 loglike = 0;
                 for(auto && ll : llike) loglike += ll.get();
                 llike.clear(); // clear future and renew
-                diff = loglike - prevlike;
-                log.done(tm.date()) << setw(2) << "run chunk " << ic << ", iteration " << setw(2) << it
-                                    << ", log likelihoods: " << std::fixed << loglike << ", diff=" << diff
-                                    << ". " << tm.reltime() << " secs" << endl;
+                if(it)
+                    diff = loglike - prevlike;
+                else
+                    diff = 0;
+                cao.print(tm.date(), "run chunk", ic, ", iteration", it, ", log likelihoods =", loglike,
+                          ", diff =", diff, ",", tm.reltime(), " sec");
                 prevlike = loglike;
                 // if(diff > 0 && diff < 0.1) break;
                 nofaith.updateIteration();
@@ -133,11 +133,10 @@ int main(int argc, char * argv[])
             genome->PI.emplace_back(MyFloat1D(nofaith.PI.data(), nofaith.PI.data() + nofaith.PI.size()));
             genome->F.emplace_back(MyFloat1D(nofaith.F.data(), nofaith.F.data() + nofaith.F.size()));
         }
-        log.done(tm.date()) << "imputation done and outputting.\n";
         std::ofstream ofs(outdir / "pars.bin", std::ios::out | std::ios::binary);
         auto bytes_written = alpaca::serialize<BigAss>(*genome, ofs);
-        log.done(tm.date()) << bytes_written << " bytes written to file\n";
         ofs.close();
+        cao.done(tm.date(), "imputation done and outputting.", bytes_written, "bytes written to file");
     }
     else
     {
@@ -145,14 +144,14 @@ int main(int argc, char * argv[])
         auto filesize = std::filesystem::file_size(in_bin);
         std::error_code ec;
         std::ifstream ifs(in_bin, std::ios::in | std::ios::binary);
-        log.done(tm.date()) << filesize << " bytes deserialized from file. skip imputation\n";
+        cao.done(tm.date(), filesize, "bytes deserialized from file. skip imputation");
         genome = std::make_unique<BigAss>(alpaca::deserialize<BigAss>(ifs, filesize, ec));
         ifs.close();
-        log.done(tm.date()) << "parsing input -> C:" << C << ", N:" << genome->nsamples
-                            << ", M:" << genome->nsnps << ", nchunks:" << genome->nchunks << "; " << endl;
+        cao.print(tm.date(), "parsing input -> C =", C, ", N =", genome->nsamples, ", M =", genome->nsnps,
+                  ", nchunks =", genome->nchunks);
     }
 
-    log.warn(tm.date() + "-> running admixture\n");
+    cao.warn(tm.date(), "-> running admixture");
     Admixture admixer(genome->nsamples, genome->nsnps, C, K, seed);
     for(int it = 0, prevlike = 0; it <= niters_admix; it++)
     {
@@ -163,16 +162,19 @@ int main(int argc, char * argv[])
         loglike = 0;
         for(auto && ll : llike) loglike += ll.get();
         llike.clear(); // clear future and renew
-        diff = loglike - prevlike;
-        log.done(tm.date()) << "iteration " << setw(3) << it << ", log likelihoods: " << std::fixed << loglike
-                            << ", diff=" << diff << ". " << tm.reltime() << " secs" << endl;
+        if(it)
+            diff = loglike - prevlike;
+        else
+            diff = 0;
+        cao.print(tm.date(), "iteration", it, ", log likelihoods =", loglike, ", diff =", diff, ",",
+                  tm.reltime(), " sec");
         if(diff > 0 && diff < 0.1) break;
         prevlike = loglike;
         admixer.updateIteration();
     }
+    cao.done(tm.date(), "admixture done and outputting.");
     admixer.writeQ(outdir / "admixture.q");
-    log.done(tm.date()) << "admixture done and outputting.\n";
-    log.warn(tm.date() + "-> have a nice day, bye!\n");
+    cao.done(tm.date(), "-> good job. have a nice day, bye!");
 
     return 0;
 }

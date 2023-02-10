@@ -2,6 +2,7 @@
 #define LOG_H_
 
 #include <fstream>
+#include <iomanip> // setw
 #include <iostream>
 
 class Logger
@@ -14,6 +15,8 @@ class Logger
     {
         cao.open(filename.c_str());
         if(!cao) throw std::runtime_error(filename + " : " + strerror(errno));
+        cao.precision(3);
+        cao.flags(std::ios::fixed | std::ios::right);
     }
 
     ~Logger()
@@ -37,27 +40,54 @@ class Logger
     };
 
     template<class S>
-    Logger & warn(const S & val)
+    void printSpace(std::ostream & os, const S & val)
     {
-        cao << val;
-        std::cout << "\x1B[33m" << val << "\033[0m";
-        return *this;
+        if(std::is_integral_v<std::decay_t<decltype(val)>>)
+            os << std::setw(2) << val;
+        else if(std::is_floating_point_v<std::decay_t<decltype(val)>>)
+            os << std::fixed << val;
+        else
+            os << val << " ";
     }
 
-    template<class S>
-    Logger & error(const S & val)
+    template<typename... Args>
+    void print(const Args &... args)
     {
-        cao << val;
-        std::cout << "\x1B[31m" << val << "\033[0m";
-        return *this;
+        (..., printSpace(std::cout, args));
+        std::cout << std::endl;
+        (..., printSpace(cao, args));
+        cao << std::endl;
     }
 
-    template<class S>
-    Logger & done(const S & val)
+    template<typename... Args>
+    void warn(const Args &... args)
     {
-        cao << val;
-        std::cout << "\x1B[32m" << val << "\033[0m";
-        return *this;
+        std::cout << "\x1B[33m";
+        (..., printSpace(std::cout, args));
+        std::cout << "\033[0m" << std::endl;
+        (..., printSpace(cao, args));
+        cao << std::endl;
+    }
+
+    template<typename... Args>
+    void error(const Args &... args)
+    {
+        std::cout << "\x1B[31m";
+        (..., printSpace(std::cout, args));
+        std::cout << "\033[0m" << std::endl;
+        (..., printSpace(cao, args));
+        cao << std::endl;
+    }
+
+    template<typename... Args>
+    void done(const Args &... args)
+    {
+        auto printSpace = [](std::ostream & os, const auto & val) -> void { os << val << " "; };
+        std::cout << "\x1B[32m";
+        (..., printSpace(std::cout, args));
+        std::cout << "\033[0m" << std::endl;
+        (..., printSpace(cao, args));
+        cao << std::endl;
     }
 };
 
