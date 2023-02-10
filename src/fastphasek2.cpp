@@ -60,7 +60,6 @@ int main(int argc, char * argv[])
     }
     Timer tm;
     cao.warn(tm.date(), "-> running fastphase");
-    cout.flags(std::ios::fixed | std::ios::right);
     int allthreads = std::thread::hardware_concurrency();
     // nthreads = nthreads < genome->nsamples ? nthreads : genome->nsamples;
     nthreads = nthreads < allthreads ? nthreads : allthreads;

@@ -68,8 +68,8 @@ inline double Admixture::runWithBigAss(int ind, const std::unique_ptr<BigAss> & 
                         for(c2 = 0; c2 < C; c2++)
                         {
                             c12 = c1 * C + c2;
-                            w(c12, k12) = icluster(c12, s) * FI(k1 * C + c1, s) * Q(k1, ind)
-                                          * FI(k2 * C + c2, s) * Q(k2, ind);
+                            w(c12, k12) = icluster(c12, s) * FI(k1 * C + c1, m + s) * Q(k1, ind)
+                                          * FI(k2 * C + c2, m + s) * Q(k2, ind);
                             norm += w(c12, k12);
                         }
                     }
@@ -102,6 +102,8 @@ inline double Admixture::runWithBigAss(int ind, const std::unique_ptr<BigAss> & 
     // assert(m == M);
     // update Q, Q.colwise().sum() should be 1
     for(int k = 0; k < K; k++) Q(k, ind) = Ekg.row(ind * K + k).sum() / (2 * M);
+    // assert(((Q.colwise().sum() - 1.0).abs() < 1e-4).all());
+    // std::cout << (Q.colwise().sum() - 1.0).abs().maxCoeff() << std::endl;
     {
         std::lock_guard<std::mutex> lock(mutex_it); // sum over all samples
         Ekc += iEkc;

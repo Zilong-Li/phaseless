@@ -53,6 +53,8 @@ class Logger
     template<typename... Args>
     void print(const Args &... args)
     {
+        std::cout.precision(3);
+        std::cout.flags(std::ios::fixed | std::ios::right);
         (..., printSpace(std::cout, args));
         std::cout << std::endl;
         (..., printSpace(cao, args));

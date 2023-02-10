@@ -46,6 +46,7 @@ inline MatrixType RandomUniform(const Eigen::Index numRows,
     return MatrixType::NullaryExpr(numRows, numCols, uniform);
 };
 
+// all the genome info I need from fastphase
 struct BigAss
 {
     IntVec2D pos; // store position of markers of each chunk
@@ -53,6 +54,7 @@ struct BigAss
     StringVec1D sampleids, chrs;
     int chunksize, nsamples, nsnps, nchunks;
     MyFloat2D PI, F, transRate;
+    int C; // fastphase pars
 };
 
 // check initialize_sigmaCurrent_m in STITCH
@@ -104,6 +106,7 @@ inline auto emissionCurIterInd(const MyArr2D & gli, const MyArr2D & F, bool use_
             }
         }
     }
+    emitDip = emitDip.colwise() / emitDip.rowwise().maxCoeff(); // normalize it
     if(use_log)
     {
         emitDip = emitDip.log();
@@ -111,9 +114,7 @@ inline auto emissionCurIterInd(const MyArr2D & gli, const MyArr2D & F, bool use_
     else
     {
         // be careful with underflow
-        const double maxEmissionMatrixDifference = 1e-10;
-        auto x = emitDip.rowwise().maxCoeff();
-        emitDip = emitDip.colwise() / x;
+        const double maxEmissionMatrixDifference = 1e-6;
         emitDip = (emitDip < maxEmissionMatrixDifference).select(maxEmissionMatrixDifference, emitDip);
     }
     return emitDip;

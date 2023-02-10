@@ -74,12 +74,11 @@ int main(int argc, char * argv[])
     }
     Timer tm;
     cao.warn(tm.date(), "-> running fastphase");
-    cout.flags(std::ios::fixed | std::ios::right);
-
-    // ========= core calculation part ===========================================
     int allthreads = std::thread::hardware_concurrency();
     nthreads = nthreads < allthreads ? nthreads : allthreads;
     cao.print(tm.date(), allthreads, " concurrent threads are supported. use", nthreads, " threads");
+
+    // ========= core calculation part ===========================================
     ThreadPool poolit(nthreads);
     vector<future<double>> llike;
     double loglike{0}, diff, prevlike;
@@ -89,10 +88,11 @@ int main(int argc, char * argv[])
     {
         genome = std::make_unique<BigAss>();
         genome->chunksize = chunksize;
+        genome->C = C;
         tm.clock();
         chunk_beagle_genotype_likelihoods(genome, in_beagle);
-        cao.print(tm.date(), "parsing input -> C =", C, ", N =", genome->nsamples, ", M =", genome->nsnps,
-                  ", nchunks =", genome->nchunks);
+        cao.print(tm.date(), "parsing input -> C =", genome->C, ", N =", genome->nsamples,
+                  ", M =", genome->nsnps, ", nchunks =", genome->nchunks);
         cao.done(tm.date(), "elapsed time for parsing beagle file", tm.reltime(), " secs");
         for(int ic = 0; ic < genome->nchunks; ic++)
         {
@@ -147,12 +147,12 @@ int main(int argc, char * argv[])
         cao.done(tm.date(), filesize, "bytes deserialized from file. skip imputation");
         genome = std::make_unique<BigAss>(alpaca::deserialize<BigAss>(ifs, filesize, ec));
         ifs.close();
-        cao.print(tm.date(), "parsing input -> C =", C, ", N =", genome->nsamples, ", M =", genome->nsnps,
-                  ", nchunks =", genome->nchunks);
+        cao.print(tm.date(), "parsing input -> C =", genome->C, ", N =", genome->nsamples,
+                  ", M =", genome->nsnps, ", nchunks =", genome->nchunks);
     }
 
     cao.warn(tm.date(), "-> running admixture");
-    Admixture admixer(genome->nsamples, genome->nsnps, C, K, seed);
+    Admixture admixer(genome->nsamples, genome->nsnps, genome->C, K, seed);
     for(int it = 0, prevlike = 0; it <= niters_admix; it++)
     {
         tm.clock();
