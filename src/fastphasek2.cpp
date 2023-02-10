@@ -79,7 +79,6 @@ int main(int argc, char * argv[])
 
     double loglike{0}, prevlike, diff;
     FastPhaseK2 nofaith(N, M, C, seed);
-    if(!out_cluster.empty()) nofaith.openClusterFile(out_cluster);
     ThreadPool poolit(nthreads);
     vector<future<double>> llike;
     for(int it = 0; it < niters + 1; it++)

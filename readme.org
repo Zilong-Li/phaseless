@@ -1,0 +1,26 @@
+#+title: Phaseless: imputation and admixture inference in one goal
+
+
+* Build
+
+Assume you have =htslib= installed in your system path.
+
+#+begin_src shell
+git clone https://github.com/Zilong-Li/phaseless
+cd phaseless/src && make -j4
+#+end_src
+
+If you have =htslib= installed in your customized path
+#+begin_src shell
+cd phaseless/src && make HTSINC=/path/to/your/htslib HTSLIB=/path/to/your/htslib -j4
+#+end_src
+
+* usage
+- run admixture with bealge genotype likelihoods as input
+#+begin_src shell
+phaseless -g ../data/bgl.gz -o outdir -c 10 -k 3 -i 100 -n 20
+#+end_src
+- run admixture with binary file as input
+#+begin_src shell
+phaseless -b outdir/pars.bin -k 3 -i 100 -n 20
+#+end_src

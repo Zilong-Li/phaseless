@@ -114,7 +114,7 @@ inline auto emissionCurIterInd(const MyArr2D & gli, const MyArr2D & F, bool use_
     else
     {
         // be careful with underflow
-        const double maxEmissionMatrixDifference = 1e-6;
+        const double maxEmissionMatrixDifference = 1e-10;
         emitDip = (emitDip < maxEmissionMatrixDifference).select(maxEmissionMatrixDifference, emitDip);
     }
     return emitDip;

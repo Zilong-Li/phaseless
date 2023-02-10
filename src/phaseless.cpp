@@ -144,9 +144,9 @@ int main(int argc, char * argv[])
         auto filesize = std::filesystem::file_size(in_bin);
         std::error_code ec;
         std::ifstream ifs(in_bin, std::ios::in | std::ios::binary);
-        cao.done(tm.date(), filesize, "bytes deserialized from file. skip imputation");
         genome = std::make_unique<BigAss>(alpaca::deserialize<BigAss>(ifs, filesize, ec));
         ifs.close();
+        cao.done(tm.date(), filesize, "bytes deserialized from file. skip imputation");
         cao.print(tm.date(), "parsing input -> C =", genome->C, ", N =", genome->nsamples,
                   ", M =", genome->nsnps, ", nchunks =", genome->nchunks);
     }
