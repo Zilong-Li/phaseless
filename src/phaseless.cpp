@@ -54,12 +54,17 @@ int main(int argc, char * argv[])
         if(args[i] == "-s") chunksize = stoi(args[++i]);
         if(args[i] == "-seed") seed = stoi(args[++i]);
     }
-    assert((K > 0) && (C > 0) && (C > K));
 
     if(!outdir.empty())
+    {
+        assert((K > 0) && (C > 0) && (C > K));
         filesystem::create_directories(outdir);
+    }
     else if(!in_bin.empty())
+    {
+        assert(K > 0);
         outdir = in_bin.parent_path();
+    }
     else
         throw invalid_argument("please check the input and output options\n");
 
@@ -86,7 +91,7 @@ int main(int argc, char * argv[])
         chunk_beagle_genotype_likelihoods(genome, in_beagle);
         cao.print(tm.date(), "parsing input -> C =", genome->C, ", N =", genome->nsamples,
                   ", M =", genome->nsnps, ", nchunks =", genome->nchunks);
-        cao.done(tm.date(), "elapsed time for parsing beagle file", tm.reltime(), " secs");
+        cao.done(tm.date(), "elapsed time for parsing beagle file", tm.reltime(), "secs");
         for(int ic = 0; ic < genome->nchunks; ic++)
         {
             FastPhaseK2 nofaith(genome->nsamples, genome->pos[ic].size(), C, seed);
@@ -139,6 +144,7 @@ int main(int argc, char * argv[])
         cao.done(tm.date(), filesize, "bytes deserialized from file. skip imputation");
         cao.print(tm.date(), "parsing input -> C =", genome->C, ", N =", genome->nsamples,
                   ", M =", genome->nsnps, ", nchunks =", genome->nchunks);
+        assert(K < genome->C);
     }
 
     cao.warn(tm.date(), "-> running admixture");
