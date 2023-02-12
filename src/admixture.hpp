@@ -43,11 +43,11 @@ inline Admixture::~Admixture() {}
 
 inline double Admixture::runWithBigAss(int ind, const std::unique_ptr<BigAss> & genome)
 {
-    MyArr2D w(C * C, K * K);
+    MyArr2D w((C * C - C) / 2 + C, K * K);
     MyArr2D iEkc = MyArr2D::Zero(K * C, M);
     MyArr2D iNormF = MyArr2D::Zero(K, M);
     double norm = 0, llike = 0;
-    int c1, c2, c12;
+    int c1, c2, c12, cc;
     int k1, k2, k12, s, m{0};
     for(int ic = 0; ic < genome->nchunks; ic++)
     {
@@ -57,28 +57,10 @@ inline double Admixture::runWithBigAss(int ind, const std::unique_ptr<BigAss> & 
                                               genome->PI[ic], genome->F[ic]);
         for(s = 0; s < iM; s++)
         {
-            norm = 0;
-            for(k1 = 0; k1 < K; k1++)
-            {
-                for(k2 = 0; k2 < K; k2++)
-                {
-                    k12 = k1 * K + k2;
-                    for(c1 = 0; c1 < C; c1++)
-                    {
-                        for(c2 = 0; c2 < C; c2++)
-                        {
-                            c12 = c1 * C + c2;
-                            w(c12, k12) = icluster(c12, s) * FI(k1 * C + c1, m + s) * Q(k1, ind)
-                                          * FI(k2 * C + c2, m + s) * Q(k2, ind);
-                            norm += w(c12, k12);
-                        }
-                    }
-                }
-            }
-            llike += log(norm);
+            norm = 0, cc = 0;
             for(c1 = 0; c1 < C; c1++)
             {
-                for(c2 = 0; c2 < C; c2++)
+                for(c2 = c1; c2 < C; c2++)
                 {
                     c12 = c1 * C + c2;
                     for(k1 = 0; k1 < K; k1++)
@@ -86,14 +68,36 @@ inline double Admixture::runWithBigAss(int ind, const std::unique_ptr<BigAss> & 
                         for(k2 = 0; k2 < K; k2++)
                         {
                             k12 = k1 * K + k2;
-                            Ekg(ind * K + k1, m + s) += w(c12, k12) / norm;
-                            Ekg(ind * K + k2, m + s) += w(c12, k12) / norm;
-                            iEkc(k1 * C + c1, m + s) += w(c12, k12) / norm;
-                            iEkc(k2 * C + c2, m + s) += w(c12, k12) / norm;
-                            iNormF(k1, m + s) += w(c12, k12) / norm;
-                            iNormF(k2, m + s) += w(c12, k12) / norm;
+                            w(cc, k12) = icluster(c12, s) * FI(k1 * C + c1, m + s) * Q(k1, ind)
+                                         * FI(k2 * C + c2, m + s) * Q(k2, ind);
+                            if(c1 != c2) w(cc, k12) *= 2;
+                            norm += w(cc, k12);
                         }
                     }
+                    ++cc;
+                }
+            }
+            llike += log(norm);
+            cc = 0;
+            for(c1 = 0; c1 < C; c1++)
+            {
+                for(c2 = c1; c2 < C; c2++)
+                {
+                    // c12 = c1 * C + c2;
+                    for(k1 = 0; k1 < K; k1++)
+                    {
+                        for(k2 = 0; k2 < K; k2++)
+                        {
+                            k12 = k1 * K + k2;
+                            Ekg(ind * K + k1, m + s) += w(cc, k12) / norm;
+                            Ekg(ind * K + k2, m + s) += w(cc, k12) / norm;
+                            iEkc(k1 * C + c1, m + s) += w(cc, k12) / norm;
+                            iEkc(k2 * C + c2, m + s) += w(cc, k12) / norm;
+                            iNormF(k1, m + s) += w(cc, k12) / norm;
+                            iNormF(k2, m + s) += w(cc, k12) / norm;
+                        }
+                    }
+                    ++cc;
                 }
             }
         }
