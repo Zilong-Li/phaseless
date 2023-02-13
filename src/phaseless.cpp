@@ -23,13 +23,13 @@ int main(int argc, char * argv[])
                   << "     -c      number of ancestral haplotype clusters\n"
                   << "     -f      input vcf/bcf format\n"
                   << "     -g      gziped beagle format\n"
-                  << "     -i      number of iterations of admixture [100]\n"
-                  << "     -I      number of iterations of imputation [40]\n"
+                  << "     -i      maximum iterations of admixture [1000]\n"
+                  << "     -I      maximum iterations of imputation [40]\n"
                   << "     -k      number of ancestry in admixture model\n"
                   << "     -n      number of threads\n"
                   << "     -o      output directory\n"
                   << "     -r      region in vcf/bcf to subset\n"
-                  << "     -s      size of each chunk in sites unit [100000]\n"
+                  << "     -s      number of sites of each chunk [100000]\n"
                   << "     -seed   for reproducing results [1]\n"
                   << std::endl;
         return 1;
@@ -37,7 +37,7 @@ int main(int argc, char * argv[])
 
     filesystem::path outdir, in_beagle, in_vcf, in_bin;
     string samples = "-", region = "";
-    int K{0}, C{0}, niters_admix{100}, niters_impute{40}, nthreads{4}, seed{1};
+    int K{0}, C{0}, niters_admix{1000}, niters_impute{40}, nthreads{4}, seed{1};
     int chunksize{100000};
     for(size_t i = 0; i < args.size(); i++)
     {

@@ -43,9 +43,8 @@ inline Admixture::~Admixture() {}
 
 inline double Admixture::runWithBigAss(int ind, const std::unique_ptr<BigAss> & genome)
 {
-    MyArr2D w((C * C - C) / 2 + C, K * K);
-    MyArr2D iEkc = MyArr2D::Zero(K * C, M);
-    MyArr2D iNormF = MyArr2D::Zero(K, M);
+    MyArr2D w((C * C + C) / 2, K * K);
+    MyArr2D iEkc, iNormF;
     double norm = 0, llike = 0;
     int c1, c2, c12, cc;
     int k1, k2, k12, s;
@@ -54,6 +53,8 @@ inline double Admixture::runWithBigAss(int ind, const std::unique_ptr<BigAss> & 
         int iM = genome->pos[ic].size();
         auto icluster = getClusterLikelihoods(ind, iM, C, genome->gls[ic], genome->transRate[ic],
                                               genome->PI[ic], genome->F[ic]);
+        iEkc.setZero(K * C, iM);
+        iNormF.setZero(K, iM);
         for(s = 0; s < iM; s++)
         {
             norm = 0, cc = 0;
@@ -89,10 +90,10 @@ inline double Admixture::runWithBigAss(int ind, const std::unique_ptr<BigAss> & 
                             k12 = k1 * K + k2;
                             Ekg(ind * K + k1, m) += w(cc, k12) / norm;
                             Ekg(ind * K + k2, m) += w(cc, k12) / norm;
-                            iEkc(k1 * C + c1, m) += w(cc, k12) / norm;
-                            iEkc(k2 * C + c2, m) += w(cc, k12) / norm;
-                            iNormF(k1, m) += w(cc, k12) / norm;
-                            iNormF(k2, m) += w(cc, k12) / norm;
+                            iEkc(k1 * C + c1, s) += w(cc, k12) / norm;
+                            iEkc(k2 * C + c2, s) += w(cc, k12) / norm;
+                            iNormF(k1, s) += w(cc, k12) / norm;
+                            iNormF(k2, s) += w(cc, k12) / norm;
                         }
                     }
                     ++cc;
@@ -100,17 +101,16 @@ inline double Admixture::runWithBigAss(int ind, const std::unique_ptr<BigAss> & 
             }
             m++;
         }
+        {
+            std::lock_guard<std::mutex> lock(mutex_it); // sum over all samples
+            Ekc.middleCols(m - iM, iM) += iEkc;
+            NormF.middleCols(m - iM, iM) += iNormF;
+        }
     }
     // assert(m == M);
     // update Q, Q.colwise().sum() should be 1
     for(int k = 0; k < K; k++) Q(k, ind) = Ekg.row(ind * K + k).sum() / (2 * M);
-    // assert(((Q.colwise().sum() - 1.0).abs() < 1e-4).all());
-    // std::cout << (Q.colwise().sum() - 1.0).abs().maxCoeff() << std::endl;
-    {
-        std::lock_guard<std::mutex> lock(mutex_it); // sum over all samples
-        Ekc += iEkc;
-        NormF += iNormF;
-    }
+
     return llike;
 }
 
