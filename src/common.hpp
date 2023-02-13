@@ -227,15 +227,17 @@ inline auto getClusterLikelihoods(int ind,
                                   const MyFloat1D & PI_,
                                   const MyFloat1D & F_)
 {
-    int k1, k2, k12;
+    int g1, g2, k1, k2, k12;
+    int C2 = C * C;
     Eigen::Map<const MyArr2D> gli(GL.data() + ind * M * 3, 3, M);
     Eigen::Map<const MyArr2D> transRate(transRate_.data(), 3, M);
     Eigen::Map<const MyArr2D> PI(PI_.data(), M, C);
     Eigen::Map<const MyArr2D> F(F_.data(), M, C);
     // ======== forward and backward recursion ===========
-    auto emitDip = emissionCurIterInd(gli, F, false);
-    MyArr2D LikeForwardInd(C * C, M); // likelihood of forward recursion for ind i, not log
-    MyArr2D LikeBackwardInd(C * C, M); // likelihood of backward recursion for ind i, not log
+    // auto emitDip = emissionCurIterInd(gli, F, false);
+    MyArr2D emitDip(M, C2);
+    MyArr2D LikeForwardInd(C2, M); // likelihood of forward recursion for ind i, not log
+    MyArr2D LikeBackwardInd(C2, M); // likelihood of backward recursion for ind i, not log
     MyArr1D sumTmp1(C), sumTmp2(C); // store sum over internal loop
     MyArr1D cs(M);
     double constTmp;
@@ -247,6 +249,15 @@ inline auto getClusterLikelihoods(int ind,
         for(k2 = 0; k2 < C; k2++)
         {
             k12 = k1 * C + k2;
+            emitDip(s, k12) = 0;
+            for(g1 = 0; g1 <= 1; g1++)
+            {
+                for(g2 = 0; g2 <= 1; g2++)
+                {
+                    emitDip(s, k12) += gli(g1 + g2, s) * (g1 * F(s, k1) + (1 - g1) * (1 - F(s, k1)))
+                                       * (g2 * F(s, k2) + (1 - g2) * (1 - F(s, k2)));
+                }
+            }
             LikeForwardInd(k12, s) = emitDip(s, k12) * PI(s, k1) * PI(s, k2);
         }
     }
@@ -273,6 +284,15 @@ inline auto getClusterLikelihoods(int ind,
             for(k2 = 0; k2 < C; k2++)
             {
                 k12 = k1 * C + k2;
+                emitDip(s, k12) = 0;
+                for(g1 = 0; g1 <= 1; g1++)
+                {
+                    for(g2 = 0; g2 <= 1; g2++)
+                    {
+                        emitDip(s, k12) += gli(g1 + g2, s) * (g1 * F(s, k1) + (1 - g1) * (1 - F(s, k1)))
+                                           * (g2 * F(s, k2) + (1 - g2) * (1 - F(s, k2)));
+                    }
+                }
                 LikeForwardInd(k12, s) =
                     emitDip(s, k12)
                     * (LikeForwardInd(k12, s - 1) * transRate(0, s) + PI(s, k1) * sumTmp1(k2)

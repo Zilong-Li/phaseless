@@ -48,10 +48,9 @@ inline double Admixture::runWithBigAss(int ind, const std::unique_ptr<BigAss> & 
     MyArr2D iNormF = MyArr2D::Zero(K, M);
     double norm = 0, llike = 0;
     int c1, c2, c12, cc;
-    int k1, k2, k12, s, m{0};
-    for(int ic = 0; ic < genome->nchunks; ic++)
+    int k1, k2, k12, s;
+    for(int ic = 0, m = 0; ic < genome->nchunks; ic++)
     {
-
         int iM = genome->pos[ic].size();
         auto icluster = getClusterLikelihoods(ind, iM, C, genome->gls[ic], genome->transRate[ic],
                                               genome->PI[ic], genome->F[ic]);
@@ -68,8 +67,8 @@ inline double Admixture::runWithBigAss(int ind, const std::unique_ptr<BigAss> & 
                         for(k2 = 0; k2 < K; k2++)
                         {
                             k12 = k1 * K + k2;
-                            w(cc, k12) = icluster(c12, s) * FI(k1 * C + c1, m + s) * Q(k1, ind)
-                                         * FI(k2 * C + c2, m + s) * Q(k2, ind);
+                            w(cc, k12) = icluster(c12, s) * FI(k1 * C + c1, m) * Q(k1, ind)
+                                         * FI(k2 * C + c2, m) * Q(k2, ind);
                             if(c1 != c2) w(cc, k12) *= 2;
                             norm += w(cc, k12);
                         }
@@ -83,25 +82,24 @@ inline double Admixture::runWithBigAss(int ind, const std::unique_ptr<BigAss> & 
             {
                 for(c2 = c1; c2 < C; c2++)
                 {
-                    // c12 = c1 * C + c2;
                     for(k1 = 0; k1 < K; k1++)
                     {
                         for(k2 = 0; k2 < K; k2++)
                         {
                             k12 = k1 * K + k2;
-                            Ekg(ind * K + k1, m + s) += w(cc, k12) / norm;
-                            Ekg(ind * K + k2, m + s) += w(cc, k12) / norm;
-                            iEkc(k1 * C + c1, m + s) += w(cc, k12) / norm;
-                            iEkc(k2 * C + c2, m + s) += w(cc, k12) / norm;
-                            iNormF(k1, m + s) += w(cc, k12) / norm;
-                            iNormF(k2, m + s) += w(cc, k12) / norm;
+                            Ekg(ind * K + k1, m) += w(cc, k12) / norm;
+                            Ekg(ind * K + k2, m) += w(cc, k12) / norm;
+                            iEkc(k1 * C + c1, m) += w(cc, k12) / norm;
+                            iEkc(k2 * C + c2, m) += w(cc, k12) / norm;
+                            iNormF(k1, m) += w(cc, k12) / norm;
+                            iNormF(k2, m) += w(cc, k12) / norm;
                         }
                     }
                     ++cc;
                 }
             }
+            m++;
         }
-        m += iM;
     }
     // assert(m == M);
     // update Q, Q.colwise().sum() should be 1
