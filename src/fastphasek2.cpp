@@ -1,8 +1,10 @@
+#include "alpaca/alpaca.h"
 #include "fastphase.hpp"
 #include "io.hpp"
 #include "log.hpp"
 #include "threadpool.hpp"
 #include "timer.hpp"
+#include <filesystem>
 
 using namespace std;
 
@@ -14,94 +16,99 @@ int main(int argc, char * argv[])
     {
         std::cout << "Author: Zilong-Li (zilong.dk@gmail.com)\n"
                   << "Usage example:\n"
-                  << "     " + (std::string)argv[0]
-                         + " -g beagle.gz -c 10 -i 20 -n 10 -o out.vcf.gz -b cluster.bin\n"
+                  << "     " + (std::string)argv[0] + " -g beagle.gz -o dir -c 10 -n 20\n"
                   << "\nOptions:\n"
-                  << "     -b      binary file with clusters likelihood\n"
-                  << "     -c      number of ancestral clusters\n"
+                  << "     -b      save all parameters as binary file [1]\n"
+                  << "     -c      number of ancestral haplotype clusters\n"
                   << "     -f      input vcf/bcf format\n"
                   << "     -g      gziped beagle format\n"
-                  << "     -i      number of iterations of imputation\n"
+                  << "     -i      number of iterations of imputation [40]\n"
                   << "     -n      number of threads\n"
-                  << "     -o      output compressed/uncompressed vcf/bcf\n"
+                  << "     -o      output directory\n"
                   << "     -r      region in vcf/bcf to subset\n"
-                  << "     -s      samples in vcf/bcf to subset\n"
+                  << "     -s      size of each chunk in sites unit [100000]\n"
                   << "     -seed   for reproducing results [1]\n"
                   << std::endl;
         return 1;
     }
 
-    std::string in_beagle, in_vcf, out_vcf, out_cluster;
+    filesystem::path outdir, in_beagle, in_vcf, in_bin;
     std::string samples = "-", region = "";
-    int C{0}, niters{40}, nthreads{4}, seed{1};
+    int C{0}, niters{40}, nthreads{4}, seed{1}, chunksize{100000};
     for(size_t i = 0; i < args.size(); i++)
     {
-        if(args[i] == "-b") out_cluster = args[++i];
         if(args[i] == "-c") C = stoi(args[++i]);
         if(args[i] == "-f") in_vcf = args[++i];
-        if(args[i] == "-o") out_vcf = args[++i];
-        if(args[i] == "-g") in_beagle = args[++i];
+        if(args[i] == "-o") outdir.assign(args[++i]);
+        if(args[i] == "-g") in_beagle.assign(args[++i]);
         if(args[i] == "-i") niters = stoi(args[++i]);
         if(args[i] == "-n") nthreads = stoi(args[++i]);
         if(args[i] == "-r") region = args[++i];
-        if(args[i] == "-s") samples = args[++i];
+        if(args[i] == "-s") chunksize = stoi(args[++i]);
         if(args[i] == "-seed") seed = stoi(args[++i]);
     }
     assert(C > 0);
+    filesystem::create_directories(outdir);
 
-    Logger cao(out_vcf + ".log");
+    Logger cao(outdir / "imputation.log");
     cao.cao << "Options in effect:\n";
     for(size_t i = 0; i < args.size(); i++) // print out options in effect
         i % 2 ? cao.cao << args[i] + "\n" : cao.cao << "  " + args[i] + " ";
     Timer tm;
     cao.warn(tm.date(), "-> running fastphase");
     int allthreads = std::thread::hardware_concurrency();
-    // nthreads = nthreads < genome->nsamples ? nthreads : genome->nsamples;
     nthreads = nthreads < allthreads ? nthreads : allthreads;
     cao.print(tm.date(), allthreads, " concurrent threads are supported. use", nthreads, " threads");
 
     // ========= core calculation part ===========================================
-    int N, M;
-    MyFloat1D genolikes;
-    MapStringInt1D chrs_pos;
-    StringVec1D sampleids;
-    tm.clock();
-    read_beagle_genotype_likelihoods(in_beagle, genolikes, sampleids, chrs_pos, N, M);
-    cao.print(tm.date(), "parsing input -> C =", C, ", N =", N, ", M =", M);
-    assert(chrs_pos.size() == 1);
-    auto ichr = chrs_pos.begin()->first;
-    auto transRate = calc_transRate(chrs_pos.begin()->second, C);
-
-    FastPhaseK2 nofaith(N, M, C, seed);
     ThreadPool poolit(nthreads);
     vector<future<double>> llike;
-    double loglike{0}, prevlike, diff;
-    for(int it = 0; it < niters + 1; it++)
+    double loglike, diff, prevlike;
+    std::unique_ptr<BigAss> genome = std::make_unique<BigAss>();
+    genome->chunksize = chunksize, genome->C = C;
+    tm.clock();
+    chunk_beagle_genotype_likelihoods(genome, in_beagle);
+    cao.print(tm.date(), "parsing input -> C =", genome->C, ", N =", genome->nsamples, ", M =", genome->nsnps,
+              ", nchunks =", genome->nchunks);
+    cao.done(tm.date(), "elapsed time for parsing beagle file", tm.reltime(), "secs");
+    for(int ic = 0; ic < genome->nchunks; ic++)
     {
-        tm.clock();
-        nofaith.initIteration();
-        for(int i = 0; i < N; i++)
+        FastPhaseK2 nofaith(genome->nsamples, genome->pos[ic].size(), C, seed);
+        auto transRate = calc_transRate(genome->pos[ic], C);
+        genome->transRate.emplace_back(MyFloat1D(transRate.data(), transRate.data() + transRate.size()));
+        for(int it = 0; it <= niters; it++)
         {
-            if(it == niters)
-                llike.emplace_back(poolit.enqueue(&FastPhaseK2::forwardAndBackwards, &nofaith, i,
-                                                  std::ref(genolikes), std::ref(transRate), true));
-            else
-                llike.emplace_back(poolit.enqueue(&FastPhaseK2::forwardAndBackwards, &nofaith, i,
-                                                  std::ref(genolikes), std::ref(transRate), false));
+            tm.clock();
+            nofaith.initIteration();
+            for(int i = 0; i < genome->nsamples; i++)
+            {
+                if(it == niters)
+                    llike.emplace_back(poolit.enqueue(&FastPhaseK2::forwardAndBackwards, &nofaith, i,
+                                                      std::ref(genome->gls[ic]), std::ref(transRate), true));
+                else
+                    llike.emplace_back(poolit.enqueue(&FastPhaseK2::forwardAndBackwards, &nofaith, i,
+                                                      std::ref(genome->gls[ic]), std::ref(transRate), false));
+            }
+            loglike = 0;
+            for(auto && ll : llike) loglike += ll.get();
+            llike.clear(); // clear future and renew
+            diff = it ? loglike - prevlike : 0;
+            cao.print(tm.date(), "run chunk", ic, ", iteration", it, ", log likelihoods =", loglike,
+                      ", diff =", diff, ",", tm.reltime(), " sec");
+            prevlike = loglike;
+            // if(diff > 0 && diff < 0.1) break;
+            nofaith.updateIteration();
         }
-        loglike = 0;
-        for(auto && l : llike) loglike += l.get();
-        llike.clear(); // clear future and renew
-        diff = it ? loglike - prevlike : 0;
-        cao.print(tm.date(), "iteration", it, ", log likelihoods =", loglike, ", diff =", diff, ",",
-                  tm.reltime(), " sec");
-        prevlike = loglike;
-        // if(diff > 0 && diff < 0.1) break;
-        nofaith.updateIteration();
+        write_bcf_genotype_probability(nofaith.GP.data(), genome->chrs[ic], genome->pos[ic],
+                                       genome->sampleids,
+                                       outdir / string("chunk." + to_string(ic) + ".vcf.gz"));
+        genome->PI.emplace_back(MyFloat1D(nofaith.PI.data(), nofaith.PI.data() + nofaith.PI.size()));
+        genome->F.emplace_back(MyFloat1D(nofaith.F.data(), nofaith.F.data() + nofaith.F.size()));
     }
-    cao.done(tm.date(), "imputation done and outputting.");
-    write_bcf_genotype_probability(nofaith.GP.data(), ichr, chrs_pos.begin()->second, sampleids, out_vcf);
-    cao.done(tm.date(), "-> good job. have a nice day, bye!");
+    std::ofstream ofs(outdir / "pars.bin", std::ios::out | std::ios::binary);
+    auto bytes_written = alpaca::serialize<BigAss>(*genome, ofs);
+    ofs.close();
+    cao.done(tm.date(), "imputation done and outputting.", bytes_written, "bytes written to file");
 
     return 0;
 }

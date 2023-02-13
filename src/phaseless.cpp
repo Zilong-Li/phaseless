@@ -17,19 +17,19 @@ int main(int argc, char * argv[])
     {
         std::cout << "Author: Zilong-Li (zilong.dk@gmail.com)\n"
                   << "Usage example:\n"
-                  << "     " + (std::string)argv[0] + " -g beagle.gz -o dir -c 10 -k 3 -i 100 -n 10\n"
+                  << "     " + (std::string)argv[0] + " -g beagle.gz -o dir -c 10 -k 3 -n 20\n"
                   << "\nOptions:\n"
                   << "     -b      input binary file with all parameters\n"
-                  << "     -c      number of ancestral clusters\n"
+                  << "     -c      number of ancestral haplotype clusters\n"
                   << "     -f      input vcf/bcf format\n"
                   << "     -g      gziped beagle format\n"
                   << "     -i      number of iterations of admixture [100]\n"
                   << "     -I      number of iterations of imputation [40]\n"
-                  << "     -k      number of ancestry\n"
+                  << "     -k      number of ancestry in admixture model\n"
                   << "     -n      number of threads\n"
                   << "     -o      output directory\n"
                   << "     -r      region in vcf/bcf to subset\n"
-                  << "     -s      size of each chunk in sites unit\n"
+                  << "     -s      size of each chunk in sites unit [100000]\n"
                   << "     -seed   for reproducing results [1]\n"
                   << std::endl;
         return 1;
@@ -81,7 +81,7 @@ int main(int argc, char * argv[])
     // ========= core calculation part ===========================================
     ThreadPool poolit(nthreads);
     vector<future<double>> llike;
-    double loglike{0}, diff, prevlike;
+    double loglike, diff, prevlike;
     std::unique_ptr<BigAss> genome;
     if(in_bin.empty())
     {

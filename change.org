@@ -1,0 +1,7 @@
+#+title: News and Changes log
+
+* v0.1.1
+- speedup =phaseless= with O(c*c/2) complexity
+- update =fastphasek2= interface
+* v0.1.0
+- first test version
