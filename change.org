@@ -1,0 +1,9 @@
+#+title: News and Changes log
+
+* v0.1.2
+- optimize forward backwards to get cluster likelihoods fast (0.4x)
+* v0.1.1
+- speedup =phaseless= with O(c*c/2) complexity
+- update =fastphasek2= interface
+* v0.1.0
+- first test version
