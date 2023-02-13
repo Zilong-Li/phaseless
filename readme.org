@@ -1,7 +1,7 @@
 #+title: Phaseless: lcWGS imputation and admixture in one goal
 
 Phaseless is a toolkit for genotype imputation and admixture inference using low coverage sequencing data.
-The imputation model is in the spirit of [[https://www.ncbi.nlm.nih.gov/pmc/articles/PMC1424677/][fastPHASE]] model but with genotype likelihood as input, and it is similar to [[https://www.nature.com/articles/ng.3594][STITCH]] which works with raw read input. Next, the admixture inference is modeled on the haplotype cluster information from the imputation model.
+Firstly, the imputation model is in the spirit of [[https://www.ncbi.nlm.nih.gov/pmc/articles/PMC1424677/][fastPHASE]] model but with genotype likelihood as input, and likewise [[https://www.nature.com/articles/ng.3594][STITCH]] works on raw read input. Next, the admixture inference is modeled on the haplotype cluster information from the fastphase model.
 
 * Build
 

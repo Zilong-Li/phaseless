@@ -1,3 +1,8 @@
+/*******************************************************************************
+ * @file        https://github.com/Zilong-Li/phaseless/src/phaseless.cpp
+ * @author      Zilong Li
+ * Copyright (C) 2023. The use of this code is governed by the LICENSE file.
+ ******************************************************************************/
 #include "admixture.hpp"
 #include "alpaca/alpaca.h"
 #include "fastphase.hpp"

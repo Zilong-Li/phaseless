@@ -1,3 +1,9 @@
+/*******************************************************************************
+ * @file        https://github.com/Zilong-Li/phaseless/src/common.hpp
+ * @author      Zilong Li
+ * Copyright (C) 2023. The use of this code is governed by the LICENSE file.
+ ******************************************************************************/
+
 #ifndef COMMON_H_
 #define COMMON_H_
 

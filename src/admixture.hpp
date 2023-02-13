@@ -1,3 +1,8 @@
+/*******************************************************************************
+ * @file        https://github.com/Zilong-Li/phaseless/src/admixture.hpp
+ * @author      Zilong Li
+ * Copyright (C) 2023. The use of this code is governed by the LICENSE file.
+ ******************************************************************************/
 #ifndef ADMIXTURE_H_
 #define ADMIXTURE_H_
 
@@ -57,8 +62,7 @@ inline double Admixture::runWithBigAss(int ind, const std::unique_ptr<BigAss> & 
         iNormF.setZero(K, iM);
         for(s = 0; s < iM; s++)
         {
-            norm = 0, cc = 0;
-            for(c1 = 0; c1 < C; c1++)
+            for(norm = 0, cc = 0, c1 = 0; c1 < C; c1++)
             {
                 for(c2 = c1; c2 < C; c2++)
                 {
@@ -78,8 +82,7 @@ inline double Admixture::runWithBigAss(int ind, const std::unique_ptr<BigAss> & 
                 }
             }
             llike += log(norm);
-            cc = 0;
-            for(c1 = 0; c1 < C; c1++)
+            for(cc = 0, c1 = 0; c1 < C; c1++)
             {
                 for(c2 = c1; c2 < C; c2++)
                 {

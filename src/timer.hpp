@@ -1,3 +1,8 @@
+/*******************************************************************************
+ * @file        https://github.com/Zilong-Li/phaseless/src/log.hpp
+ * @author      Zilong Li
+ * Copyright (C) 2023. The use of this code is governed by the LICENSE file.
+ ******************************************************************************/
 #ifndef TIMER_H_
 #define TIMER_H_
 

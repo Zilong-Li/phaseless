@@ -1,3 +1,8 @@
+/*******************************************************************************
+ * @file        https://github.com/Zilong-Li/phaseless/src/fastphasek4.cpp
+ * @author      Zilong Li
+ * Copyright (C) 2023. The use of this code is governed by the LICENSE file.
+ ******************************************************************************/
 #include "fastphase.hpp"
 #include "io.hpp"
 #include "log.hpp"

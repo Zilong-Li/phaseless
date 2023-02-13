@@ -1,3 +1,8 @@
+/*******************************************************************************
+ * @file        https://github.com/Zilong-Li/phaseless/src/fastphase.hpp
+ * @author      Zilong Li
+ * Copyright (C) 2023. The use of this code is governed by the LICENSE file.
+ ******************************************************************************/
 #ifndef FASTPHASE_H_
 #define FASTPHASE_H_
 
