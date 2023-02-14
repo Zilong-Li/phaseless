@@ -27,6 +27,7 @@ int main(int argc, char * argv[])
                   << "     -b      input binary file with all parameters\n"
                   << "     -c      number of ancestral haplotype clusters\n"
                   << "     -f      input vcf/bcf format\n"
+                  << "     -F      info score threshold for thining [0]\n"
                   << "     -g      gziped beagle format\n"
                   << "     -i      maximum iterations of admixture [1000]\n"
                   << "     -I      maximum iterations of imputation [40]\n"
@@ -44,12 +45,14 @@ int main(int argc, char * argv[])
     string samples = "-", region = "";
     int K{0}, C{0}, niters_admix{1000}, niters_impute{40}, nthreads{4}, seed{1};
     int chunksize{100000};
+    double info{0};
     for(size_t i = 0; i < args.size(); i++)
     {
         if(args[i] == "-b") in_bin = args[++i];
         if(args[i] == "-c") C = stoi(args[++i]);
         if(args[i] == "-k") K = stoi(args[++i]);
         if(args[i] == "-f") in_vcf = args[++i];
+        if(args[i] == "-F") info = stod(args[++i]);
         if(args[i] == "-o") outdir.assign(args[++i]);
         if(args[i] == "-g") in_beagle.assign(args[++i]);
         if(args[i] == "-i") niters_admix = stoi(args[++i]);
@@ -101,7 +104,6 @@ int main(int argc, char * argv[])
         {
             FastPhaseK2 nofaith(genome->nsamples, genome->pos[ic].size(), C, seed);
             auto transRate = calc_transRate(genome->pos[ic], C);
-            genome->transRate.emplace_back(MyFloat1D(transRate.data(), transRate.data() + transRate.size()));
             for(int it = 0; it <= niters_impute; it++)
             {
                 tm.clock();
@@ -129,10 +131,8 @@ int main(int argc, char * argv[])
             }
             auto idx2rm = write_bcf_genotype_probability(
                 nofaith.GP.data(), genome->chrs[ic], genome->pos[ic], genome->sampleids,
-                outdir / string("chunk." + to_string(ic) + ".vcf.gz"), 0.4);
-            genome->PI.emplace_back(MyFloat1D(nofaith.PI.data(), nofaith.PI.data() + nofaith.PI.size()));
-            genome->F.emplace_back(MyFloat1D(nofaith.F.data(), nofaith.F.data() + nofaith.F.size()));
-            // thin_bigass(ic, idx2rm, genome);
+                outdir / string("chunk." + to_string(ic) + ".vcf.gz"), info);
+            thin_bigass(ic, idx2rm, genome, nofaith.PI, nofaith.F, transRate);
         }
         std::ofstream ofs(outdir / "pars.bin", std::ios::out | std::ios::binary);
         auto bytes_written = alpaca::serialize<BigAss>(*genome, ofs);

@@ -83,7 +83,7 @@ inline double FastPhaseK2::forwardAndBackwards(int ind,
                                                const MyArr2D & transRate,
                                                bool call_geno)
 {
-    Eigen::Map<const MyArr2D> gli(GL.data() + ind * M * 3, 3, M);
+    Eigen::Map<const MyArr2D> gli(GL.data() + ind * M * 3, M, 3);
     const double maxEmission = 1e-10;
     MyArr2D emitDip(C2, M);
     MyArr2D LikeForwardInd(C2, M); // likelihood of forward recursion for ind i, not log
@@ -105,7 +105,7 @@ inline double FastPhaseK2::forwardAndBackwards(int ind,
             {
                 for(g2 = 0; g2 <= 1; g2++)
                 {
-                    emitDip(k12, s) += gli(g1 + g2, s) * (g1 * F(s, k1) + (1 - g1) * (1 - F(s, k1)))
+                    emitDip(k12, s) += gli(s, g1 + g2) * (g1 * F(s, k1) + (1 - g1) * (1 - F(s, k1)))
                                        * (g2 * F(s, k2) + (1 - g2) * (1 - F(s, k2)));
                 }
             }
@@ -139,7 +139,7 @@ inline double FastPhaseK2::forwardAndBackwards(int ind,
                 {
                     for(g2 = 0; g2 <= 1; g2++)
                     {
-                        emitDip(k12, s) += gli(g1 + g2, s) * (g1 * F(s, k1) + (1 - g1) * (1 - F(s, k1)))
+                        emitDip(k12, s) += gli(s, g1 + g2) * (g1 * F(s, k1) + (1 - g1) * (1 - F(s, k1)))
                                            * (g2 * F(s, k2) + (1 - g2) * (1 - F(s, k2)));
                     }
                 }
@@ -205,8 +205,7 @@ inline double FastPhaseK2::forwardAndBackwards(int ind,
                 for(g2 = 0; g2 < 2; g2++)
                 {
                     g12 = g1 * 2 + g2;
-                    ind_post_z_g.col(g12) = gli.row(g1 + g2).transpose()
-                                            * (g1 * F.col(k1) + (1 - g1) * (1 - F.col(k1)))
+                    ind_post_z_g.col(g12) = gli.col(g1 + g2) * (g1 * F.col(k1) + (1 - g1) * (1 - F.col(k1)))
                                             * (g2 * F.col(k2) + (1 - g2) * (1 - F.col(k2)));
                     tmpSum += ind_post_z_g.col(g12);
                 }

@@ -52,10 +52,10 @@ inline MatrixType RandomUniform(const Eigen::Index numRows,
 struct BigAss
 {
     IntVec2D pos; // store position of markers of each chunk
-    MyFloat2D gls; // store gl of each chunk
+    MyFloat2D gls; // store gl(M, 3) of each chunk
     StringVec1D sampleids, chrs;
     int chunksize, nsamples, nsnps, nchunks;
-    MyFloat2D PI, F, transRate;
+    MyFloat2D PI, F, transRate; // M x C, 3 x M
     int C; // fastphase pars
 };
 
