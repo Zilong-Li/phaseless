@@ -127,11 +127,12 @@ int main(int argc, char * argv[])
                 // if(diff > 0 && diff < 0.1) break;
                 nofaith.updateIteration();
             }
-            write_bcf_genotype_probability(nofaith.GP.data(), genome->chrs[ic], genome->pos[ic],
-                                           genome->sampleids,
-                                           outdir / string("chunk." + to_string(ic) + ".vcf.gz"));
+            auto idx2rm = write_bcf_genotype_probability(
+                nofaith.GP.data(), genome->chrs[ic], genome->pos[ic], genome->sampleids,
+                outdir / string("chunk." + to_string(ic) + ".vcf.gz"), 0.4);
             genome->PI.emplace_back(MyFloat1D(nofaith.PI.data(), nofaith.PI.data() + nofaith.PI.size()));
             genome->F.emplace_back(MyFloat1D(nofaith.F.data(), nofaith.F.data() + nofaith.F.size()));
+            // thin_bigass(ic, idx2rm, genome);
         }
         std::ofstream ofs(outdir / "pars.bin", std::ios::out | std::ios::binary);
         auto bytes_written = alpaca::serialize<BigAss>(*genome, ofs);

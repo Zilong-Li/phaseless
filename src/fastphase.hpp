@@ -30,7 +30,7 @@ class FastPhaseK2
     void openClusterFile(std::string out);
     void initIteration(double tol = 1e-6);
     void updateIteration();
-    double forwardAndBackwards(int ind, const MyFloat1D & GL, const MyArr2D & transRate, bool call_geno);
+    double forwardAndBackwards(int, const MyFloat1D &, const MyArr2D &, bool);
 };
 
 inline FastPhaseK2::FastPhaseK2(int n, int m, int c, int seed)
@@ -105,7 +105,7 @@ inline double FastPhaseK2::forwardAndBackwards(int ind,
             {
                 for(g2 = 0; g2 <= 1; g2++)
                 {
-                    emitDip(k12, s) += gli(g1 + g1, s) * (g1 * F(s, k1) + (1 - g1) * (1 - F(s, k1)))
+                    emitDip(k12, s) += gli(g1 + g2, s) * (g1 * F(s, k1) + (1 - g1) * (1 - F(s, k1)))
                                        * (g2 * F(s, k2) + (1 - g2) * (1 - F(s, k2)));
                 }
             }
@@ -139,7 +139,7 @@ inline double FastPhaseK2::forwardAndBackwards(int ind,
                 {
                     for(g2 = 0; g2 <= 1; g2++)
                     {
-                        emitDip(k12, s) += gli(g1 + g1, s) * (g1 * F(s, k1) + (1 - g1) * (1 - F(s, k1)))
+                        emitDip(k12, s) += gli(g1 + g2, s) * (g1 * F(s, k1) + (1 - g1) * (1 - F(s, k1)))
                                            * (g2 * F(s, k2) + (1 - g2) * (1 - F(s, k2)));
                     }
                 }
@@ -282,16 +282,12 @@ class FastPhaseK4
     MyArr2D transHap; // nsnps x (C x C)
     MyArr2D transDip; // nsnps x (C x C x C x C)
 
-    void updateClusterFreqPI(const MyArr2D & postProbsZ, double tol);
-    void updateAlleleFreqWithinCluster(const MyArr2D & postProbsZandG, double tol);
-    void transitionCurIter(const MyArr1D & distRate);
-    auto callGenotypeInd(const MyArr2D & indPostProbsZandG);
+    void updateClusterFreqPI(const MyArr2D &, double);
+    void updateAlleleFreqWithinCluster(const MyArr2D &, double);
+    void transitionCurIter(const MyArr1D &);
+    auto callGenotypeInd(const MyArr2D &);
     void openClusterFile(std::string out);
-    double forwardAndBackwards(int ind,
-                               const MyFloat1D & GL,
-                               MyArr2D & postProbsZ,
-                               MyArr2D & postProbsZandG,
-                               bool call_geno = false);
+    double forwardAndBackwards(int, const MyFloat1D &, MyArr2D &, MyArr2D &, bool);
 };
 
 inline FastPhaseK4::FastPhaseK4(int n, int m, int c, int seed)

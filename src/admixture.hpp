@@ -29,11 +29,7 @@ class Admixture
     void updateIteration();
     void writeQ(std::string out);
     double runWithBigAss(int ind, const std::unique_ptr<BigAss> & genome);
-    double runWithClusterLikelihoods(int ind,
-                                     const MyFloat1D & GL,
-                                     const MyArr2D & transRate,
-                                     const MyArr2D & PI,
-                                     const MyArr2D & F);
+    double runWithSingleChunk(int, const MyFloat1D &, const MyArr2D &, const MyArr2D &, const MyArr2D &);
 };
 
 inline Admixture::Admixture(int n, int m, int c, int k, int seed) : N(n), M(m), C(c), K(k)
@@ -125,11 +121,11 @@ inline double Admixture::runWithBigAss(int ind, const std::unique_ptr<BigAss> & 
 ** @param F        F from fastphase model
 ** @return individual total likelihood
 */
-inline double Admixture::runWithClusterLikelihoods(int ind,
-                                                   const MyFloat1D & GL,
-                                                   const MyArr2D & transRate,
-                                                   const MyArr2D & PI,
-                                                   const MyArr2D & F)
+inline double Admixture::runWithSingleChunk(int ind,
+                                            const MyFloat1D & GL,
+                                            const MyArr2D & transRate,
+                                            const MyArr2D & PI,
+                                            const MyArr2D & F)
 {
     auto icluster = getClusterLikelihoods(ind, GL, transRate, PI, F);
     const int iM = icluster.cols();

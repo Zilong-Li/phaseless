@@ -27,11 +27,7 @@ using DoubleVec1D = std::vector<double>;
 using DoubleVec2D = std::vector<DoubleVec1D>;
 using StringVec1D = std::vector<std::string>;
 using MapStringInt1D = std::map<std::string, IntVec1D>;
-
 // using MyMat2D = Eigen::MatrixXd; // use MatrixXf if no accuracy drop
-// using MyMat1D = Eigen::VectorXd; // use MatrixXf if no accuracy drop
-// using MyArr2D = Eigen::ArrayXXd; // use ArrayXf if no accuracy drop
-// using MyArr1D = Eigen::ArrayXd; // use ArrayXf if no accuracy drop
 using MyMat2D = Eigen::MatrixXf;
 using MyMat1D = Eigen::VectorXf;
 using MyArr2D = Eigen::ArrayXXf;

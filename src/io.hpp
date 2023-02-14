@@ -9,11 +9,12 @@
 /*
 ** @GP maps Eigen matrix layout, (3 x nsnps) x nsamples
 */
-inline void write_bcf_genotype_probability(float * GP,
-                                           std::string chr,
-                                           const IntVec1D & markers,
-                                           const StringVec1D & sampleids,
-                                           std::string vcfout)
+inline IntVec1D write_bcf_genotype_probability(float * GP,
+                                               std::string chr,
+                                               const IntVec1D & markers,
+                                               const StringVec1D & sampleids,
+                                               std::string vcfout,
+                                               double infotol = 0)
 {
     int N = sampleids.size();
     int M = markers.size();
@@ -39,6 +40,7 @@ inline void write_bcf_genotype_probability(float * GP,
     vcfpp::BcfRecord var(bw.header); // construct a variant record from the header
     double thetaHat, info, eaf, eij, fij, a0, a1;
     int i, m;
+    IntVec1D idx2rm;
     for(m = 0; m < M; m++)
     {
         var.setPOS(markers[m]);
@@ -56,21 +58,24 @@ inline void write_bcf_genotype_probability(float * GP,
             fij += a1 - a0 * a0;
         }
         eaf = eij / 2 / N;
-        info = (1 - fij) / (2 * N * eaf * (1 - eaf));
+        info = 1 - fij / (eij * (1 - eaf));
         thetaHat = std::lround(1e2 * eaf) / 1e2;
-        if (thetaHat == 0 || thetaHat == 1)
+        if(thetaHat == 0 || thetaHat == 1)
             info = 1;
-        else if (info <0)
+        else if(info < 0)
             info = 0;
         else
             info = std::lround(1e3 * info) / 1e3;
+        eaf = std::lround(1e6 * eaf) / 1e6;
         var.setGenotypes(gt);
         var.setFORMAT("GP", gp);
         var.setFORMAT("DS", ds);
         var.setINFO("INFO", info);
         var.setINFO("EAF", eaf);
         bw.writeRecord(var);
+        if(infotol > 0 && info < infotol) idx2rm.push_back(m);
     }
+    return idx2rm;
 }
 
 inline void read_bcf_genotype_likelihoods(const std::string & vcffile,
@@ -331,6 +336,22 @@ inline void chunk_beagle_genotype_likelihoods(const std::unique_ptr<BigAss> & ge
         }
         glchunk.clear();
         genome->gls.push_back(gl);
+    }
+}
+
+inline void thin_bigass(int ichunk, const IntVec1D & idx2rm, const std::unique_ptr<BigAss> & genome)
+{
+    int im = genome->pos[ichunk].size();
+    genome->nsnps -= idx2rm.size();
+    for(const auto & index : idx2rm)
+    {
+        genome->pos[ichunk].erase(genome->pos[ichunk].begin() + index);
+        genome->F[ichunk].erase(genome->F[ichunk].begin() + index);
+        genome->PI[ichunk].erase(genome->PI[ichunk].begin() + index);
+        genome->transRate[ichunk].erase(genome->transRate[ichunk].begin() + index);
+        for(int i = 0; i < genome->nsamples; i++)
+            genome->gls[ichunk].erase(genome->gls[ichunk].begin() + i * im * 3 + index,
+                                      genome->gls[ichunk].begin() + i * im * 3 + index + 3);
     }
 }
 
