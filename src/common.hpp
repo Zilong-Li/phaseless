@@ -101,7 +101,7 @@ inline auto emissionCurIterInd(const MyArr2D & gli, const MyArr2D & F, bool use_
             {
                 for(g2 = 0; g2 <= 1; g2++)
                 {
-                    emitDip.col(k1 * C + k2) += gli.row(g1 + g2).transpose()
+                    emitDip.col(k1 * C + k2) += gli.col(g1 + g2)
                                                 * (g1 * F.col(k1) + (1 - g1) * (1 - F.col(k1)))
                                                 * (g2 * F.col(k2) + (1 - g2) * (1 - F.col(k2)));
                 }

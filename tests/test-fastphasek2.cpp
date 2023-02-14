@@ -15,8 +15,6 @@ TEST_CASE("fastphasek2", "[test-fastphasek2]")
     read_beagle_genotype_likelihoods("../data/bgl.gz", genolikes, sampleids, chrs_pos, N, M);
     auto ichr = chrs_pos.begin()->first;
     auto transRate = calc_transRate(chrs_pos.begin()->second, C);
-    MyArr2D postProbsZ(M, C * C);
-    MyArr2D postProbsZandG(M, C * C * 4);
 
     FastPhaseK2 nofaith(N, M, C, seed);
     ThreadPool poolit(4);

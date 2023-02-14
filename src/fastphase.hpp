@@ -347,7 +347,7 @@ inline double FastPhaseK4::forwardAndBackwards(int ind,
                                                MyArr2D & postProbsZandG,
                                                bool call_geno)
 {
-    Eigen::Map<const MyArr2D> gli(GL.data() + ind * M * 3, 3, M);
+    Eigen::Map<const MyArr2D> gli(GL.data() + ind * M * 3, M, 3);
     auto emitDip = emissionCurIterInd(gli, F, true);
     MyArr2D logLikeForwardInd(C2, M); // log likelihood of forward recursion for ind i
     MyArr2D logLikeBackwardInd(C2, M); // log likelihood of backward recursion for ind i
@@ -433,7 +433,7 @@ inline double FastPhaseK4::forwardAndBackwards(int ind,
                 for(g2 = 0; g2 < 2; g2++)
                 {
                     g12 = g1 * 2 + g2;
-                    indPostProbsZandG.col(k12 * 4 + g12) = gli.row(g1 + g2).transpose()
+                    indPostProbsZandG.col(k12 * 4 + g12) = gli.col(g1 + g2)
                                                            * (g1 * F.col(k1) + (1 - g1) * (1 - F.col(k1)))
                                                            * (g2 * F.col(k2) + (1 - g2) * (1 - F.col(k2)));
                     tmpSum += indPostProbsZandG.col(k12 * 4 + g12);

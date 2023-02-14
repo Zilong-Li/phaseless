@@ -213,9 +213,9 @@ inline void read_beagle_genotype_likelihoods(const std::string & beagle,
         {
             for(j = 0; j < nsnps; j++)
             {
-                GL[i * nsnps * 3 + j * 3 + 0] = GL2[j][i * 3 + 0];
-                GL[i * nsnps * 3 + j * 3 + 1] = GL2[j][i * 3 + 1];
-                GL[i * nsnps * 3 + j * 3 + 2] = GL2[j][i * 3 + 2];
+                GL[i * nsnps * 3 + 0 * nsnps + j] = GL2[j][i * 3 + 0];
+                GL[i * nsnps * 3 + 1 * nsnps + j] = GL2[j][i * 3 + 1];
+                GL[i * nsnps * 3 + 2 * nsnps + j] = GL2[j][i * 3 + 2];
             }
         }
     }
