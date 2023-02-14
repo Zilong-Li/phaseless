@@ -171,7 +171,7 @@ int main(int argc, char * argv[])
         admixer.updateIteration();
     }
     cao.done(tm.date(), "admixture done and outputting.");
-    admixer.writeQ(outdir / "admixture.q");
+    admixer.writeQ(outdir / string("admixture.k" + to_string(K) + ".Q"));
     cao.done(tm.date(), "-> good job. have a nice day, bye!");
 
     return 0;

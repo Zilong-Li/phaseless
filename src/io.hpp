@@ -25,6 +25,8 @@ inline void write_bcf_genotype_probability(float * GP,
     bw.header.addFORMAT("GT", "1", "String", "Unphased genotype");
     bw.header.addFORMAT("GP", "3", "Float", "Posterior genotype probability of 0/0, 0/1, and 1/1");
     bw.header.addFORMAT("DS", "1", "Float", "Diploid dosage");
+    bw.header.addINFO("INFO", "1", "Float", "INFO score");
+    bw.header.addINFO("EAF", "1", "Float", "Estimated allele frequency");
     // add all samples in the header
     for(int i = 0; i < N; i++)
     {
@@ -35,10 +37,12 @@ inline void write_bcf_genotype_probability(float * GP,
     }
     bw.writeHeader();
     vcfpp::BcfRecord var(bw.header); // construct a variant record from the header
-    for(int m = 0; m < M; m++)
+    double thetaHat, info, eaf, eij, fij, a0, a1;
+    int i, m;
+    for(m = 0; m < M; m++)
     {
         var.setPOS(markers[m]);
-        for(int i = 0; i < N; i++)
+        for(eij = 0, fij = 0, i = 0; i < N; i++)
         {
             gp[i * 3 + 0] = std::lround(1e3 * GP[i * M * 3 + m * 3 + 0]) / 1e3;
             gp[i * 3 + 1] = std::lround(1e3 * GP[i * M * 3 + m * 3 + 1]) / 1e3;
@@ -46,10 +50,25 @@ inline void write_bcf_genotype_probability(float * GP,
             ds[i] = gp[i * 3 + 1] + gp[i * 3 + 2] * 2;
             gt[i * 2 + 0] = !(gp[i * 3 + 0] > gp[i * 3 + 1] && gp[i * 3 + 0] > gp[i * 3 + 2]);
             gt[i * 2 + 1] = (gp[i * 3 + 2] > gp[i * 3 + 1] && gt[i * 2 + 0]);
+            a0 = gp[i * 3 + 1] + gp[i * 3 + 2] * 2;
+            a1 = gp[i * 3 + 1] + gp[i * 3 + 2] * 4;
+            eij += a0;
+            fij += a1 - a0 * a0;
         }
+        eaf = eij / 2 / N;
+        info = (1 - fij) / (2 * N * eaf * (1 - eaf));
+        thetaHat = std::lround(1e2 * eaf) / 1e2;
+        if (thetaHat == 0 || thetaHat == 1)
+            info = 1;
+        else if (info <0)
+            info = 0;
+        else
+            info = std::lround(1e3 * info) / 1e3;
         var.setGenotypes(gt);
         var.setFORMAT("GP", gp);
         var.setFORMAT("DS", ds);
+        var.setINFO("INFO", info);
+        var.setINFO("EAF", eaf);
         bw.writeRecord(var);
     }
 }
