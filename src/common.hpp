@@ -27,13 +27,12 @@ using DoubleVec1D = std::vector<double>;
 using DoubleVec2D = std::vector<DoubleVec1D>;
 using StringVec1D = std::vector<std::string>;
 using MapStringInt1D = std::map<std::string, IntVec1D>;
-// using MyMat2D = Eigen::MatrixXd; // use MatrixXf if no accuracy drop
-using MyMat2D = Eigen::MatrixXf;
-using MyMat1D = Eigen::VectorXf;
-using MyArr2D = Eigen::ArrayXXf;
-using MyArr1D = Eigen::ArrayXf;
-using MyFloat1D = FloatVec1D;
+using MyFloat1D = FloatVec1D; // use float if no accuracy drops
 using MyFloat2D = FloatVec2D;
+using MyMat2D = Eigen::Matrix<float, Eigen::Dynamic, Eigen::Dynamic, Eigen::ColMajor>;
+using MyMat1D = Eigen::Matrix<float, Eigen::Dynamic, 1, Eigen::ColMajor>;
+using MyArr2D = Eigen::Array<float, Eigen::Dynamic, Eigen::Dynamic, Eigen::ColMajor>;
+using MyArr1D = Eigen::Array<float, Eigen::Dynamic, 1, Eigen::ColMajor>;
 
 template<typename MatrixType, typename RandomEngineType>
 inline MatrixType RandomUniform(const Eigen::Index numRows,

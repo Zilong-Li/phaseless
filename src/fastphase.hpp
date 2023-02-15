@@ -16,7 +16,7 @@ class FastPhaseK2
     std::mutex mutex_it; // in case of race condition
 
   public:
-    FastPhaseK2(int n, int m, int c, int seed);
+    FastPhaseK2(int n, int m, int c, int seed, bool highram);
     ~FastPhaseK2();
 
     // SHARED VARIBALES
@@ -26,6 +26,8 @@ class FastPhaseK2
     MyArr2D PI, Ek; // nsnps x C
     MyArr2D F; // M x C
     MyArr2D Ekg; // M x C x 2
+    const bool high_ram;
+    MyArr2D postProbsZ, postProbsZandG;
 
     void openClusterFile(std::string out);
     void initIteration(double tol = 1e-6);
@@ -33,13 +35,14 @@ class FastPhaseK2
     double forwardAndBackwards(int, const MyFloat1D &, const MyArr2D &, bool);
 };
 
-inline FastPhaseK2::FastPhaseK2(int n, int m, int c, int seed)
-: N(n), M(m), C(c), C2(c * c), GP(M * 3, N), Ek(M, C), Ekg(M, C * 2)
+inline FastPhaseK2::FastPhaseK2(int n, int m, int c, int seed, bool highram = false)
+: N(n), M(m), C(c), C2(c * c), GP(M * 3, N), high_ram(highram)
 {
     auto rng = std::default_random_engine{};
     rng.seed(seed);
     F = RandomUniform<MyArr2D, std::default_random_engine>(M, C, rng, 0.0, 1.0);
     PI = RandomUniform<MyArr2D, std::default_random_engine>(M, C, rng, 0.0, 1.0);
+    GP.setZero();
 }
 
 inline FastPhaseK2::~FastPhaseK2()
@@ -54,22 +57,6 @@ inline void FastPhaseK2::openClusterFile(std::string out)
     ofs.write((char *)&N, 4);
     ofs.write((char *)&M, 4);
     ofs.write((char *)&C, 4);
-}
-
-inline void FastPhaseK2::initIteration(double tol)
-{
-    // map PI to domain with normalization
-    if(PI.isNaN().any()) throw std::runtime_error("NaN in PI\n");
-    PI = (PI < tol).select(tol, PI); // lower bound
-    PI = (PI > 1 - tol).select(1 - tol, PI); // upper bound
-    // normalize it now
-    PI = PI.colwise() / PI.rowwise().sum();
-    // map F to domain but no normalization
-    if(F.isNaN().any()) throw std::runtime_error("NaN in F\n");
-    F = (F < tol).select(tol, F); // lower bound
-    F = (F > 1 - tol).select(1 - tol, F); // upper bound
-    Ek.setZero();
-    Ekg.setZero();
 }
 
 /*
@@ -188,76 +175,157 @@ inline double FastPhaseK2::forwardAndBackwards(int ind,
         }
     }
     cs *= LikeForwardInd.col(M - 1).sum(); // get last forward likelihood back
-    MyArr1D ind_post_z_col(M); // col of indPostProbsZ
-    MyArr2D ind_post_z_g(M, 4); // cols of indPostProbsZandG
-    MyArr1D tmpSum(M);
-    MyArr1D geno;
-    if(call_geno) geno.setZero(M * 3);
-    for(k1 = 0; k1 < C; k1++)
+    if(high_ram == false)
     {
-        for(k2 = 0; k2 < C; k2++)
+        MyArr1D ind_post_z_col(M); // col of indPostProbsZ
+        MyArr2D ind_post_z_g(M, 4); // cols of indPostProbsZandG
+        MyArr1D tmpSum(M);
+        for(k1 = 0; k1 < C; k1++)
         {
-            tmpSum.setZero();
-            k12 = k1 * C + k2;
-            ind_post_z_col = (LikeForwardInd.row(k12) * LikeBackwardInd.row(k12)).transpose() / cs;
-            for(g1 = 0; g1 < 2; g1++)
+            for(k2 = 0; k2 < C; k2++)
             {
-                for(g2 = 0; g2 < 2; g2++)
-                {
-                    g12 = g1 * 2 + g2;
-                    ind_post_z_g.col(g12) = gli.col(g1 + g2) * (g1 * F.col(k1) + (1 - g1) * (1 - F.col(k1)))
-                                            * (g2 * F.col(k2) + (1 - g2) * (1 - F.col(k2)));
-                    tmpSum += ind_post_z_g.col(g12);
-                }
-            }
-            ind_post_z_g.colwise() *= ind_post_z_col;
-            ind_post_z_g.colwise() /= tmpSum;
-            if(call_geno)
-            {
+                tmpSum.setZero();
+                k12 = k1 * C + k2;
+                ind_post_z_col = (LikeForwardInd.row(k12) * LikeBackwardInd.row(k12)).transpose() / cs;
                 for(g1 = 0; g1 < 2; g1++)
                 {
                     for(g2 = 0; g2 < 2; g2++)
                     {
                         g12 = g1 * 2 + g2;
-                        g3 = g1 + g2;
-                        geno(Eigen::seqN(g3, M, 3)) += ind_post_z_g.col(g12);
+                        ind_post_z_g.col(g12) = gli.col(g1 + g2)
+                                                * (g1 * F.col(k1) + (1 - g1) * (1 - F.col(k1)))
+                                                * (g2 * F.col(k2) + (1 - g2) * (1 - F.col(k2)));
+                        tmpSum += ind_post_z_g.col(g12);
                     }
                 }
-            }
-            // for update PI and F
-            {
-                std::lock_guard<std::mutex> lock(mutex_it);
-                Ek.col(k1) += ind_post_z_col;
-                Ek.col(k2) += ind_post_z_col;
-                for(g1 = 0; g1 < 2; g1++)
+                ind_post_z_g.colwise() *= ind_post_z_col;
+                ind_post_z_g.colwise() /= tmpSum;
+                if(call_geno)
                 {
-                    for(g2 = 0; g2 < 2; g2++)
+                    for(g1 = 0; g1 < 2; g1++)
                     {
-                        g12 = g1 * 2 + g2;
-                        Ekg.col(k1 * 2 + g1) += ind_post_z_g.col(g12);
-                        Ekg.col(k2 * 2 + g2) += ind_post_z_g.col(g12);
+                        for(g2 = 0; g2 < 2; g2++)
+                        {
+                            g12 = g1 * 2 + g2;
+                            g3 = g1 + g2;
+                            GP(Eigen::seqN(g3, M, 3), ind) += ind_post_z_g.col(g12);
+                        }
+                    }
+                }
+                // for update PI and F
+                {
+                    std::lock_guard<std::mutex> lock(mutex_it);
+                    Ek.col(k1) += ind_post_z_col;
+                    Ek.col(k2) += ind_post_z_col;
+                    for(g1 = 0; g1 < 2; g1++)
+                    {
+                        for(g2 = 0; g2 < 2; g2++)
+                        {
+                            g12 = g1 * 2 + g2;
+                            Ekg.col(k1 * 2 + g1) += ind_post_z_g.col(g12);
+                            Ekg.col(k2 * 2 + g2) += ind_post_z_g.col(g12);
+                        }
                     }
                 }
             }
         }
-    }
-
-    if(call_geno)
-    {
-        std::lock_guard<std::mutex> lock(mutex_it);
-        GP.col(ind) = geno;
-        if(ofs.is_open()) // output likelihood of each cluster
+        if(call_geno && ofs.is_open()) // output likelihood of each cluster
         {
             MyArr2D likeCluster = (LikeBackwardInd * LikeForwardInd).transpose();
             ofs.write((char *)likeCluster.data(), M * C2 * 8);
         }
     }
+    else
+    {
+        MyArr2D indPostProbsZ = (LikeForwardInd * LikeBackwardInd).transpose().colwise() / cs;
+        MyArr2D indPostProbsZandG(M, C2 * 4);
+        MyArr1D tmpSum(M);
+        for(k1 = 0; k1 < C; k1++)
+        {
+            for(k2 = 0; k2 < C; k2++)
+            {
+                tmpSum.setZero();
+                k12 = k1 * C + k2;
+                for(g1 = 0; g1 < 2; g1++)
+                {
+                    for(g2 = 0; g2 < 2; g2++)
+                    {
+                        g12 = g1 * 2 + g2;
+                        indPostProbsZandG.col(k12 * 4 + g12) =
+                            gli.col(g1 + g2) * (g1 * F.col(k1) + (1 - g1) * (1 - F.col(k1)))
+                            * (g2 * F.col(k2) + (1 - g2) * (1 - F.col(k2)));
+                        tmpSum += indPostProbsZandG.col(k12 * 4 + g12);
+                    }
+                }
+                indPostProbsZandG.middleCols(k12 * 4, 4).colwise() *= indPostProbsZ.col(k12);
+                indPostProbsZandG.middleCols(k12 * 4, 4).colwise() /= tmpSum;
+                if(call_geno)
+                {
+                    for(g1 = 0; g1 < 2; g1++)
+                    {
+                        for(g2 = 0; g2 < 2; g2++)
+                        {
+                            g12 = g1 * 2 + g2;
+                            g3 = g1 + g2;
+                            GP(Eigen::seqN(g3, M, 3), ind) += indPostProbsZandG.col(k12 * 4 + g12);
+                        }
+                    }
+                }
+            }
+        }
+        std::lock_guard<std::mutex> lock(mutex_it);
+        postProbsZ += indPostProbsZ;
+        postProbsZandG += indPostProbsZandG;
+    }
 
     return indLogLikeForwardAll;
 }
 
+inline void FastPhaseK2::initIteration(double tol)
+{
+    // map PI to domain with normalization
+    if(PI.isNaN().any()) throw std::runtime_error("NaN in PI\n");
+    PI = (PI < tol).select(tol, PI); // lower bound
+    PI = (PI > 1 - tol).select(1 - tol, PI); // upper bound
+    // normalize it now
+    PI = PI.colwise() / PI.rowwise().sum();
+    // map F to domain but no normalization
+    if(F.isNaN().any()) throw std::runtime_error("NaN in F\n");
+    F = (F < tol).select(tol, F); // lower bound
+    F = (F > 1 - tol).select(1 - tol, F); // upper bound
+    Ek.setZero(M, C);
+    Ekg.setZero(M, C * 2);
+    if(high_ram)
+    {
+        postProbsZ.setZero(M, C2);
+        postProbsZandG.setZero(M, C2 * 4);
+    }
+}
+
 inline void FastPhaseK2::updateIteration()
 {
+    if(high_ram)
+    {
+        int k1, k2, k12, g1, g2, g12;
+        for(k1 = 0; k1 < C; k1++)
+        {
+            for(k2 = 0; k2 < C; k2++)
+            {
+                k12 = k1 * C + k2;
+                Ek.col(k1) += postProbsZ.col(k12);
+                Ek.col(k2) += postProbsZ.col(k12);
+                for(g1 = 0; g1 < 2; g1++)
+                {
+                    for(g2 = 0; g2 < 2; g2++)
+                    {
+                        g12 = g1 * 2 + g2;
+                        Ekg.col(k1 * 2 + g1) += postProbsZandG.col(k12 * 4 + g12);
+                        Ekg.col(k2 * 2 + g2) += postProbsZandG.col(k12 * 4 + g12);
+                    }
+                }
+            }
+        }
+    }
     PI = Ek / (2 * N);
     F = Ekg(Eigen::all, Eigen::seq(1, Eigen::last, 2))
         / (Ekg(Eigen::all, Eigen::seq(1, Eigen::last, 2)) + Ekg(Eigen::all, Eigen::seq(0, Eigen::last, 2)));
