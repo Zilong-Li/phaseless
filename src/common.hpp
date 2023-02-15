@@ -222,21 +222,21 @@ inline auto getClusterLikelihoods(int ind,
 }
 
 inline auto getClusterLikelihoods(int ind,
-                                  int M,
-                                  int C,
+                                  MyArr2D & LikeForwardInd,
+                                  MyArr2D & LikeBackwardInd,
                                   const MyFloat1D & GL,
                                   const MyFloat1D & transRate_,
                                   const MyFloat1D & PI_,
                                   const MyFloat1D & F_)
 {
+    const int C2 = LikeForwardInd.rows();
+    const int M = LikeForwardInd.cols();
+    int C = F_.size() / M;
     int g1, g2, k1, k2, k12;
-    int C2 = C * C;
     int igs = ind * M * 3;
     const double maxEmission = 1e-10;
     // ======== forward and backward recursion ===========
     MyArr2D emitDip(C2, M);
-    MyArr2D LikeForwardInd(C2, M); // likelihood of forward recursion for ind i, not log
-    MyArr2D LikeBackwardInd(C2, M); // likelihood of backward recursion for ind i, not log
     MyArr1D sumTmp1(C), sumTmp2(C); // store sum over internal loop
     MyArr1D cs(M);
     double constTmp;
@@ -334,8 +334,8 @@ inline auto getClusterLikelihoods(int ind,
             }
         }
     }
-    MyArr2D icluster = LikeForwardInd * LikeBackwardInd; // C x C x M
-    return icluster;
+    // MyArr2D icluster = LikeForwardInd * LikeBackwardInd; // C x C x M
+    // return icluster;
 }
 
 #endif // COMMON_H_

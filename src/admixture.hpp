@@ -45,15 +45,17 @@ inline Admixture::~Admixture() {}
 inline double Admixture::runWithBigAss(int ind, const std::unique_ptr<BigAss> & genome)
 {
     MyArr2D w((C * C + C) / 2, K * K);
-    MyArr2D iEkc, iNormF;
+    MyArr2D iEkc, iNormF, LikeForwardInd, LikeBackwardInd;
     double norm = 0, llike = 0;
     int c1, c2, c12, cc;
     int k1, k2, k12, s;
     for(int ic = 0, m = 0; ic < genome->nchunks; ic++)
     {
         int iM = genome->pos[ic].size();
-        auto icluster = getClusterLikelihoods(ind, iM, C, genome->gls[ic], genome->transRate[ic],
-                                              genome->PI[ic], genome->F[ic]);
+        LikeForwardInd.setZero(C * C, iM); // likelihood of forward recursion for ind i, not log
+        LikeBackwardInd.setZero(C * C, iM); // likelihood of backward recursion for ind i, not log
+        getClusterLikelihoods(ind, LikeForwardInd, LikeBackwardInd, genome->gls[ic], genome->transRate[ic],
+                              genome->PI[ic], genome->F[ic]);
         iEkc.setZero(K * C, iM);
         iNormF.setZero(K, iM);
         for(s = 0; s < iM; s++)
@@ -68,8 +70,8 @@ inline double Admixture::runWithBigAss(int ind, const std::unique_ptr<BigAss> & 
                         for(k2 = 0; k2 < K; k2++)
                         {
                             k12 = k1 * K + k2;
-                            w(cc, k12) = icluster(c12, s) * FI(k1 * C + c1, m) * Q(k1, ind)
-                                         * FI(k2 * C + c2, m) * Q(k2, ind);
+                            w(cc, k12) = LikeForwardInd(c12, s) * LikeBackwardInd(c12, s) * FI(k1 * C + c1, m)
+                                         * Q(k1, ind) * FI(k2 * C + c2, m) * Q(k2, ind);
                             if(c1 != c2) w(cc, k12) *= 2;
                             norm += w(cc, k12);
                         }
