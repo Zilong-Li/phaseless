@@ -240,8 +240,6 @@ inline auto getClusterLikelihoods(int ind,
     MyArr1D sumTmp1(C), sumTmp2(C); // store sum over internal loop
     MyArr1D cs(M);
     double constTmp;
-
-    // ======== forward recursion ===========
     int s{0};
     for(k1 = 0; k1 < C; k1++)
     {
@@ -253,7 +251,7 @@ inline auto getClusterLikelihoods(int ind,
             {
                 for(g2 = 0; g2 <= 1; g2++)
                 {
-                    emitDip(k12, s) += GL[igs + s * 3 + g1 + g2]
+                    emitDip(k12, s) += GL[igs + (g1 + g2) * M + s]
                                        * (g1 * F_[k1 * M + s] + (1 - g1) * (1 - F_[k1 * M + s]))
                                        * (g2 * F_[k2 * M + s] + (1 - g2) * (1 - F_[k2 * M + s]));
                 }
@@ -288,7 +286,7 @@ inline auto getClusterLikelihoods(int ind,
                 {
                     for(g2 = 0; g2 <= 1; g2++)
                     {
-                        emitDip(k12, s) += GL[igs + s * 3 + g1 + g2]
+                        emitDip(k12, s) += GL[igs + (g1 + g2) * M + s]
                                            * (g1 * F_[k1 * M + s] + (1 - g1) * (1 - F_[k1 * M + s]))
                                            * (g2 * F_[k2 * M + s] + (1 - g2) * (1 - F_[k2 * M + s]));
                     }
