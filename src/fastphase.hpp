@@ -76,7 +76,7 @@ inline double FastPhaseK2::forwardAndBackwards(int ind,
     MyArr2D LikeForwardInd(C2, M); // likelihood of forward recursion for ind i, not log
     MyArr2D LikeBackwardInd(C2, M); // likelihood of backward recursion for ind i, not log
     MyArr1D sumTmp1(C), sumTmp2(C); // store sum over internal loop
-    MyArr1D cs(M);
+    MyArr1D cs = MyArr1D::Zero(M);
     double constTmp;
 
     // ======== forward recursion ===========
@@ -98,9 +98,10 @@ inline double FastPhaseK2::forwardAndBackwards(int ind,
             }
             if(emitDip(k12, s) < maxEmission) emitDip(k12, s) = maxEmission;
             LikeForwardInd(k12, s) = emitDip(k12, s) * PI(s, k1) * PI(s, k2);
+            cs(s) += LikeForwardInd(k12, s);
         }
     }
-    cs(s) = 1 / LikeForwardInd.col(s).sum();
+    cs(s) = 1 / cs(s);
     LikeForwardInd.col(s) *= cs(s); // normalize it
     for(s = 1; s < M; s++)
     {
@@ -135,13 +136,15 @@ inline double FastPhaseK2::forwardAndBackwards(int ind,
                     emitDip(k12, s)
                     * (LikeForwardInd(k12, s - 1) * transRate(0, s) + PI(s, k1) * sumTmp1(k2)
                        + PI(s, k2) * sumTmp2(k1) + PI(s, k1) * PI(s, k2) * constTmp);
+                cs(s) += LikeForwardInd(k12, s);
             }
         }
-        cs(s) = 1 / LikeForwardInd.col(s).sum();
+        cs(s) = 1 / cs(s);
         LikeForwardInd.col(s) *= cs(s); // normalize it
     }
     // total likelhoods of the individual
-    double indLogLikeForwardAll = log((LikeForwardInd.col(M - 1).sum() / cs).sum());
+    double indLike = LikeForwardInd.col(M - 1).sum();
+    double indLogLikeForwardAll = log((indLike / cs).sum());
 
     // ======== backward recursion ===========
     s = M - 1; // set last site
@@ -174,17 +177,15 @@ inline double FastPhaseK2::forwardAndBackwards(int ind,
             }
         }
     }
-    cs *= LikeForwardInd.col(M - 1).sum(); // get last forward likelihood back
+    cs *= indLike; // get last forward likelihood back
     if(high_ram == false)
     {
         MyArr1D ind_post_z_col(M); // col of indPostProbsZ
         MyArr2D ind_post_z_g(M, 4); // cols of indPostProbsZandG
-        MyArr1D tmpSum(M);
         for(k1 = 0; k1 < C; k1++)
         {
             for(k2 = 0; k2 < C; k2++)
             {
-                tmpSum.setZero();
                 k12 = k1 * C + k2;
                 ind_post_z_col = (LikeForwardInd.row(k12) * LikeBackwardInd.row(k12)).transpose() / cs;
                 for(g1 = 0; g1 < 2; g1++)
@@ -195,11 +196,9 @@ inline double FastPhaseK2::forwardAndBackwards(int ind,
                         ind_post_z_g.col(g12) = gli.col(g1 + g2)
                                                 * (g1 * F.col(k1) + (1 - g1) * (1 - F.col(k1)))
                                                 * (g2 * F.col(k2) + (1 - g2) * (1 - F.col(k2)));
-                        tmpSum += ind_post_z_g.col(g12);
                     }
                 }
-                ind_post_z_g.colwise() *= ind_post_z_col;
-                ind_post_z_g.colwise() /= tmpSum;
+                ind_post_z_g.colwise() *= ind_post_z_col / ind_post_z_g.rowwise().sum();
                 if(call_geno)
                 {
                     for(g1 = 0; g1 < 2; g1++)
@@ -239,12 +238,10 @@ inline double FastPhaseK2::forwardAndBackwards(int ind,
     {
         MyArr2D indPostProbsZ = (LikeForwardInd * LikeBackwardInd).transpose().colwise() / cs;
         MyArr2D indPostProbsZandG(M, C2 * 4);
-        MyArr1D tmpSum(M);
         for(k1 = 0; k1 < C; k1++)
         {
             for(k2 = 0; k2 < C; k2++)
             {
-                tmpSum.setZero();
                 k12 = k1 * C + k2;
                 for(g1 = 0; g1 < 2; g1++)
                 {
@@ -254,11 +251,10 @@ inline double FastPhaseK2::forwardAndBackwards(int ind,
                         indPostProbsZandG.col(k12 * 4 + g12) =
                             gli.col(g1 + g2) * (g1 * F.col(k1) + (1 - g1) * (1 - F.col(k1)))
                             * (g2 * F.col(k2) + (1 - g2) * (1 - F.col(k2)));
-                        tmpSum += indPostProbsZandG.col(k12 * 4 + g12);
                     }
                 }
-                indPostProbsZandG.middleCols(k12 * 4, 4).colwise() *= indPostProbsZ.col(k12);
-                indPostProbsZandG.middleCols(k12 * 4, 4).colwise() /= tmpSum;
+                indPostProbsZandG.middleCols(k12 * 4, 4).colwise() *=
+                    indPostProbsZ.col(k12) / indPostProbsZandG.middleCols(k12 * 4, 4).rowwise().sum();
                 if(call_geno)
                 {
                     for(g1 = 0; g1 < 2; g1++)
