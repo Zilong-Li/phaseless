@@ -6,6 +6,12 @@
 using namespace std;
 using namespace Eigen;
 
+double make_input_per_chunk(int niters, int ic, const std::unique_ptr<BigAss> & genome, int seed)
+{
+    FastPhaseK2 nofaith(genome->nsamples, genome->pos[ic].size(), genome->C, seed);
+    return nofaith.runWithOneThread(niters, genome->gls[ic], genome->pos[ic]);
+}
+
 TEST_CASE("fastphasek2 runWithOneThread", "[test-fastphasek2]")
 {
     int C{5}, seed{1}, niters{10}, chunksize{10000};
@@ -15,26 +21,24 @@ TEST_CASE("fastphasek2 runWithOneThread", "[test-fastphasek2]")
     for(int ic = 0; ic < genome->nchunks; ic++)
     {
         FastPhaseK2 nofaith(genome->nsamples, genome->pos[ic].size(), C, seed);
-        nofaith.runWithOneThread(niters, genome->gls[ic], genome->pos[ic]);
+        cout << "diff: " << nofaith.runWithOneThread(niters, genome->gls[ic], genome->pos[ic]) << endl;
     }
 }
 
-// TEST_CASE("fastphasek2 runWithOneThread in threadpool", "[test-fastphasek2]")
-// {
-//     int C{5}, seed{1}, niters{10}, chunksize{10000};
-//     std::unique_ptr<BigAss> genome = std::make_unique<BigAss>();
-//     genome->chunksize = chunksize, genome->C = C;
-//     chunk_beagle_genotype_likelihoods(genome, "../data/all.bgl.gz");
-//     ThreadPool poolit(genome->nchunks);
-//     vector<future<double>> diff;
-//     for(int ic = 0; ic < genome->nchunks; ic++)
-//     {
-//         diff.emplace_back(poolit.enqueue(&FastPhaseK2::runWithOneThread,
-//                                          FastPhaseK2(genome->nsamples, genome->pos[ic].size(), C, seed),
-//                                          niters, std::ref(genome->gls[ic]), std::ref(genome->pos[ic])));
-//     }
-//     for(auto && ll : diff) ll.get();
-// }
+TEST_CASE("fastphasek2 runWithOneThread in threadpool", "[test-fastphasek2]")
+{
+    int C{5}, seed{1}, niters{10}, chunksize{10000};
+    std::unique_ptr<BigAss> genome = std::make_unique<BigAss>();
+    genome->chunksize = chunksize, genome->C = C;
+    chunk_beagle_genotype_likelihoods(genome, "../data/all.bgl.gz");
+    ThreadPool poolit(genome->nchunks);
+    vector<future<double>> diff;
+    for(int ic = 0; ic < genome->nchunks; ic++)
+    {
+        diff.emplace_back(poolit.enqueue(make_input_per_chunk, niters, ic, std::ref(genome), seed));
+    }
+    for(auto && ll : diff) cout << "diff: " << ll.get() << endl;
+}
 
 TEST_CASE("fastphasek2 forwardAndBackwards", "[test-fastphasek2]")
 {

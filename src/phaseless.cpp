@@ -14,6 +14,24 @@
 
 using namespace std;
 
+using pars = std::tuple<MyFloat1D, MyFloat1D, MyFloat1D>;
+
+auto make_input_per_chunk(filesystem::path outdir,
+                          const std::unique_ptr<BigAss> & genome,
+                          const int ic,
+                          const int niters,
+                          const int seed)
+{
+    FastPhaseK2 nofaith(genome->nsamples, genome->pos[ic].size(), genome->C, seed);
+    auto transRate = calc_transRate(genome->pos[ic], genome->C);
+    nofaith.runWithOneThread(niters, genome->gls[ic], transRate);
+    write_bcf_genotype_probability(nofaith.GP.data(), genome->chrs[ic], genome->pos[ic], genome->sampleids,
+                                   outdir / string("chunk." + to_string(ic) + ".vcf.gz"));
+    return std::tuple(MyFloat1D(nofaith.PI.data(), nofaith.PI.data() + nofaith.PI.size()),
+                      MyFloat1D(nofaith.F.data(), nofaith.F.data() + nofaith.F.size()),
+                      MyFloat1D(transRate.data(), transRate.data() + transRate.size()));
+}
+
 int main(int argc, char * argv[])
 {
     // ========= helper message and parameters parsing ============================
@@ -27,7 +45,6 @@ int main(int argc, char * argv[])
                   << "     -b      input binary file with all parameters\n"
                   << "     -c      number of ancestral haplotype clusters\n"
                   << "     -f      input vcf/bcf format\n"
-                  << "     -F      info score threshold for thining [0]\n"
                   << "     -g      gziped beagle format\n"
                   << "     -i      maximum iterations of admixture [1000]\n"
                   << "     -I      maximum iterations of imputation [40]\n"
@@ -46,14 +63,12 @@ int main(int argc, char * argv[])
     string samples = "-", region = "";
     int phase_only{0}, K{1}, C{0}, niters_admix{1000}, niters_impute{40}, nthreads{4}, seed{1};
     int chunksize{100000};
-    double info{0};
     for(size_t i = 0; i < args.size(); i++)
     {
         if(args[i] == "-b") in_bin = args[++i];
         if(args[i] == "-c") C = stoi(args[++i]);
         if(args[i] == "-k") K = stoi(args[++i]);
         if(args[i] == "-f") in_vcf = args[++i];
-        if(args[i] == "-F") info = stod(args[++i]);
         if(args[i] == "-o") outdir.assign(args[++i]);
         if(args[i] == "-g") in_beagle.assign(args[++i]);
         if(args[i] == "-i") niters_admix = stoi(args[++i]);
@@ -90,7 +105,7 @@ int main(int argc, char * argv[])
 
     // ========= core calculation part ===========================================
     ThreadPool poolit(nthreads);
-    vector<future<double>> llike;
+    vector<future<pars>> res;
     double loglike, diff, prevlike;
     std::unique_ptr<BigAss> genome;
     if(in_bin.empty())
@@ -102,40 +117,20 @@ int main(int argc, char * argv[])
         cao.print(tm.date(), "parsing input -> C =", genome->C, ", N =", genome->nsamples,
                   ", M =", genome->nsnps, ", nchunks =", genome->nchunks);
         cao.done(tm.date(), "elapsed time for parsing beagle file", tm.reltime(), "secs");
-        for(int ic = 0; ic < genome->nchunks; ic++)
+        int ic;
+        for(ic = 0; ic < genome->nchunks; ic++)
+            res.emplace_back(
+                poolit.enqueue(make_input_per_chunk, outdir, std::ref(genome), ic, niters_impute, seed));
+        ic = 0;
+        for(auto && ll : res)
         {
-            FastPhaseK2 nofaith(genome->nsamples, genome->pos[ic].size(), C, seed);
-            auto transRate = calc_transRate(genome->pos[ic], C);
-            for(int it = 0; it <= niters_impute; it++)
-            {
-                tm.clock();
-                nofaith.initIteration();
-                for(int i = 0; i < genome->nsamples; i++)
-                {
-                    if(it == niters_impute)
-                        llike.emplace_back(poolit.enqueue(&FastPhaseK2::forwardAndBackwards, &nofaith, i,
-                                                          std::ref(genome->gls[ic]), std::ref(transRate),
-                                                          true));
-                    else
-                        llike.emplace_back(poolit.enqueue(&FastPhaseK2::forwardAndBackwards, &nofaith, i,
-                                                          std::ref(genome->gls[ic]), std::ref(transRate),
-                                                          false));
-                }
-                loglike = 0;
-                for(auto && ll : llike) loglike += ll.get();
-                llike.clear(); // clear future and renew
-                diff = it ? loglike - prevlike : 0;
-                cao.print(tm.date(), "run chunk", ic, ", iteration", it, ", log likelihoods =", loglike,
-                          ", diff =", diff, ",", tm.reltime(), " sec");
-                prevlike = loglike;
-                // if(diff > 0 && diff < 0.1) break;
-                nofaith.updateIteration();
-            }
-            auto idx2rm = write_bcf_genotype_probability(
-                nofaith.GP.data(), genome->chrs[ic], genome->pos[ic], genome->sampleids,
-                outdir / string("chunk." + to_string(ic) + ".vcf.gz"), info);
-            thin_bigass(ic, idx2rm, genome, nofaith.PI, nofaith.F, transRate);
+            const auto [PI, F, transRate] = ll.get();
+            genome->PI.emplace_back(PI);
+            genome->F.emplace_back(F);
+            genome->transRate.emplace_back(transRate);
+            cao.print(tm.date(), "chunk", ic++, " imputation done and outputting.");
         }
+        res.clear(); // clear future and renew
         std::ofstream ofs(outdir / "pars.bin", std::ios::out | std::ios::binary);
         auto bytes_written = alpaca::serialize<BigAss>(*genome, ofs);
         ofs.close();
@@ -158,6 +153,7 @@ int main(int argc, char * argv[])
 
     cao.warn(tm.date(), "-> running admixture");
     Admixture admixer(genome->nsamples, genome->nsnps, genome->C, K, seed);
+    vector<future<double>> llike;
     for(int it = 0; it <= niters_admix; it++)
     {
         tm.clock();

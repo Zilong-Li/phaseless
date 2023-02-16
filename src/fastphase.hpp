@@ -14,7 +14,6 @@ class FastPhaseK2
 {
   private:
     std::mutex mutex_it; // in case of race condition
-    bool single_thread = false;
 
   public:
     FastPhaseK2(int n, int m, int c, int seed, bool highram);
@@ -34,7 +33,7 @@ class FastPhaseK2
     void initIteration(double tol = 1e-6);
     void updateIteration();
     double forwardAndBackwards(int, const MyFloat1D &, const MyArr2D &, bool);
-    double runWithOneThread(int, const MyFloat1D &, const IntVec1D &);
+    double runWithOneThread(int, const MyFloat1D &, const MyArr2D &);
 };
 
 inline FastPhaseK2::FastPhaseK2(int n, int m, int c, int seed, bool highram = false)
@@ -67,11 +66,9 @@ inline void FastPhaseK2::openClusterFile(std::string out)
 ** @param pos       SNP position
 ** @return likelihood difference between last two iters
 */
-inline double FastPhaseK2::runWithOneThread(int niters, const MyFloat1D & GL, const IntVec1D & pos)
+inline double FastPhaseK2::runWithOneThread(int niters, const MyFloat1D & GL, const MyArr2D & transRate)
 {
-    single_thread = true;
     double loglike, diff, prevlike;
-    auto transRate = calc_transRate(pos, C);
     for(int it = 0; it <= niters; it++)
     {
         initIteration();
@@ -244,8 +241,7 @@ inline double FastPhaseK2::forwardAndBackwards(int ind,
                     }
                 }
                 { // for update PI and F
-                    if(single_thread == false)
-                        std::lock_guard<std::mutex> lock(mutex_it);
+                    std::lock_guard<std::mutex> lock(mutex_it);
                     Ek.col(k1) += ind_post_z_col;
                     Ek.col(k2) += ind_post_z_col;
                     for(g1 = 0; g1 < 2; g1++)
