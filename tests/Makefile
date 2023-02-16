@@ -22,7 +22,7 @@ all: test
 %.bin: %.o test-main.o
 	${CXX} ${CXXFLAGS} -o $@ $< test-main.o $(LDFLAGS) $(LIBS)
 
-test: $(BINS)
+test: $(BINS) $(OBJS)
 	./test-io.bin --success
 	./test-fastphasek2.bin --success
 	./test-fastphasek4.bin --success

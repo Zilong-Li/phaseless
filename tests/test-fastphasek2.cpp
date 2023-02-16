@@ -6,7 +6,37 @@
 using namespace std;
 using namespace Eigen;
 
-TEST_CASE("fastphasek2", "[test-fastphasek2]")
+TEST_CASE("fastphasek2 runWithOneThread", "[test-fastphasek2]")
+{
+    int C{5}, seed{1}, niters{10}, chunksize{10000};
+    std::unique_ptr<BigAss> genome = std::make_unique<BigAss>();
+    genome->chunksize = chunksize, genome->C = C;
+    chunk_beagle_genotype_likelihoods(genome, "../data/all.bgl.gz");
+    for(int ic = 0; ic < genome->nchunks; ic++)
+    {
+        FastPhaseK2 nofaith(genome->nsamples, genome->pos[ic].size(), C, seed);
+        nofaith.runWithOneThread(niters, genome->gls[ic], genome->pos[ic]);
+    }
+}
+
+// TEST_CASE("fastphasek2 runWithOneThread in threadpool", "[test-fastphasek2]")
+// {
+//     int C{5}, seed{1}, niters{10}, chunksize{10000};
+//     std::unique_ptr<BigAss> genome = std::make_unique<BigAss>();
+//     genome->chunksize = chunksize, genome->C = C;
+//     chunk_beagle_genotype_likelihoods(genome, "../data/all.bgl.gz");
+//     ThreadPool poolit(genome->nchunks);
+//     vector<future<double>> diff;
+//     for(int ic = 0; ic < genome->nchunks; ic++)
+//     {
+//         diff.emplace_back(poolit.enqueue(&FastPhaseK2::runWithOneThread,
+//                                          FastPhaseK2(genome->nsamples, genome->pos[ic].size(), C, seed),
+//                                          niters, std::ref(genome->gls[ic]), std::ref(genome->pos[ic])));
+//     }
+//     for(auto && ll : diff) ll.get();
+// }
+
+TEST_CASE("fastphasek2 forwardAndBackwards", "[test-fastphasek2]")
 {
     int N, M, C{5}, seed{1}, niters{5};
     MyFloat1D genolikes;
