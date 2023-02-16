@@ -1,4 +1,6 @@
 #+title: Imputation and Admixture for lcWGS in one goal
+[[https://github.com/Zilong-Li/phaseless/actions/workflows/linux.yml/badge.svg]]
+[[https://github.com/Zilong-Li/phaseless/actions/workflows/mac.yml/badge.svg]]
 
 Phaseless is designed for genotype imputation and admixture inference using low coverage sequencing data.
 Firstly, the imputation model is in the spirit of [[https://www.ncbi.nlm.nih.gov/pmc/articles/PMC1424677/][fastPHASE]] model but with genotype likelihood as input, and likewise [[https://www.nature.com/articles/ng.3594][STITCH]] works on raw read input. Next, the admixture inference is modeled on the haplotype cluster information from the fastphase model.

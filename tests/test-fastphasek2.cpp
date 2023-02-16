@@ -9,7 +9,8 @@ using namespace Eigen;
 double make_input_per_chunk(int niters, int ic, const std::unique_ptr<BigAss> & genome, int seed)
 {
     FastPhaseK2 nofaith(genome->nsamples, genome->pos[ic].size(), genome->C, seed);
-    return nofaith.runWithOneThread(niters, genome->gls[ic], genome->pos[ic]);
+    auto transRate = calc_transRate(genome->pos[ic], genome->C);
+    return nofaith.runWithOneThread(niters, genome->gls[ic], transRate);
 }
 
 TEST_CASE("fastphasek2 runWithOneThread", "[test-fastphasek2]")
@@ -21,7 +22,8 @@ TEST_CASE("fastphasek2 runWithOneThread", "[test-fastphasek2]")
     for(int ic = 0; ic < genome->nchunks; ic++)
     {
         FastPhaseK2 nofaith(genome->nsamples, genome->pos[ic].size(), C, seed);
-        cout << "diff: " << nofaith.runWithOneThread(niters, genome->gls[ic], genome->pos[ic]) << endl;
+        auto transRate = calc_transRate(genome->pos[ic], genome->C);
+        cout << "diff: " << nofaith.runWithOneThread(niters, genome->gls[ic], transRate) << endl;
     }
 }
 
