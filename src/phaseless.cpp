@@ -34,6 +34,7 @@ int main(int argc, char * argv[])
                   << "     -k      number of ancestry in admixture model\n"
                   << "     -n      number of threads\n"
                   << "     -o      output directory\n"
+                  << "     -P      run phasing/imputation only [0]\n"
                   << "     -r      region in vcf/bcf to subset\n"
                   << "     -s      number of sites of each chunk [100000]\n"
                   << "     -seed   for reproducing results [1]\n"
@@ -43,7 +44,7 @@ int main(int argc, char * argv[])
 
     filesystem::path outdir, in_beagle, in_vcf, in_bin;
     string samples = "-", region = "";
-    int K{0}, C{0}, niters_admix{1000}, niters_impute{40}, nthreads{4}, seed{1};
+    int phase_only{0}, K{1}, C{0}, niters_admix{1000}, niters_impute{40}, nthreads{4}, seed{1};
     int chunksize{100000};
     double info{0};
     for(size_t i = 0; i < args.size(); i++)
@@ -58,6 +59,7 @@ int main(int argc, char * argv[])
         if(args[i] == "-i") niters_admix = stoi(args[++i]);
         if(args[i] == "-I") niters_impute = stoi(args[++i]);
         if(args[i] == "-n") nthreads = stoi(args[++i]);
+        if(args[i] == "-P") phase_only = stoi(args[++i]);
         if(args[i] == "-r") region = args[++i];
         if(args[i] == "-s") chunksize = stoi(args[++i]);
         if(args[i] == "-seed") seed = stoi(args[++i]);
@@ -76,7 +78,7 @@ int main(int argc, char * argv[])
     else
         throw invalid_argument("please check the input and output options\n");
 
-    Logger cao(outdir / "phaseless.log");
+    Logger cao(outdir / string("phaseless.k" + to_string(K) + ".log"));
     cao.cao << "Options in effect:\n";
     for(size_t i = 0; i < args.size(); i++) // print out options in effect
         i % 2 ? cao.cao << args[i] + "\n" : cao.cao << "  " + args[i] + " ";
@@ -152,6 +154,7 @@ int main(int argc, char * argv[])
                   ", M =", genome->nsnps, ", nchunks =", genome->nchunks);
         assert(K < genome->C);
     }
+    if(phase_only) return 0;
 
     cao.warn(tm.date(), "-> running admixture");
     Admixture admixer(genome->nsamples, genome->nsnps, genome->C, K, seed);

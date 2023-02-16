@@ -1,6 +1,6 @@
 #+title: Imputation and Admixture for lcWGS in one goal
 
-Phaseless is a toolkit for genotype imputation and admixture inference using low coverage sequencing data.
+Phaseless is designed for genotype imputation and admixture inference using low coverage sequencing data.
 Firstly, the imputation model is in the spirit of [[https://www.ncbi.nlm.nih.gov/pmc/articles/PMC1424677/][fastPHASE]] model but with genotype likelihood as input, and likewise [[https://www.nature.com/articles/ng.3594][STITCH]] works on raw read input. Next, the admixture inference is modeled on the haplotype cluster information from the fastphase model.
 
 * Build
@@ -20,13 +20,13 @@ cd phaseless/src && make HTSLIB=/path/to/your/htslib -j4
 * Usage
 - run admixture with bealge genotype likelihoods as input
 #+begin_src shell
-phaseless -g data/bgl.gz -o outdir -c 10 -k 3 -i 100 -n 20
+phaseless -g data/bgl.gz -o outdir -c 10 -k 3 -n 20
 #+end_src
-- run admixture with binary file as input
+- run admixture for different =K= with same binary file as input
 #+begin_src shell
-phaseless -b outdir/pars.bin -k 3 -i 100 -n 20
+phaseless -b outdir/pars.bin -k 9 -n 40
 #+end_src
-- only run imputation with bealge genotype likelihoods as input
+- run imputation/phasing only
 #+begin_src shell
-fastphasek2 -g data/bgl.gz -o outdir -c 10 -n 20
+phaseless -g data/bgl.gz -o outdir -c 10 -n 6 -P 1
 #+end_src

@@ -237,7 +237,7 @@ inline auto getClusterLikelihoods(int ind,
     // ======== forward and backward recursion ===========
     MyArr2D emitDip(C2, M);
     MyArr1D sumTmp1(C), sumTmp2(C); // store sum over internal loop
-    MyArr1D cs(M);
+    MyArr1D cs = MyArr1D::Zero(M);
     double constTmp;
     int s{0};
     for(k1 = 0; k1 < C; k1++)
@@ -257,9 +257,10 @@ inline auto getClusterLikelihoods(int ind,
             }
             if(emitDip(k12, s) < maxEmission) emitDip(k12, s) = maxEmission;
             LikeForwardInd(k12, s) = emitDip(k12, s) * PI_[k1 * M + s] * PI_[k2 * M + s];
+            cs(s) += LikeForwardInd(k12, s);
         }
     }
-    cs(s) = 1 / LikeForwardInd.col(s).sum();
+    cs(s) = 1 / cs(s);
     LikeForwardInd.col(s) *= cs(s); // normalize it
     for(s = 1; s < M; s++)
     {
@@ -295,9 +296,10 @@ inline auto getClusterLikelihoods(int ind,
                     emitDip(k12, s)
                     * (LikeForwardInd(k12, s - 1) * transRate_[s * 3 + 0] + PI_[k1 * M + s] * sumTmp1(k2)
                        + PI_[k2 * M + s] * sumTmp2(k1) + PI_[k1 * M + s] * PI_[k2 * M + s] * constTmp);
+                cs(s) += LikeForwardInd(k12, s);
             }
         }
-        cs(s) = 1 / LikeForwardInd.col(s).sum();
+        cs(s) = 1 / cs(s);
         LikeForwardInd.col(s) *= cs(s); // normalize it
     }
     // ======== backward recursion ===========

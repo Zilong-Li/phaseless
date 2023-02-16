@@ -182,12 +182,13 @@ inline double FastPhaseK2::forwardAndBackwards(int ind,
     {
         MyArr1D ind_post_z_col(M); // col of indPostProbsZ
         MyArr2D ind_post_z_g(M, 4); // cols of indPostProbsZandG
+        LikeForwardInd *= LikeBackwardInd;
         for(k1 = 0; k1 < C; k1++)
         {
             for(k2 = 0; k2 < C; k2++)
             {
                 k12 = k1 * C + k2;
-                ind_post_z_col = (LikeForwardInd.row(k12) * LikeBackwardInd.row(k12)).transpose() / cs;
+                ind_post_z_col = LikeForwardInd.row(k12).transpose() / cs;
                 for(g1 = 0; g1 < 2; g1++)
                 {
                     for(g2 = 0; g2 < 2; g2++)
@@ -211,8 +212,7 @@ inline double FastPhaseK2::forwardAndBackwards(int ind,
                         }
                     }
                 }
-                // for update PI and F
-                {
+                { // for update PI and F
                     std::lock_guard<std::mutex> lock(mutex_it);
                     Ek.col(k1) += ind_post_z_col;
                     Ek.col(k2) += ind_post_z_col;
@@ -236,7 +236,10 @@ inline double FastPhaseK2::forwardAndBackwards(int ind,
     }
     else
     {
-        MyArr2D indPostProbsZ = (LikeForwardInd * LikeBackwardInd).transpose().colwise() / cs;
+        // MyArr2D indPostProbsZ = (LikeForwardInd * LikeBackwardInd).transpose().colwise() / cs;
+        LikeForwardInd *= LikeBackwardInd;
+        LikeForwardInd.transposeInPlace();
+        LikeForwardInd.colwise() /= cs;
         MyArr2D indPostProbsZandG(M, C2 * 4);
         for(k1 = 0; k1 < C; k1++)
         {
@@ -254,7 +257,7 @@ inline double FastPhaseK2::forwardAndBackwards(int ind,
                     }
                 }
                 indPostProbsZandG.middleCols(k12 * 4, 4).colwise() *=
-                    indPostProbsZ.col(k12) / indPostProbsZandG.middleCols(k12 * 4, 4).rowwise().sum();
+                    LikeForwardInd.col(k12) / indPostProbsZandG.middleCols(k12 * 4, 4).rowwise().sum();
                 if(call_geno)
                 {
                     for(g1 = 0; g1 < 2; g1++)
@@ -270,7 +273,7 @@ inline double FastPhaseK2::forwardAndBackwards(int ind,
             }
         }
         std::lock_guard<std::mutex> lock(mutex_it);
-        postProbsZ += indPostProbsZ;
+        postProbsZ += LikeForwardInd;
         postProbsZandG += indPostProbsZandG;
     }
 
