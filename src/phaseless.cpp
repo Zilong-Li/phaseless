@@ -42,6 +42,7 @@ int main(int argc, char * argv[])
                   << "Usage example:\n"
                   << "     " + (std::string)argv[0] + " -g beagle.gz -o dir -c 10 -k 3 -n 20\n"
                   << "\nOptions:\n"
+                  << "     -a      accelerated EM with SqS3 scheme [1]\n"
                   << "     -b      input binary file with all parameters\n"
                   << "     -c      number of ancestral haplotype clusters\n"
                   << "     -f      input vcf/bcf format\n"
@@ -61,18 +62,19 @@ int main(int argc, char * argv[])
 
     filesystem::path outdir, in_beagle, in_vcf, in_bin;
     string samples = "-", region = "";
-    int phase_only{0}, K{1}, C{0}, niters_admix{1000}, niters_impute{40}, nthreads{4}, seed{1};
-    int chunksize{100000};
+    int chunksize{100000}, accel{1}, phase_only{0}, K{1}, C{0}, nadmix{1000}, nphase{40}, nthreads{4},
+        seed{1};
     for(size_t i = 0; i < args.size(); i++)
     {
+        if(args[i] == "-a") accel = stoi(args[++i]);
         if(args[i] == "-b") in_bin = args[++i];
         if(args[i] == "-c") C = stoi(args[++i]);
         if(args[i] == "-k") K = stoi(args[++i]);
         if(args[i] == "-f") in_vcf = args[++i];
         if(args[i] == "-o") outdir.assign(args[++i]);
         if(args[i] == "-g") in_beagle.assign(args[++i]);
-        if(args[i] == "-i") niters_admix = stoi(args[++i]);
-        if(args[i] == "-I") niters_impute = stoi(args[++i]);
+        if(args[i] == "-i") nadmix = stoi(args[++i]);
+        if(args[i] == "-I") nphase = stoi(args[++i]);
         if(args[i] == "-n") nthreads = stoi(args[++i]);
         if(args[i] == "-P") phase_only = stoi(args[++i]);
         if(args[i] == "-r") region = args[++i];
@@ -105,8 +107,7 @@ int main(int argc, char * argv[])
 
     // ========= core calculation part ===========================================
     ThreadPool poolit(nthreads);
-    vector<future<pars>> res;
-    double loglike, diff, prevlike;
+    double loglike, diff, prevlike{std::numeric_limits<double>::lowest()};
     std::unique_ptr<BigAss> genome;
     if(in_bin.empty())
     {
@@ -117,10 +118,11 @@ int main(int argc, char * argv[])
         cao.print(tm.date(), "parsing input -> C =", genome->C, ", N =", genome->nsamples,
                   ", M =", genome->nsnps, ", nchunks =", genome->nchunks);
         cao.done(tm.date(), "elapsed time for parsing beagle file", tm.reltime(), "secs");
+        vector<future<pars>> res;
         int ic;
         for(ic = 0; ic < genome->nchunks; ic++)
             res.emplace_back(
-                poolit.enqueue(make_input_per_chunk, outdir, std::ref(genome), ic, niters_impute, seed));
+                poolit.enqueue(make_input_per_chunk, outdir, std::ref(genome), ic, nphase, seed));
         ic = 0;
         for(auto && ll : res)
         {
@@ -154,21 +156,83 @@ int main(int argc, char * argv[])
     cao.warn(tm.date(), "-> running admixture");
     Admixture admixer(genome->nsamples, genome->nsnps, genome->C, K, seed);
     vector<future<double>> llike;
-    for(int it = 0; it <= niters_admix; it++)
+    if(accel)
     {
-        tm.clock();
-        admixer.initIteration();
-        for(int i = 0; i < genome->nsamples; i++)
-            llike.emplace_back(poolit.enqueue(&Admixture::runWithBigAss, &admixer, i, std::ref(genome)));
-        loglike = 0;
-        for(auto && ll : llike) loglike += ll.get();
-        llike.clear(); // clear future and renew
-        diff = it ? loglike - prevlike : 0;
-        cao.print(tm.date(), "iteration", it, ", log likelihoods =", loglike, ", diff =", diff, ",",
-                  tm.reltime(), " sec");
-        if(diff > 0 && diff < 0.1) break;
-        prevlike = loglike;
-        admixer.updateIteration();
+        MyArr2D FI0, Q0, FI1, Q1;
+        double alphaFI, alphaQ, stepMaxFI{4}, stepMaxQ{4}, alphaMax{128};
+        for(int it = 0; it <= nadmix; it++)
+        {
+            tm.clock();
+            // first accel iteration
+            admixer.initIteration();
+            FI0 = admixer.FI;
+            Q0 = admixer.Q;
+            for(int i = 0; i < genome->nsamples; i++)
+                llike.emplace_back(poolit.enqueue(&Admixture::runWithBigAss, &admixer, i, std::ref(genome)));
+            loglike = 0;
+            for(auto && ll : llike) loglike += ll.get();
+            llike.clear(); // clear future and renew
+            admixer.updateIteration();
+            // second accel iteration
+            admixer.initIteration();
+            FI1 = admixer.FI;
+            Q1 = admixer.Q;
+            for(int i = 0; i < genome->nsamples; i++)
+                llike.emplace_back(poolit.enqueue(&Admixture::runWithBigAss, &admixer, i, std::ref(genome)));
+            loglike = 0;
+            for(auto && ll : llike) loglike += ll.get();
+            llike.clear(); // clear future and renew
+            admixer.updateIteration();
+            // accel iteration with steplen
+            admixer.initIteration();
+            alphaFI = ((FI1 - FI0) / (admixer.FI - 2 * FI1 + FI0)).square().sum();
+            alphaFI = max(1.0, sqrt(alphaFI));
+            if(alphaFI > stepMaxFI)
+            {
+                alphaFI = min(stepMaxFI, alphaMax);
+                stepMaxFI = min(stepMaxFI * 4, alphaMax);
+            }
+            alphaQ = ((Q1 - Q0) / (admixer.Q - 2 * Q1 + Q0)).square().sum();
+            alphaQ = max(1.0, sqrt(alphaQ));
+            if(alphaQ > stepMaxQ)
+            {
+                alphaQ = min(stepMaxQ, alphaMax);
+                stepMaxQ = min(stepMaxQ * 4, alphaMax);
+            }
+            admixer.FI = FI0 + 2 * alphaFI * (FI1 - FI0) + alphaFI * alphaFI * (admixer.FI - 2 * FI1 + FI0);
+            admixer.Q = Q0 + 2 * alphaQ * (Q1 - Q0) + alphaQ * alphaQ * (admixer.Q - 2 * Q1 + Q0);
+            admixer.initIteration();
+            for(int i = 0; i < genome->nsamples; i++)
+                llike.emplace_back(poolit.enqueue(&Admixture::runWithBigAss, &admixer, i, std::ref(genome)));
+            loglike = 0;
+            for(auto && ll : llike) loglike += ll.get();
+            llike.clear(); // clear future and renew
+            admixer.updateIteration();
+            diff = it ? loglike - prevlike : 0;
+            cao.print(tm.date(), "accelerated iteration", it * 3, ", log likelihoods =", loglike, ", diff =", diff, ",",
+                      tm.reltime(), " sec");
+            if(diff > 0 && diff < 0.1) break;
+            prevlike = loglike;
+        }
+    }
+    else
+    {
+        for(int it = 0; it <= nadmix; it++)
+        {
+            tm.clock();
+            admixer.initIteration();
+            for(int i = 0; i < genome->nsamples; i++)
+                llike.emplace_back(poolit.enqueue(&Admixture::runWithBigAss, &admixer, i, std::ref(genome)));
+            loglike = 0;
+            for(auto && ll : llike) loglike += ll.get();
+            llike.clear(); // clear future and renew
+            diff = it ? loglike - prevlike : 0;
+            cao.print(tm.date(), "iteration", it, ", log likelihoods =", loglike, ", diff =", diff, ",",
+                      tm.reltime(), " sec");
+            if(diff > 0 && diff < 0.1) break;
+            prevlike = loglike;
+            admixer.updateIteration();
+        }
     }
     cao.done(tm.date(), "admixture done and outputting.");
     admixer.writeQ(outdir / string("admixture.k" + to_string(K) + ".Q"));
