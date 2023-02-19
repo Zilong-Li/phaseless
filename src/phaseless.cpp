@@ -159,8 +159,9 @@ int main(int argc, char * argv[])
     if(accel)
     {
         MyArr2D FI0, Q0, FI1, Q1;
-        double alphaFI, alphaQ, stepMaxFI{4}, stepMaxQ{4}, alphaMax{128};
-        for(int it = 0; it <= nadmix; it++)
+        const int istep{4};
+        double alpha, stepMax{4}, alphaMax{1280};
+        for(int it = 0; it < nadmix; it++)
         {
             tm.clock();
             // first accel iteration
@@ -173,7 +174,13 @@ int main(int argc, char * argv[])
             for(auto && ll : llike) loglike += ll.get();
             llike.clear(); // clear future and renew
             admixer.updateIteration();
+            diff = it ? loglike - prevlike : 0;
+            prevlike = loglike;
+            cao.print(tm.date(), "SqS3 iteration", it++, ", log likelihoods =", loglike, ", diff =", diff,
+                      ",", tm.reltime(), " sec");
+            if(diff > 0 && diff < 0.1) break;
             // second accel iteration
+            tm.clock();
             admixer.initIteration();
             FI1 = admixer.FI;
             Q1 = admixer.Q;
@@ -183,24 +190,25 @@ int main(int argc, char * argv[])
             for(auto && ll : llike) loglike += ll.get();
             llike.clear(); // clear future and renew
             admixer.updateIteration();
+            diff = it ? loglike - prevlike : 0;
+            prevlike = loglike;
+            cao.print(tm.date(), "SqS3 iteration", it++, ", log likelihoods =", loglike, ", diff =", diff,
+                      ",", tm.reltime(), " sec");
+            if(diff > 0 && diff < 0.1) break;
             // accel iteration with steplen
+            tm.clock();
             admixer.initIteration();
-            alphaFI = ((FI1 - FI0) / (admixer.FI - 2 * FI1 + FI0)).square().sum();
-            alphaFI = max(1.0, sqrt(alphaFI));
-            if(alphaFI > stepMaxFI)
+            alpha =
+                ((FI1 - FI0).square().sum() + (Q1 - Q0).square().sum())
+                / ((admixer.FI - 2 * FI1 + FI0).square().sum() + (admixer.Q - 2 * Q1 + Q0).square().sum());
+            alpha = max(1.0, sqrt(alpha));
+            if(alpha >= stepMax)
             {
-                alphaFI = min(stepMaxFI, alphaMax);
-                stepMaxFI = min(stepMaxFI * 4, alphaMax);
+                alpha = min(stepMax, alphaMax);
+                stepMax = min(stepMax * istep, alphaMax);
             }
-            alphaQ = ((Q1 - Q0) / (admixer.Q - 2 * Q1 + Q0)).square().sum();
-            alphaQ = max(1.0, sqrt(alphaQ));
-            if(alphaQ > stepMaxQ)
-            {
-                alphaQ = min(stepMaxQ, alphaMax);
-                stepMaxQ = min(stepMaxQ * 4, alphaMax);
-            }
-            admixer.FI = FI0 + 2 * alphaFI * (FI1 - FI0) + alphaFI * alphaFI * (admixer.FI - 2 * FI1 + FI0);
-            admixer.Q = Q0 + 2 * alphaQ * (Q1 - Q0) + alphaQ * alphaQ * (admixer.Q - 2 * Q1 + Q0);
+            admixer.FI = FI0 + 2 * alpha * (FI1 - FI0) + alpha * alpha * (admixer.FI - 2 * FI1 + FI0);
+            admixer.Q = Q0 + 2 * alpha * (Q1 - Q0) + alpha * alpha * (admixer.Q - 2 * Q1 + Q0);
             admixer.initIteration();
             for(int i = 0; i < genome->nsamples; i++)
                 llike.emplace_back(poolit.enqueue(&Admixture::runWithBigAss, &admixer, i, std::ref(genome)));
@@ -209,15 +217,15 @@ int main(int argc, char * argv[])
             llike.clear(); // clear future and renew
             admixer.updateIteration();
             diff = it ? loglike - prevlike : 0;
-            cao.print(tm.date(), "accelerated iteration", it * 3, ", log likelihoods =", loglike, ", diff =", diff, ",",
+            prevlike = loglike;
+            cao.print(tm.date(), "SqS3 iteration", it, ", log likelihoods =", loglike, ", diff =", diff, ",",
                       tm.reltime(), " sec");
             if(diff > 0 && diff < 0.1) break;
-            prevlike = loglike;
         }
     }
     else
     {
-        for(int it = 0; it <= nadmix; it++)
+        for(int it = 0; it < nadmix; it++)
         {
             tm.clock();
             admixer.initIteration();
