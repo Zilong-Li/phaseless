@@ -135,7 +135,7 @@ inline auto getClusterLikelihoods(int ind,
     auto emitDip = emissionCurIterInd(gli, F, false);
     MyArr2D LikeForwardInd(C * C, M); // likelihood of forward recursion for ind i, not log
     MyArr2D LikeBackwardInd(C * C, M); // likelihood of backward recursion for ind i, not log
-    MyArr1D sumTmp1(C), sumTmp2(C); // store sum over internal loop
+    MyArr1D sumTmp1(C); // store sum over internal loop
     MyArr1D cs(M);
     double constTmp;
 
@@ -176,7 +176,6 @@ inline auto getClusterLikelihoods(int ind,
     for(s = M - 2; s >= 0; s--)
     {
         sumTmp1.setZero();
-        sumTmp2.setZero();
         constTmp = 0;
         auto beta_mult_emit = emitDip.row(s + 1).transpose() * LikeBackwardInd.col(s + 1);
         for(k1 = 0; k1 < C; k1++)
@@ -185,12 +184,10 @@ inline auto getClusterLikelihoods(int ind,
             {
                 k12 = k1 * C + k2;
                 sumTmp1(k1) += beta_mult_emit(k12) * PI(s + 1, k2);
-                sumTmp2(k2) += beta_mult_emit(k12) * PI(s + 1, k1);
                 constTmp += beta_mult_emit(k12) * PI(s + 1, k1) * PI(s + 1, k2);
             }
         }
         sumTmp1 *= transRate(1, s + 1);
-        sumTmp2 *= transRate(1, s + 1);
         constTmp *= transRate(2, s + 1);
         for(k1 = 0; k1 < C; k1++)
         {
@@ -198,7 +195,7 @@ inline auto getClusterLikelihoods(int ind,
             {
                 k12 = k1 * C + k2;
                 LikeBackwardInd(k12, s) =
-                    beta_mult_emit(k12) * transRate(0, s + 1) + sumTmp1(k1) + sumTmp2(k2) + constTmp;
+                    beta_mult_emit(k12) * transRate(0, s + 1) + sumTmp1(k1) + sumTmp1(k2) + constTmp;
             }
         }
         // apply scaling
@@ -224,7 +221,7 @@ inline auto getClusterLikelihoods(int ind,
     const double maxEmission = 1e-10;
     // ======== forward and backward recursion ===========
     MyArr2D emitDip(C2, M);
-    MyArr1D sumTmp1(C), sumTmp2(C); // store sum over internal loop
+    MyArr1D sumTmp1(C); // store sum over internal loop
     MyArr1D cs = MyArr1D::Zero(M);
     double constTmp;
     int s{0};
@@ -286,7 +283,6 @@ inline auto getClusterLikelihoods(int ind,
     for(s = M - 2; s >= 0; s--)
     {
         sumTmp1.setZero();
-        sumTmp2.setZero();
         constTmp = 0;
         auto beta_mult_emit = emitDip.col(s + 1) * LikeBackwardInd.col(s + 1);
         for(k1 = 0; k1 < C; k1++)
@@ -295,7 +291,6 @@ inline auto getClusterLikelihoods(int ind,
             {
                 k12 = k1 * C + k2;
                 sumTmp1(k1) += beta_mult_emit(k12) * PI_[k2 * M + s + 1] * transRate_[(s + 1) * 3 + 1];
-                sumTmp2(k2) += beta_mult_emit(k12) * PI_[k1 * M + s + 1] * transRate_[(s + 1) * 3 + 1];
                 constTmp += beta_mult_emit(k12) * PI_[k1 * M + s + 1] * PI_[k2 * M + s + 1]
                             * transRate_[(s + 1) * 3 + 2];
             }
@@ -306,7 +301,7 @@ inline auto getClusterLikelihoods(int ind,
             {
                 k12 = k1 * C + k2;
                 LikeBackwardInd(k12, s) =
-                    (beta_mult_emit(k12) * transRate_[(s + 1) * 3 + 0] + sumTmp1(k1) + sumTmp2(k2) + constTmp)
+                    (beta_mult_emit(k12) * transRate_[(s + 1) * 3 + 0] + sumTmp1(k1) + sumTmp1(k2) + constTmp)
                     * cs(s);
             }
         }

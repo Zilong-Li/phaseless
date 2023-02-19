@@ -103,7 +103,7 @@ inline double FastPhaseK2::forwardAndBackwards(int ind,
     MyArr2D emitDip(C2, M);
     MyArr2D LikeForwardInd(C2, M); // likelihood of forward recursion for ind i, not log
     MyArr2D LikeBackwardInd(C2, M); // likelihood of backward recursion for ind i, not log
-    MyArr1D sumTmp1(C), sumTmp2(C); // store sum over internal loop
+    MyArr1D sumTmp1(C); // store sum over internal loop
     MyArr1D cs = MyArr1D::Zero(M);
     double constTmp;
 
@@ -170,7 +170,6 @@ inline double FastPhaseK2::forwardAndBackwards(int ind,
     for(s = M - 2; s >= 0; s--)
     {
         sumTmp1.setZero();
-        sumTmp2.setZero();
         constTmp = 0;
         auto beta_mult_emit = emitDip.col(s + 1) * LikeBackwardInd.col(s + 1);
         for(k1 = 0; k1 < C; k1++)
@@ -179,7 +178,6 @@ inline double FastPhaseK2::forwardAndBackwards(int ind,
             {
                 k12 = k1 * C + k2;
                 sumTmp1(k1) += beta_mult_emit(k12) * PI(s + 1, k2) * transRate(1, s + 1);
-                sumTmp2(k2) += beta_mult_emit(k12) * PI(s + 1, k1) * transRate(1, s + 1);
                 constTmp += beta_mult_emit(k12) * PI(s + 1, k1) * PI(s + 1, k2) * transRate(2, s + 1);
             }
         }
@@ -190,7 +188,7 @@ inline double FastPhaseK2::forwardAndBackwards(int ind,
                 k12 = k1 * C + k2;
                 // apply scaling
                 LikeBackwardInd(k12, s) =
-                    (beta_mult_emit(k12) * transRate(0, s + 1) + sumTmp1(k1) + sumTmp2(k2) + constTmp)
+                    (beta_mult_emit(k12) * transRate(0, s + 1) + sumTmp1(k1) + sumTmp1(k2) + constTmp)
                     * cs(s);
             }
         }
