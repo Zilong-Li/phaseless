@@ -76,7 +76,7 @@ int main(int argc, char * argv[])
     chunk_beagle_genotype_likelihoods(genome, in_beagle);
     cao.print(tm.date(), "parsing input -> C =", genome->C, ", N =", genome->nsamples, ", M =", genome->nsnps,
               ", nchunks =", genome->nchunks);
-    cao.done(tm.date(), "elapsed time for parsing beagle file", tm.reltime(), "secs");
+    cao.done(tm.date(), "elapsed time for parsing beagle file", tm.reltime(), " secs");
     for(int ic = 0; ic < genome->nchunks; ic++)
     {
         FastPhaseK2 nofaith(genome->nsamples, genome->pos[ic].size(), C, seed);

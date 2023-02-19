@@ -89,7 +89,6 @@ class Logger
     template<typename... Args>
     void done(const Args &... args)
     {
-        auto printSpace = [](std::ostream & os, const auto & val) -> void { os << val << " "; };
         std::cout << "\x1B[32m";
         (..., printSpace(std::cout, args));
         std::cout << "\033[0m" << std::endl;

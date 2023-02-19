@@ -153,20 +153,8 @@ inline auto getClusterLikelihoods(int ind,
     LikeForwardInd.col(s) *= cs(s); // normalize it
     for(s = 1; s < M; s++)
     {
-        sumTmp1.setZero();
-        sumTmp2.setZero();
-        for(k1 = 0; k1 < C; k1++)
-        {
-            for(k2 = 0; k2 < C; k2++)
-            {
-                k12 = k1 * C + k2;
-                sumTmp1(k1) += LikeForwardInd(k12, s - 1);
-                sumTmp2(k2) += LikeForwardInd(k12, s - 1);
-            }
-        }
+        sumTmp1 = LikeForwardInd.col(s - 1).reshaped(C, C).rowwise().sum() * transRate(1, s);
         constTmp = LikeForwardInd.col(s - 1).sum() * transRate(2, s);
-        sumTmp1 *= transRate(1, s);
-        sumTmp2 *= transRate(1, s);
         for(k1 = 0; k1 < C; k1++)
         {
             for(k2 = 0; k2 < C; k2++)
@@ -175,7 +163,7 @@ inline auto getClusterLikelihoods(int ind,
                 LikeForwardInd(k12, s) =
                     emitDip(s, k12)
                     * (LikeForwardInd(k12, s - 1) * transRate(0, s) + PI(s, k1) * sumTmp1(k2)
-                       + PI(s, k2) * sumTmp2(k1) + PI(s, k1) * PI(s, k2) * constTmp);
+                       + PI(s, k2) * sumTmp1(k1) + PI(s, k1) * PI(s, k2) * constTmp);
             }
         }
         cs(s) = 1 / LikeForwardInd.col(s).sum();
@@ -264,17 +252,7 @@ inline auto getClusterLikelihoods(int ind,
     LikeForwardInd.col(s) *= cs(s); // normalize it
     for(s = 1; s < M; s++)
     {
-        sumTmp1.setZero();
-        sumTmp2.setZero();
-        for(k1 = 0; k1 < C; k1++)
-        {
-            for(k2 = 0; k2 < C; k2++)
-            {
-                k12 = k1 * C + k2;
-                sumTmp1(k1) += LikeForwardInd(k12, s - 1) * transRate_[s * 3 + 1];
-                sumTmp2(k2) += LikeForwardInd(k12, s - 1) * transRate_[s * 3 + 1];
-            }
-        }
+        sumTmp1 = LikeForwardInd.col(s - 1).reshaped(C, C).rowwise().sum() * transRate_[s * 3 + 1];
         constTmp = LikeForwardInd.col(s - 1).sum() * transRate_[s * 3 + 2];
         for(k1 = 0; k1 < C; k1++)
         {
@@ -295,7 +273,7 @@ inline auto getClusterLikelihoods(int ind,
                 LikeForwardInd(k12, s) =
                     emitDip(k12, s)
                     * (LikeForwardInd(k12, s - 1) * transRate_[s * 3 + 0] + PI_[k1 * M + s] * sumTmp1(k2)
-                       + PI_[k2 * M + s] * sumTmp2(k1) + PI_[k1 * M + s] * PI_[k2 * M + s] * constTmp);
+                       + PI_[k2 * M + s] * sumTmp1(k1) + PI_[k1 * M + s] * PI_[k2 * M + s] * constTmp);
                 cs(s) += LikeForwardInd(k12, s);
             }
         }
