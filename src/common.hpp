@@ -113,10 +113,9 @@ inline auto emissionCurIterInd(const MyArr2D & gli, const MyArr2D & F, bool use_
     }
     else
     {
-        // be careful with underflow
-        emitDip = emitDip.colwise() / emitDip.rowwise().maxCoeff(); // normalize it
-        const double maxEmissionMatrixDifference = 1e-10;
-        emitDip = (emitDip < maxEmissionMatrixDifference).select(maxEmissionMatrixDifference, emitDip);
+        // emitDip = emitDip.colwise() / emitDip.rowwise().maxCoeff(); // normalize it
+        const double minEmission = 1e-10;
+        emitDip = (emitDip < minEmission).select(minEmission, emitDip);
     }
     return emitDip;
 }

@@ -99,79 +99,52 @@ inline double FastPhaseK2::forwardAndBackwards(int ind,
                                                bool call_geno)
 {
     Eigen::Map<const MyArr2D> gli(GL.data() + ind * M * 3, M, 3);
-    const double maxEmission = 1e-10;
-    MyArr2D emitDip(C2, M);
+    MyArr2D emitDip = emissionCurIterInd(gli, F, false).transpose();
     MyArr2D LikeForwardInd(C2, M); // likelihood of forward recursion for ind i, not log
     MyArr2D LikeBackwardInd(C2, M); // likelihood of backward recursion for ind i, not log
     MyArr1D sumTmp1(C); // store sum over internal loop
+    MyArr1D Iden = MyArr1D::Ones(C); // indentity for matrix product
     MyArr1D cs = MyArr1D::Zero(M);
     double constTmp;
 
     // ======== forward recursion ===========
     int g1, g2, g3, g12, k1, k2, k12;
     int s{0};
-    for(k1 = 0; k1 < C; k1++)
-    {
-        for(k2 = 0; k2 < C; k2++)
-        {
-            k12 = k1 * C + k2;
-            emitDip(k12, s) = 0;
-            for(g1 = 0; g1 <= 1; g1++)
-            {
-                for(g2 = 0; g2 <= 1; g2++)
-                {
-                    emitDip(k12, s) += gli(s, g1 + g2) * (g1 * F(s, k1) + (1 - g1) * (1 - F(s, k1)))
-                                       * (g2 * F(s, k2) + (1 - g2) * (1 - F(s, k2)));
-                }
-            }
-            if(emitDip(k12, s) < maxEmission) emitDip(k12, s) = maxEmission;
-            LikeForwardInd(k12, s) = emitDip(k12, s) * PI(s, k1) * PI(s, k2);
-            cs(s) += LikeForwardInd(k12, s);
-        }
-    }
-    cs(s) = 1 / cs(s);
+    // implicity reshape faster when 2d x 1d;
+    LikeForwardInd.col(s) = emitDip.col(s) * (PI.row(s).transpose().matrix() * PI.row(s).matrix()).array();
+    cs(s) = 1 / LikeForwardInd.col(s).sum();
     LikeForwardInd.col(s) *= cs(s); // normalize it
     for(s = 1; s < M; s++)
     {
         sumTmp1 = LikeForwardInd.col(s - 1).reshaped(C, C).rowwise().sum() * transRate(1, s);
         constTmp = LikeForwardInd.col(s - 1).sum() * transRate(2, s);
-        for(k1 = 0; k1 < C; k1++)
-        {
-            for(k2 = 0; k2 < C; k2++)
-            {
-                k12 = k1 * C + k2;
-                emitDip(k12, s) = 0;
-                for(g1 = 0; g1 <= 1; g1++)
-                {
-                    for(g2 = 0; g2 <= 1; g2++)
-                    {
-                        emitDip(k12, s) += gli(s, g1 + g2) * (g1 * F(s, k1) + (1 - g1) * (1 - F(s, k1)))
-                                           * (g2 * F(s, k2) + (1 - g2) * (1 - F(s, k2)));
-                    }
-                }
-                if(emitDip(k12, s) < maxEmission) emitDip(k12, s) = maxEmission;
-                LikeForwardInd(k12, s) =
-                    emitDip(k12, s)
-                    * (LikeForwardInd(k12, s - 1) * transRate(0, s) + PI(s, k1) * sumTmp1(k2)
-                       + PI(s, k2) * sumTmp1(k1) + PI(s, k1) * PI(s, k2) * constTmp);
-                cs(s) += LikeForwardInd(k12, s);
-            }
-        }
-        cs(s) = 1 / cs(s);
+        LikeForwardInd.col(s) =
+            emitDip.col(s)
+            * (LikeForwardInd.col(s - 1) * transRate(0, s)
+               + (PI.row(s).transpose().matrix() * sumTmp1.transpose().matrix()).array()
+               + (sumTmp1.matrix() * PI.row(s).matrix()).array()
+               + (constTmp * PI.row(s).transpose().matrix() * PI.row(s).matrix()).array());
+        cs(s) = 1 / LikeForwardInd.col(s).sum();
         LikeForwardInd.col(s) *= cs(s); // normalize it
     }
-    // total likelhoods of the individual
     double indLike = LikeForwardInd.col(M - 1).sum();
-    double indLogLikeForwardAll = log((indLike / cs).sum());
+    double indLogLikeForwardAll = log((indLike / cs).sum()); // log likelhoods of the individual
 
     // ======== backward recursion ===========
     s = M - 1; // set last site
     LikeBackwardInd.col(s).setConstant(cs(s)); // not log scale
     for(s = M - 2; s >= 0; s--)
     {
+        auto beta_mult_emit = emitDip.col(s + 1) * LikeBackwardInd.col(s + 1);
+        // sumTmp1 =
+        //     (beta_mult_emit.reshaped(C, C).rowwise() * PI.row(s + 1) * transRate(1, s +
+        //     1)).rowwise().sum();
+        // constTmp = (beta_mult_emit
+        //             * (PI.row(s + 1).transpose().matrix() * PI.row(s + 1).matrix()).reshaped().array())
+        //                .sum()
+        //            * transRate(2, s + 1);
         sumTmp1.setZero();
         constTmp = 0;
-        auto beta_mult_emit = emitDip.col(s + 1) * LikeBackwardInd.col(s + 1);
         for(k1 = 0; k1 < C; k1++)
         {
             for(k2 = 0; k2 < C; k2++)
@@ -181,18 +154,12 @@ inline double FastPhaseK2::forwardAndBackwards(int ind,
                 constTmp += beta_mult_emit(k12) * PI(s + 1, k1) * PI(s + 1, k2) * transRate(2, s + 1);
             }
         }
-        for(k1 = 0; k1 < C; k1++)
-        {
-            for(k2 = 0; k2 < C; k2++)
-            {
-                k12 = k1 * C + k2;
-                // apply scaling
-                LikeBackwardInd(k12, s) =
-                    (beta_mult_emit(k12) * transRate(0, s + 1) + sumTmp1(k1) + sumTmp1(k2) + constTmp)
-                    * cs(s);
-            }
-        }
+        LikeBackwardInd.col(s) =
+            (beta_mult_emit * transRate(0, s + 1) + (sumTmp1.matrix() * Iden.transpose().matrix()).array()
+             + (Iden.matrix() * sumTmp1.transpose().matrix()).array() + constTmp)
+            * cs(s);
     }
+
     cs *= indLike; // get last forward likelihood back
     if(high_ram == false)
     {
