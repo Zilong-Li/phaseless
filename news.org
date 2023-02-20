@@ -1,5 +1,12 @@
 #+title: News and Changes
 
+* v0.1.6
+- change initial F and PI for phasing model
+- change PI storage layout to speedup forwards backwards
+- add both low and high RAM implementation of imputation
+- try using matrix form but not ideal
+* v0.1.5
+- add SqS3 EM acceleration
 * v0.1.4
 - add =-P= option
 - optimize imputation get posteriors

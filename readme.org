@@ -14,7 +14,7 @@ git clone https://github.com/Zilong-Li/phaseless
 cd phaseless/src && make -j4
 #+end_src
 
-If you have =htslib= installed in your customized path
+If you follow [[https://github.com/samtools/htslib][htslib]] installation guide and have it in your customized path
 #+begin_src shell
 cd phaseless/src && make HTSLIB=/path/to/your/htslib -j4
 #+end_src
@@ -32,3 +32,6 @@ phaseless -b outdir/pars.bin -k 9 -n 40
 #+begin_src shell
 phaseless -g data/bgl.gz -o outdir -c 10 -n 6 -P 1
 #+end_src
+
+* Changes
+check out the [[file:news.org][news]] file.

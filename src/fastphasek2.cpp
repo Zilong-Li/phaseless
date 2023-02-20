@@ -13,6 +13,8 @@
 
 using namespace std;
 
+using pars = std::tuple<double, MyArr2D, MyArr2D>;
+
 int main(int argc, char * argv[])
 {
     // ========= helper message and parameters parsing ============================
@@ -68,7 +70,7 @@ int main(int argc, char * argv[])
 
     // ========= core calculation part ===========================================
     ThreadPool poolit(nthreads);
-    vector<future<double>> llike;
+    vector<future<pars>> llike;
     double loglike, diff, prevlike;
     std::unique_ptr<BigAss> genome = std::make_unique<BigAss>();
     genome->chunksize = chunksize, genome->C = C;
@@ -88,14 +90,20 @@ int main(int argc, char * argv[])
             for(int i = 0; i < genome->nsamples; i++)
             {
                 if(it == niters)
-                    llike.emplace_back(poolit.enqueue(&FastPhaseK2::forwardAndBackwardsLowRam, &nofaith, i,
+                    llike.emplace_back(poolit.enqueue(&FastPhaseK2::forwardAndBackwardsHighRam, &nofaith, i,
                                                       std::ref(genome->gls[ic]), std::ref(transRate), true));
                 else
-                    llike.emplace_back(poolit.enqueue(&FastPhaseK2::forwardAndBackwardsLowRam, &nofaith, i,
+                    llike.emplace_back(poolit.enqueue(&FastPhaseK2::forwardAndBackwardsHighRam, &nofaith, i,
                                                       std::ref(genome->gls[ic]), std::ref(transRate), false));
             }
             loglike = 0;
-            for(auto && ll : llike) loglike += ll.get();
+            for(auto && ll : llike)
+            {
+                const auto [l, iEk, iEkg] = ll.get();
+                loglike += l;
+                nofaith.Ek += iEk;
+                nofaith.Ekg += iEkg;
+            }
             llike.clear(); // clear future and renew
             diff = it ? loglike - prevlike : 0;
             cao.print(tm.date(), "run chunk", ic, ", iteration", it, ", log likelihoods =", loglike,
