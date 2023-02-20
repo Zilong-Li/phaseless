@@ -217,7 +217,6 @@ inline auto getClusterLikelihoods(int ind,
     int C = F_.size() / M;
     int g1, g2, k1, k2, k12;
     int igs = ind * M * 3;
-    const double maxEmission = 1e-10;
     // ======== forward and backward recursion ===========
     MyArr2D emitDip(C2, M);
     MyArr1D sumTmp1(C); // store sum over internal loop
@@ -239,7 +238,6 @@ inline auto getClusterLikelihoods(int ind,
                                        * (g2 * F_[k2 * M + s] + (1 - g2) * (1 - F_[k2 * M + s]));
                 }
             }
-            if(emitDip(k12, s) < maxEmission) emitDip(k12, s) = maxEmission;
             LikeForwardInd(k12, s) = emitDip(k12, s) * PI_[k1 * M + s] * PI_[k2 * M + s];
             cs(s) += LikeForwardInd(k12, s);
         }
@@ -265,7 +263,6 @@ inline auto getClusterLikelihoods(int ind,
                                            * (g2 * F_[k2 * M + s] + (1 - g2) * (1 - F_[k2 * M + s]));
                     }
                 }
-                if(emitDip(k12, s) < maxEmission) emitDip(k12, s) = maxEmission;
                 LikeForwardInd(k12, s) =
                     emitDip(k12, s)
                     * (LikeForwardInd(k12, s - 1) * transRate_[s * 3 + 0] + PI_[k1 * M + s] * sumTmp1(k2)
