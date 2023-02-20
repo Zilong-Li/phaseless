@@ -41,8 +41,9 @@ inline FastPhaseK2::FastPhaseK2(int n, int m, int c, int seed, bool highram = fa
 {
     auto rng = std::default_random_engine{};
     rng.seed(seed);
-    F = RandomUniform<MyArr2D, std::default_random_engine>(M, C, rng, 0.0, 1.0);
-    PI = RandomUniform<MyArr2D, std::default_random_engine>(C, M, rng, 0.0, 1.0);
+    F = RandomUniform<MyArr2D, std::default_random_engine>(M, C, rng, 0.001, 0.999);
+    PI = MyArr2D::Ones(C, M);
+    PI.rowwise() /= PI.colwise().sum();
     GP.setZero();
 }
 
@@ -273,8 +274,7 @@ inline void FastPhaseK2::initIteration(double tol)
     if(PI.isNaN().any()) throw std::runtime_error("NaN in PI\n");
     PI = (PI < tol).select(tol, PI); // lower bound
     PI = (PI > 1 - tol).select(1 - tol, PI); // upper bound
-    // normalize it now
-    PI = PI.rowwise() / PI.colwise().sum();
+    PI.rowwise() /= PI.colwise().sum(); // normalize it now
     // map F to domain but no normalization
     if(F.isNaN().any()) throw std::runtime_error("NaN in F\n");
     F = (F < tol).select(tol, F); // lower bound
