@@ -131,7 +131,7 @@ inline auto getClusterLikelihoods(int ind,
     const int C = F.cols();
     // ======== forward and backward recursion ===========
     Eigen::Map<const MyArr2D> gli(GL.data() + ind * M * 3, 3, M);
-    auto emitDip = emissionCurIterInd(gli, F, false);
+    MyArr2D emitDip = emissionCurIterInd(gli, F, false).transpose();
     MyArr2D LikeForwardInd(C * C, M); // likelihood of forward recursion for ind i, not log
     MyArr2D LikeBackwardInd(C * C, M); // likelihood of backward recursion for ind i, not log
     MyArr1D sumTmp1(C); // store sum over internal loop
@@ -140,14 +140,8 @@ inline auto getClusterLikelihoods(int ind,
 
     // ======== forward recursion ===========
     int s{0};
-    for(k1 = 0; k1 < C; k1++)
-    {
-        for(k2 = 0; k2 < C; k2++)
-        {
-            k12 = k1 * C + k2;
-            LikeForwardInd(k12, s) = emitDip(s, k12) * PI(s, k1) * PI(s, k2);
-        }
-    }
+    LikeForwardInd.col(s) =
+        emitDip.col(s) * (PI.col(s).matrix() * PI.col(s).transpose().matrix()).reshaped().array();
     cs(s) = 1 / LikeForwardInd.col(s).sum();
     LikeForwardInd.col(s) *= cs(s); // normalize it
     for(s = 1; s < M; s++)
@@ -160,9 +154,9 @@ inline auto getClusterLikelihoods(int ind,
             {
                 k12 = k1 * C + k2;
                 LikeForwardInd(k12, s) =
-                    emitDip(s, k12)
-                    * (LikeForwardInd(k12, s - 1) * transRate(0, s) + PI(s, k1) * sumTmp1(k2)
-                       + PI(s, k2) * sumTmp1(k1) + PI(s, k1) * PI(s, k2) * constTmp);
+                    emitDip(k12, s)
+                    * (LikeForwardInd(k12, s - 1) * transRate(0, s) + PI(k1, s) * sumTmp1(k2)
+                       + PI(k2, s) * sumTmp1(k1) + PI(k1, s) * PI(k2, s) * constTmp);
             }
         }
         cs(s) = 1 / LikeForwardInd.col(s).sum();
@@ -182,23 +176,21 @@ inline auto getClusterLikelihoods(int ind,
             for(k2 = 0; k2 < C; k2++)
             {
                 k12 = k1 * C + k2;
-                sumTmp1(k1) += beta_mult_emit(k12) * PI(s + 1, k2);
-                constTmp += beta_mult_emit(k12) * PI(s + 1, k1) * PI(s + 1, k2);
+                sumTmp1(k1) += beta_mult_emit(k12) * PI(k2, s + 1) * transRate(1, s + 1);
+                constTmp += beta_mult_emit(k12) * PI(k1, s + 1) * PI(k2, s + 1) * transRate(2, s + 1);
             }
         }
-        sumTmp1 *= transRate(1, s + 1);
-        constTmp *= transRate(2, s + 1);
         for(k1 = 0; k1 < C; k1++)
         {
             for(k2 = 0; k2 < C; k2++)
             {
                 k12 = k1 * C + k2;
+                // apply scaling
                 LikeBackwardInd(k12, s) =
-                    beta_mult_emit(k12) * transRate(0, s + 1) + sumTmp1(k1) + sumTmp1(k2) + constTmp;
+                    (beta_mult_emit(k12) * transRate(0, s + 1) + sumTmp1(k1) + sumTmp1(k2) + constTmp)
+                    * cs(s);
             }
         }
-        // apply scaling
-        LikeBackwardInd.col(s) *= cs(s);
     }
     MyArr2D icluster = LikeForwardInd * LikeBackwardInd; // C x C x M
     return icluster;
@@ -238,7 +230,7 @@ inline auto getClusterLikelihoods(int ind,
                                        * (g2 * F_[k2 * M + s] + (1 - g2) * (1 - F_[k2 * M + s]));
                 }
             }
-            LikeForwardInd(k12, s) = emitDip(k12, s) * PI_[k1 * M + s] * PI_[k2 * M + s];
+            LikeForwardInd(k12, s) = emitDip(k12, s) * PI_[s * C + k1] * PI_[s * C + k2];
             cs(s) += LikeForwardInd(k12, s);
         }
     }
@@ -265,8 +257,8 @@ inline auto getClusterLikelihoods(int ind,
                 }
                 LikeForwardInd(k12, s) =
                     emitDip(k12, s)
-                    * (LikeForwardInd(k12, s - 1) * transRate_[s * 3 + 0] + PI_[k1 * M + s] * sumTmp1(k2)
-                       + PI_[k2 * M + s] * sumTmp1(k1) + PI_[k1 * M + s] * PI_[k2 * M + s] * constTmp);
+                    * (LikeForwardInd(k12, s - 1) * transRate_[s * 3 + 0] + PI_[s * C + k1] * sumTmp1(k2)
+                       + PI_[s * C + k2] * sumTmp1(k1) + PI_[s * C + k1] * PI_[s * C + k2] * constTmp);
                 cs(s) += LikeForwardInd(k12, s);
             }
         }
@@ -286,8 +278,8 @@ inline auto getClusterLikelihoods(int ind,
             for(k2 = 0; k2 < C; k2++)
             {
                 k12 = k1 * C + k2;
-                sumTmp1(k1) += beta_mult_emit(k12) * PI_[k2 * M + s + 1] * transRate_[(s + 1) * 3 + 1];
-                constTmp += beta_mult_emit(k12) * PI_[k1 * M + s + 1] * PI_[k2 * M + s + 1]
+                sumTmp1(k1) += beta_mult_emit(k12) * PI_[(s + 1) * C + k2] * transRate_[(s + 1) * 3 + 1];
+                constTmp += beta_mult_emit(k12) * PI_[(s + 1) * C + k1] * PI_[(s + 1) * C + k2]
                             * transRate_[(s + 1) * 3 + 2];
             }
         }

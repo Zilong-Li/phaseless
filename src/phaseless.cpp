@@ -235,8 +235,8 @@ int main(int argc, char * argv[])
             for(auto && ll : llike) loglike += ll.get();
             llike.clear(); // clear future and renew
             diff = it ? loglike - prevlike : 0;
-            cao.print(tm.date(), "iteration", it, ", log likelihoods =", loglike, ", diff =", diff, ",",
-                      tm.reltime(), " sec");
+            cao.print(tm.date(), "normal iteration", it, ", log likelihoods =", loglike, ", diff =", diff,
+                      ",", tm.reltime(), " sec");
             if(diff > 0 && diff < 0.1) break;
             prevlike = loglike;
             admixer.updateIteration();
