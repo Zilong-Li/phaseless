@@ -110,8 +110,8 @@ inline double FastPhaseK2::forwardAndBackwards(int ind,
     // ======== forward recursion ===========
     int g1, g2, g3, g12, k1, k2, k12;
     int s{0};
-    // implicity reshape faster when 2d x 1d;
-    LikeForwardInd.col(s) = emitDip.col(s) * (PI.row(s).transpose().matrix() * PI.row(s).matrix()).array();
+    LikeForwardInd.col(s) =
+        emitDip.col(s) * (PI.row(s).transpose().matrix() * PI.row(s).matrix()).reshaped().array();
     cs(s) = 1 / LikeForwardInd.col(s).sum();
     LikeForwardInd.col(s) *= cs(s); // normalize it
     for(s = 1; s < M; s++)
@@ -121,9 +121,9 @@ inline double FastPhaseK2::forwardAndBackwards(int ind,
         LikeForwardInd.col(s) =
             emitDip.col(s)
             * (LikeForwardInd.col(s - 1) * transRate(0, s)
-               + (PI.row(s).transpose().matrix() * sumTmp1.transpose().matrix()).array()
-               + (sumTmp1.matrix() * PI.row(s).matrix()).array()
-               + (constTmp * PI.row(s).transpose().matrix() * PI.row(s).matrix()).array());
+               + (PI.row(s).transpose().matrix() * sumTmp1.transpose().matrix()).reshaped().array()
+               + (sumTmp1.matrix() * PI.row(s).matrix()).reshaped().array()
+               + (constTmp * PI.row(s).transpose().matrix() * PI.row(s).matrix()).reshaped().array());
         cs(s) = 1 / LikeForwardInd.col(s).sum();
         LikeForwardInd.col(s) *= cs(s); // normalize it
     }
@@ -155,8 +155,9 @@ inline double FastPhaseK2::forwardAndBackwards(int ind,
             }
         }
         LikeBackwardInd.col(s) =
-            (beta_mult_emit * transRate(0, s + 1) + (sumTmp1.matrix() * Iden.transpose().matrix()).array()
-             + (Iden.matrix() * sumTmp1.transpose().matrix()).array() + constTmp)
+            (beta_mult_emit * transRate(0, s + 1)
+             + (sumTmp1.matrix() * Iden.transpose().matrix()).reshaped().array()
+             + (Iden.matrix() * sumTmp1.transpose().matrix()).reshaped().array() + constTmp)
             * cs(s);
     }
 
