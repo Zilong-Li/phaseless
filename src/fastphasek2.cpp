@@ -88,10 +88,10 @@ int main(int argc, char * argv[])
             for(int i = 0; i < genome->nsamples; i++)
             {
                 if(it == niters)
-                    llike.emplace_back(poolit.enqueue(&FastPhaseK2::forwardAndBackwards, &nofaith, i,
+                    llike.emplace_back(poolit.enqueue(&FastPhaseK2::forwardAndBackwardsLowRam, &nofaith, i,
                                                       std::ref(genome->gls[ic]), std::ref(transRate), true));
                 else
-                    llike.emplace_back(poolit.enqueue(&FastPhaseK2::forwardAndBackwards, &nofaith, i,
+                    llike.emplace_back(poolit.enqueue(&FastPhaseK2::forwardAndBackwardsLowRam, &nofaith, i,
                                                       std::ref(genome->gls[ic]), std::ref(transRate), false));
             }
             loglike = 0;
