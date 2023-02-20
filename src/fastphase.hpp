@@ -23,9 +23,9 @@ class FastPhaseK2
     std::ofstream ofs;
     const int N, M, C, C2; // C2 = C x C
     MyArr2D GP; // genotype probabilies for all individuals, N x (M x 3)
-    MyArr2D PI, Ek; // nsnps x C
+    MyArr2D PI; // C x M
     MyArr2D F; // M x C
-    MyArr2D Ekg; // M x C x 2
+    MyArr2D Ek, Ekg; // MxC, MxCx2
     const bool high_ram;
     MyArr2D postProbsZ, postProbsZandG;
 
@@ -42,7 +42,7 @@ inline FastPhaseK2::FastPhaseK2(int n, int m, int c, int seed, bool highram = fa
     auto rng = std::default_random_engine{};
     rng.seed(seed);
     F = RandomUniform<MyArr2D, std::default_random_engine>(M, C, rng, 0.0, 1.0);
-    PI = RandomUniform<MyArr2D, std::default_random_engine>(M, C, rng, 0.0, 1.0);
+    PI = RandomUniform<MyArr2D, std::default_random_engine>(C, M, rng, 0.0, 1.0);
     GP.setZero();
 }
 
@@ -111,19 +111,24 @@ inline double FastPhaseK2::forwardAndBackwards(int ind,
     int g1, g2, g3, g12, k1, k2, k12;
     int s{0};
     LikeForwardInd.col(s) =
-        emitDip.col(s) * (PI.row(s).transpose().matrix() * PI.row(s).matrix()).reshaped().array();
+        emitDip.col(s) * (PI.col(s).matrix() * PI.col(s).transpose().matrix()).reshaped().array();
     cs(s) = 1 / LikeForwardInd.col(s).sum();
     LikeForwardInd.col(s) *= cs(s); // normalize it
     for(s = 1; s < M; s++)
     {
         sumTmp1 = LikeForwardInd.col(s - 1).reshaped(C, C).rowwise().sum() * transRate(1, s);
         constTmp = LikeForwardInd.col(s - 1).sum() * transRate(2, s);
-        LikeForwardInd.col(s) =
-            emitDip.col(s)
-            * (LikeForwardInd.col(s - 1) * transRate(0, s)
-               + (PI.row(s).transpose().matrix() * sumTmp1.transpose().matrix()).reshaped().array()
-               + (sumTmp1.matrix() * PI.row(s).matrix()).reshaped().array()
-               + (constTmp * PI.row(s).transpose().matrix() * PI.row(s).matrix()).reshaped().array());
+        for(k1 = 0; k1 < C; k1++)
+        {
+            for(k2 = 0; k2 < C; k2++)
+            {
+                k12 = k1 * C + k2;
+                LikeForwardInd(k12, s) =
+                    emitDip(k12, s)
+                    * (LikeForwardInd(k12, s - 1) * transRate(0, s) + PI(k1, s) * sumTmp1(k2)
+                       + PI(k2, s) * sumTmp1(k1) + PI(k1, s) * PI(k2, s) * constTmp);
+            }
+        }
         cs(s) = 1 / LikeForwardInd.col(s).sum();
         LikeForwardInd.col(s) *= cs(s); // normalize it
     }
@@ -136,29 +141,27 @@ inline double FastPhaseK2::forwardAndBackwards(int ind,
     for(s = M - 2; s >= 0; s--)
     {
         auto beta_mult_emit = emitDip.col(s + 1) * LikeBackwardInd.col(s + 1);
-        // sumTmp1 =
-        //     (beta_mult_emit.reshaped(C, C).rowwise() * PI.row(s + 1) * transRate(1, s +
-        //     1)).rowwise().sum();
-        // constTmp = (beta_mult_emit
-        //             * (PI.row(s + 1).transpose().matrix() * PI.row(s + 1).matrix()).reshaped().array())
-        //                .sum()
-        //            * transRate(2, s + 1);
         sumTmp1.setZero();
-        constTmp = 0;
+        for(constTmp = 0, k1 = 0; k1 < C; k1++)
+        {
+            for(k2 = 0; k2 < C; k2++)
+            {
+                k12 = k1 * C + k2;
+                sumTmp1(k1) += beta_mult_emit(k12) * PI(k2, s + 1) * transRate(1, s + 1);
+                constTmp += beta_mult_emit(k12) * PI(k1, s + 1) * PI(k2, s + 1) * transRate(2, s + 1);
+            }
+        }
         for(k1 = 0; k1 < C; k1++)
         {
             for(k2 = 0; k2 < C; k2++)
             {
                 k12 = k1 * C + k2;
-                sumTmp1(k1) += beta_mult_emit(k12) * PI(s + 1, k2) * transRate(1, s + 1);
-                constTmp += beta_mult_emit(k12) * PI(s + 1, k1) * PI(s + 1, k2) * transRate(2, s + 1);
+                // apply scaling
+                LikeBackwardInd(k12, s) =
+                    (beta_mult_emit(k12) * transRate(0, s + 1) + sumTmp1(k1) + sumTmp1(k2) + constTmp)
+                    * cs(s);
             }
         }
-        LikeBackwardInd.col(s) =
-            (beta_mult_emit * transRate(0, s + 1)
-             + (sumTmp1.matrix() * Iden.transpose().matrix()).reshaped().array()
-             + (Iden.matrix() * sumTmp1.transpose().matrix()).reshaped().array() + constTmp)
-            * cs(s);
     }
 
     cs *= indLike; // get last forward likelihood back
@@ -271,7 +274,7 @@ inline void FastPhaseK2::initIteration(double tol)
     PI = (PI < tol).select(tol, PI); // lower bound
     PI = (PI > 1 - tol).select(1 - tol, PI); // upper bound
     // normalize it now
-    PI = PI.colwise() / PI.rowwise().sum();
+    PI = PI.rowwise() / PI.colwise().sum();
     // map F to domain but no normalization
     if(F.isNaN().any()) throw std::runtime_error("NaN in F\n");
     F = (F < tol).select(tol, F); // lower bound
@@ -309,7 +312,7 @@ inline void FastPhaseK2::updateIteration()
             }
         }
     }
-    PI = Ek / (2 * N);
+    PI = Ek.transpose() / (2 * N);
     F = Ekg(Eigen::all, Eigen::seq(1, Eigen::last, 2))
         / (Ekg(Eigen::all, Eigen::seq(1, Eigen::last, 2)) + Ekg(Eigen::all, Eigen::seq(0, Eigen::last, 2)));
 }
