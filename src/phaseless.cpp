@@ -114,7 +114,7 @@ int main(int argc, char * argv[])
         genome = std::make_unique<BigAss>();
         genome->chunksize = chunksize, genome->C = C;
         tm.clock();
-        chunk_beagle_genotype_likelihoods(genome, in_beagle);
+        chunk_beagle_genotype_likelihoods(genome, in_beagle, true);
         cao.print(tm.date(), "parsing input -> C =", genome->C, ", N =", genome->nsamples,
                   ", M =", genome->nsnps, ", nchunks =", genome->nchunks);
         cao.done(tm.date(), "elapsed time for parsing beagle file", tm.reltime(), " secs");
