@@ -166,16 +166,23 @@ int main(int argc, char * argv[])
         double alpha, stepMax{4}, alphaMax{1280};
         for(int it = 0; it < nadmix; it++)
         {
+            tm.clock();
             // first accel iteration
             admixer.initIteration();
             FI0 = admixer.FI;
             Q0 = admixer.Q;
             for(int i = 0; i < genome->nsamples; i++)
                 llike.emplace_back(
-                    poolit.enqueue(&Admixture::runOptimalWithBigAss, &admixer, i, std::ref(genome)));
-            for(auto && ll : llike) ll.get();
+                    poolit.enqueue(&Admixture::runNaiveWithBigAss, &admixer, i, std::ref(genome)));
+            loglike = 0;
+            for(auto && ll : llike) loglike += ll.get();
             llike.clear(); // clear future and renew
             admixer.updateIteration();
+            diff = it ? loglike - prevlike : 0;
+            prevlike = loglike;
+            cao.print(tm.date(), "SqS3 iteration", it++, ", log likelihoods =", loglike, ", diff =", diff,
+                      ",", tm.reltime(), " sec");
+            if(diff > 0 && diff < 0.1) break;
             // second accel iteration
             tm.clock();
             admixer.initIteration();
@@ -183,14 +190,18 @@ int main(int argc, char * argv[])
             Q1 = admixer.Q;
             for(int i = 0; i < genome->nsamples; i++)
                 llike.emplace_back(
-                    poolit.enqueue(&Admixture::runOptimalWithBigAss, &admixer, i, std::ref(genome)));
-            for(auto && ll : llike) ll.get();
+                    poolit.enqueue(&Admixture::runNaiveWithBigAss, &admixer, i, std::ref(genome)));
+            loglike = 0;
+            for(auto && ll : llike) loglike += ll.get();
             llike.clear(); // clear future and renew
-            diff = sqrt((Q1 - Q0).array().square().sum() / (Q0.cols() * Q0.rows()));
-            cao.print(tm.date(), "SqS3 iteration", it * 3, ", RMSE(Q) =", diff, ",", tm.reltime(), " sec");
-            if(diff < 1e-4) break;
             admixer.updateIteration();
+            diff = it ? loglike - prevlike : 0;
+            prevlike = loglike;
+            cao.print(tm.date(), "SqS3 iteration", it++, ", log likelihoods =", loglike, ", diff =", diff,
+                      ",", tm.reltime(), " sec");
+            if(diff > 0 && diff < 0.1) break;
             // accel iteration with steplen
+            tm.clock();
             admixer.initIteration();
             alpha =
                 ((FI1 - FI0).square().sum() + (Q1 - Q0).square().sum())
@@ -206,10 +217,16 @@ int main(int argc, char * argv[])
             admixer.initIteration();
             for(int i = 0; i < genome->nsamples; i++)
                 llike.emplace_back(
-                    poolit.enqueue(&Admixture::runOptimalWithBigAss, &admixer, i, std::ref(genome)));
-            for(auto && ll : llike) ll.get();
+                    poolit.enqueue(&Admixture::runNaiveWithBigAss, &admixer, i, std::ref(genome)));
+            loglike = 0;
+            for(auto && ll : llike) loglike += ll.get();
             llike.clear(); // clear future and renew
             admixer.updateIteration();
+            diff = it ? loglike - prevlike : 0;
+            prevlike = loglike;
+            cao.print(tm.date(), "SqS3 iteration", it, ", log likelihoods =", loglike, ", diff =", diff, ",",
+                      tm.reltime(), " sec");
+            if(diff > 0 && diff < 0.1) break;
         }
     }
     else
@@ -220,7 +237,7 @@ int main(int argc, char * argv[])
             admixer.initIteration();
             for(int i = 0; i < genome->nsamples; i++)
                 llike.emplace_back(
-                    poolit.enqueue(&Admixture::runOptimalWithBigAss, &admixer, i, std::ref(genome)));
+                    poolit.enqueue(&Admixture::runNaiveWithBigAss, &admixer, i, std::ref(genome)));
             loglike = 0;
             for(auto && ll : llike) loglike += ll.get();
             llike.clear(); // clear future and renew
@@ -232,7 +249,7 @@ int main(int argc, char * argv[])
             admixer.updateIteration();
         }
     }
-    cao.done(tm.date(), "admixture done and outputting");
+    cao.done(tm.date(), "admixture done and outputting.");
     admixer.writeQ(outdir / string("admixture.k" + to_string(K) + ".Q"));
     cao.done(tm.date(), "-> good job. have a nice day, bye!");
 
