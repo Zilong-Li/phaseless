@@ -109,6 +109,7 @@ int main(int argc, char * argv[])
     ThreadPool poolit(nthreads);
     double loglike, diff, prevlike{std::numeric_limits<double>::lowest()};
     std::unique_ptr<BigAss> genome;
+    constexpr auto OPTIONS = alpaca::options::fixed_length_encoding;
     if(in_bin.empty())
     {
         genome = std::make_unique<BigAss>();
@@ -130,13 +131,14 @@ int main(int argc, char * argv[])
             genome->PI.emplace_back(PI);
             genome->F.emplace_back(F);
             genome->transRate.emplace_back(transRate);
-            cao.print(tm.date(), "chunk", ic++, " imputation done and outputting.");
+            cao.print(tm.date(), "chunk", ic++, " imputation done and outputting");
         }
         res.clear(); // clear future and renew
         std::ofstream ofs(outdir / "pars.bin", std::ios::out | std::ios::binary);
-        auto bytes_written = alpaca::serialize<BigAss>(*genome, ofs);
+        auto bytes_written = alpaca::serialize<OPTIONS, BigAss>(*genome, ofs);
         ofs.close();
-        cao.done(tm.date(), "imputation done and outputting.", bytes_written, "bytes written to file");
+        assert(std::filesystem::file_size(outdir / "pars.bin") == bytes_written);
+        cao.done(tm.date(), "imputation done and outputting.", bytes_written, " bytes written to file");
     }
     else
     {
@@ -144,9 +146,10 @@ int main(int argc, char * argv[])
         auto filesize = std::filesystem::file_size(in_bin);
         std::error_code ec;
         std::ifstream ifs(in_bin, std::ios::in | std::ios::binary);
-        genome = std::make_unique<BigAss>(alpaca::deserialize<BigAss>(ifs, filesize, ec));
+        genome = std::make_unique<BigAss>(alpaca::deserialize<OPTIONS, BigAss>(ifs, filesize, ec));
         ifs.close();
-        cao.done(tm.date(), filesize, "bytes deserialized from file. skip imputation");
+        assert((bool)ec == false);
+        cao.done(tm.date(), filesize, " bytes deserialized from file. skip imputation, ec", ec);
         cao.print(tm.date(), "parsing input -> C =", genome->C, ", N =", genome->nsamples,
                   ", M =", genome->nsnps, ", nchunks =", genome->nchunks);
         assert(K < genome->C);
@@ -169,7 +172,8 @@ int main(int argc, char * argv[])
             FI0 = admixer.FI;
             Q0 = admixer.Q;
             for(int i = 0; i < genome->nsamples; i++)
-                llike.emplace_back(poolit.enqueue(&Admixture::runWithBigAss, &admixer, i, std::ref(genome)));
+                llike.emplace_back(
+                    poolit.enqueue(&Admixture::runOptimalWithBigAss, &admixer, i, std::ref(genome)));
             loglike = 0;
             for(auto && ll : llike) loglike += ll.get();
             llike.clear(); // clear future and renew
@@ -185,7 +189,8 @@ int main(int argc, char * argv[])
             FI1 = admixer.FI;
             Q1 = admixer.Q;
             for(int i = 0; i < genome->nsamples; i++)
-                llike.emplace_back(poolit.enqueue(&Admixture::runWithBigAss, &admixer, i, std::ref(genome)));
+                llike.emplace_back(
+                    poolit.enqueue(&Admixture::runOptimalWithBigAss, &admixer, i, std::ref(genome)));
             loglike = 0;
             for(auto && ll : llike) loglike += ll.get();
             llike.clear(); // clear future and renew
@@ -211,7 +216,8 @@ int main(int argc, char * argv[])
             admixer.Q = Q0 + 2 * alpha * (Q1 - Q0) + alpha * alpha * (admixer.Q - 2 * Q1 + Q0);
             admixer.initIteration();
             for(int i = 0; i < genome->nsamples; i++)
-                llike.emplace_back(poolit.enqueue(&Admixture::runWithBigAss, &admixer, i, std::ref(genome)));
+                llike.emplace_back(
+                    poolit.enqueue(&Admixture::runOptimalWithBigAss, &admixer, i, std::ref(genome)));
             loglike = 0;
             for(auto && ll : llike) loglike += ll.get();
             llike.clear(); // clear future and renew
@@ -230,7 +236,8 @@ int main(int argc, char * argv[])
             tm.clock();
             admixer.initIteration();
             for(int i = 0; i < genome->nsamples; i++)
-                llike.emplace_back(poolit.enqueue(&Admixture::runWithBigAss, &admixer, i, std::ref(genome)));
+                llike.emplace_back(
+                    poolit.enqueue(&Admixture::runOptimalWithBigAss, &admixer, i, std::ref(genome)));
             loglike = 0;
             for(auto && ll : llike) loglike += ll.get();
             llike.clear(); // clear future and renew

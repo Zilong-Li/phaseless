@@ -112,14 +112,18 @@ int main(int argc, char * argv[])
             // if(diff > 0 && diff < 0.1) break;
             nofaith.updateIteration();
         }
+        tm.clock();
         auto idx2rm = write_bcf_genotype_probability(
             nofaith.GP.data(), genome->chrs[ic], genome->pos[ic], genome->sampleids,
             outdir / string("chunk." + to_string(ic) + ".vcf.gz"), info);
         thin_bigass(ic, idx2rm, genome, nofaith.PI, nofaith.F, transRate);
+        cao.done(tm.date(), "chunk", ic, "done. outputting ", tm.reltime(), " secs");
     }
+    constexpr auto OPTIONS = alpaca::options::fixed_length_encoding;
     std::ofstream ofs(outdir / "pars.bin", std::ios::out | std::ios::binary);
-    auto bytes_written = alpaca::serialize<BigAss>(*genome, ofs);
+    auto bytes_written = alpaca::serialize<OPTIONS, BigAss>(*genome, ofs);
     ofs.close();
+    assert(std::filesystem::file_size(outdir / "pars.bin") == bytes_written);
     cao.done(tm.date(), "imputation done and outputting.", bytes_written, "bytes written to file");
 
     return 0;

@@ -202,7 +202,8 @@ inline auto getClusterLikelihoods(int ind,
                                   const MyFloat1D & GL,
                                   const MyFloat1D & transRate_,
                                   const MyFloat1D & PI_,
-                                  const MyFloat1D & F_)
+                                  const MyFloat1D & F_,
+                                  bool gamma = false)
 {
     const int C2 = LikeForwardInd.rows();
     const int M = LikeForwardInd.cols();
@@ -265,6 +266,7 @@ inline auto getClusterLikelihoods(int ind,
         cs(s) = 1 / cs(s);
         LikeForwardInd.col(s) *= cs(s); // normalize it
     }
+    // double indLike = LikeForwardInd.col(M - 1).sum(); // just 1
     // ======== backward recursion ===========
     s = M - 1;
     LikeBackwardInd.col(s).setConstant(cs(s)); // not log scale
@@ -294,8 +296,11 @@ inline auto getClusterLikelihoods(int ind,
             }
         }
     }
-    // MyArr2D icluster = LikeForwardInd * LikeBackwardInd; // C x C x M
-    // return icluster;
+    if(gamma)
+    {
+        // for(s = 0; s < M; s++) LikeForwardInd.col(s) /= cs(s);
+        LikeForwardInd.rowwise() /= cs.transpose();
+    }
 }
 
 #endif // COMMON_H_

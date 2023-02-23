@@ -22,13 +22,14 @@ class Admixture
     MyArr2D FI; // (K x C) x M
     MyArr2D Q; // K x N
     MyArr2D Ekg; // (M x K) x N, expected number of alleles per k per n
-    MyArr2D Ekc; // (K x C) x M, expected number of alleles per c per k
+    MyArr2D Ekc; // (C * K) x M, expected number of alleles per c per k
     MyArr2D NormF; // K x M
 
     void initIteration(double tol = 1e-6);
     void updateIteration();
     void writeQ(std::string out);
-    double runWithBigAss(int ind, const std::unique_ptr<BigAss> & genome);
+    double runNaiveWithBigAss(int ind, const std::unique_ptr<BigAss> & genome);
+    double runOptimalWithBigAss(int ind, const std::unique_ptr<BigAss> & genome);
     double runWithSingleChunk(int, const MyFloat1D &, const MyArr2D &, const MyArr2D &, const MyArr2D &);
 };
 
@@ -42,7 +43,7 @@ inline Admixture::Admixture(int n, int m, int c, int k, int seed) : N(n), M(m), 
 
 inline Admixture::~Admixture() {}
 
-inline double Admixture::runWithBigAss(int ind, const std::unique_ptr<BigAss> & genome)
+inline double Admixture::runNaiveWithBigAss(int ind, const std::unique_ptr<BigAss> & genome)
 {
     MyArr2D w((C * C + C) / 2, K * K);
     MyArr2D iEkc, iNormF, LikeForwardInd, LikeBackwardInd;
@@ -56,9 +57,9 @@ inline double Admixture::runWithBigAss(int ind, const std::unique_ptr<BigAss> & 
         LikeBackwardInd.setZero(C * C, iM); // likelihood of backward recursion for ind i, not log
         getClusterLikelihoods(ind, LikeForwardInd, LikeBackwardInd, genome->gls[ic], genome->transRate[ic],
                               genome->PI[ic], genome->F[ic]);
-        iEkc.setZero(K * C, iM);
+        iEkc.setZero(C * K, iM);
         iNormF.setZero(K, iM);
-        for(s = 0; s < iM; s++)
+        for(s = 0; s < iM; s++, m++)
         {
             for(norm = 0, cc = 0, c1 = 0; c1 < C; c1++)
             {
@@ -100,7 +101,6 @@ inline double Admixture::runWithBigAss(int ind, const std::unique_ptr<BigAss> & 
                     ++cc;
                 }
             }
-            m++;
         }
         {
             std::lock_guard<std::mutex> lock(mutex_it); // sum over all samples
@@ -111,6 +111,52 @@ inline double Admixture::runWithBigAss(int ind, const std::unique_ptr<BigAss> & 
     // assert(m == M);
     // update Q, Q.colwise().sum() should be 1
     for(int k = 0; k < K; k++) Q(k, ind) = Ekg.row(ind * K + k).sum() / (2 * M);
+
+    return llike;
+}
+
+inline double Admixture::runOptimalWithBigAss(int ind, const std::unique_ptr<BigAss> & genome)
+{
+    MyArr2D kapa, iEkc, iNormF;
+    MyArr2D LikeForwardInd, LikeBackwardInd;
+    double llike = 0;
+    int c1, k1, s;
+    for(int ic = 0, m = 0; ic < genome->nchunks; ic++)
+    {
+        int iM = genome->pos[ic].size();
+        LikeForwardInd.setZero(C * C, iM); // likelihood of forward recursion for ind i, not log
+        LikeBackwardInd.setZero(C * C, iM); // likelihood of backward recursion for ind i, not log
+        getClusterLikelihoods(ind, LikeForwardInd, LikeBackwardInd, genome->gls[ic], genome->transRate[ic],
+                              genome->PI[ic], genome->F[ic], true);
+        kapa.setZero(K * C, iM);
+        iEkc.setZero(C * K, iM);
+        iNormF.setZero(K, iM);
+        for(s = 0; s < iM; s++, m++)
+        {
+            for(c1 = 0; c1 < C; c1++)
+            {
+                auto Hsz = Q.col(ind) * FI.middleRows(c1 * K, K).col(m);
+                auto rho = (LikeForwardInd.middleRows(c1 * C, C).col(s)
+                            * LikeBackwardInd.middleRows(c1 * C, C).col(s))
+                               .sum();
+                kapa.middleRows(c1 * K, K).col(s) = Hsz * (rho / Hsz.sum());
+            }
+            for(k1 = 0; k1 < K; k1++)
+            {
+                iEkc.middleRows(k1 * C, C).col(s) = 2 * kapa(Eigen::seqN(k1, C, K), s);
+                iNormF(k1, s) = iEkc.middleRows(k1 * C, C).col(s).sum();
+                Ekg(ind * K + k1, m) = iNormF(k1, s);
+            }
+        }
+        {
+            std::lock_guard<std::mutex> lock(mutex_it); // sum over all samples
+            Ekc.middleCols(m - iM, iM) += iEkc;
+            NormF.middleCols(m - iM, iM) += iNormF;
+        }
+    }
+    // update Q, Q.colwise().sum() should be 1
+    for(int k = 0; k < K; k++) Q(k, ind) = Ekg.row(ind * K + k).sum() / (2 * M);
+    // std::cout << Q.col(ind).sum() << std::endl;
 
     return llike;
 }
@@ -203,7 +249,7 @@ inline void Admixture::initIteration(double tol)
         FI.middleRows(k * C, C).rowwise() /= FI.middleRows(k * C, C).colwise().sum();
 
     Ekg.setZero(N * K, M);
-    Ekc.setZero(K * C, M);
+    Ekc.setZero(C * K, M);
     NormF.setZero(K, M);
 }
 
