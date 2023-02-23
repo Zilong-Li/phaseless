@@ -177,19 +177,20 @@ int main(int argc, char * argv[])
             llike.clear(); // clear future and renew
             admixer.updateIteration();
             // second accel iteration
-            tm.clock();
             admixer.initIteration();
             FI1 = admixer.FI;
             Q1 = admixer.Q;
+            diff = sqrt((Q1 - Q0).array().square().sum() / (Q0.cols() * Q0.rows()));
+            if(diff < 1e-4) break;
+            tm.clock();
             for(int i = 0; i < genome->nsamples; i++)
                 llike.emplace_back(
                     poolit.enqueue(&Admixture::runOptimalWithBigAss, &admixer, i, std::ref(genome)));
             for(auto && ll : llike) ll.get();
             llike.clear(); // clear future and renew
-            diff = sqrt((Q1 - Q0).array().square().sum() / (Q0.cols() * Q0.rows()));
-            cao.print(tm.date(), "SqS3 iteration", it * 3, ", RMSE(Q) =", diff, ",", tm.reltime(), " sec");
-            if(diff < 1e-4) break;
             admixer.updateIteration();
+            cao.print(tm.date(), "SqS3 iteration", it * 3 + 1, ", RMSE(Q) =", diff, ",", tm.reltime(),
+                      " sec");
             // accel iteration with steplen
             admixer.initIteration();
             alpha =
