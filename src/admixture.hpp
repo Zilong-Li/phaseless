@@ -115,7 +115,7 @@ inline double Admixture::runNaiveWithBigAss(int ind, const std::unique_ptr<BigAs
 
 inline double Admixture::runOptimalWithBigAss(int ind, const std::unique_ptr<BigAss> & genome)
 {
-    MyArr2D kapa, iEkc;
+    MyArr2D kapa;
     MyArr2D LikeForwardInd, LikeBackwardInd;
     double llike = 0;
     int c1, k1, s;
@@ -126,8 +126,7 @@ inline double Admixture::runOptimalWithBigAss(int ind, const std::unique_ptr<Big
         LikeBackwardInd.setZero(C * C, iM);
         getClusterLikelihoods(ind, LikeForwardInd, LikeBackwardInd, genome->gls[ic], genome->transRate[ic],
                               genome->PI[ic], genome->F[ic], true); // return gamma
-        kapa.setZero(K * C, iM);
-        iEkc.setZero(C * K, iM); // same value as kapa but different layout, could be removed
+        kapa.setZero(C * K, iM);
         for(s = 0; s < iM; s++, m++)
         {
             for(c1 = 0; c1 < C; c1++)
@@ -137,18 +136,20 @@ inline double Admixture::runOptimalWithBigAss(int ind, const std::unique_ptr<Big
                 auto rho = (LikeForwardInd.middleRows(c1 * C, C).col(s)
                             * LikeBackwardInd.middleRows(c1 * C, C).col(s))
                                .sum();
-                kapa.middleRows(c1 * K, K).col(s) = Hsz * (rho / Hsz.sum());
+                // kapa.middleRows(c1 * K, K).col(s) = Hsz * (rho / Hsz.sum()); // K x C x M layout
+                kapa(Eigen::seqN(c1, K, C), s) = Hsz * (rho / Hsz.sum()); // C x K x M layout
             }
             // std::cout << kapa.col(s).sum() << std::endl;
             for(k1 = 0; k1 < K; k1++)
             {
-                iEkc.middleRows(k1 * C, C).col(s) = 2 * kapa(Eigen::seqN(k1, C, K), s);
-                Ekg(ind * K + k1, m) = iEkc.middleRows(k1 * C, C).col(s).sum();
+                // iEkc.middleRows(k1 * C, C).col(s) = 2 * kapa(Eigen::seqN(k1, C, K), s);
+                // Ekg(ind * K + k1, m) = iEkc.middleRows(k1 * C, C).col(s).sum();
+                Ekg(ind * K + k1, m) = kapa.middleRows(k1 * C, C).col(s).sum();
             }
         }
         {
             std::lock_guard<std::mutex> lock(mutex_it); // sum over all samples
-            Ekc.middleCols(m - iM, iM) += iEkc;
+            Ekc.middleCols(m - iM, iM) += kapa;
             NormF.middleCols(m - iM, iM) += Ekg.middleRows(ind * K, K).middleCols(m - iM, iM);
         }
     }

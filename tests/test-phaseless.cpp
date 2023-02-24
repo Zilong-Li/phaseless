@@ -65,7 +65,7 @@ TEST_CASE("phaseless naive vs optimal", "[test-phaseless]")
         admixer2.updateIteration();
     }
     REQUIRE(((admixer1.Q - admixer2.Q).abs() < 1e-1).all());
-    // REQUIRE(((admixer1.FI - admixer2.FI) > 1e-1).count() == 0);
+    // REQUIRE(((admixer1.FI - admixer2.FI).abs() > 1e-1).count() == 0);
 }
 
 TEST_CASE("phaseless normal iteration with make_input_per_chunk", "[test-phaseless]")
