@@ -19,7 +19,7 @@ class Admixture
     Admixture(int n, int m, int c, int k, int seed);
     ~Admixture();
     const int N, M, C, K; // C2 = C x C
-    MyArr2D FI; // (K x C) x M
+    MyArr2D FI; // (C x K) x M
     MyArr2D Q; // K x N
     MyArr2D Ekg; // (M x K) x N, expected number of alleles per k per n
     MyArr2D Ekc; // (C * K) x M, expected number of alleles per c per k
@@ -46,7 +46,7 @@ inline Admixture::~Admixture() {}
 inline double Admixture::runNaiveWithBigAss(int ind, const std::unique_ptr<BigAss> & genome)
 {
     MyArr2D w((C * C + C) / 2, K * K);
-    MyArr2D iEkc, iNormF, LikeForwardInd, LikeBackwardInd;
+    MyArr2D iEkc, LikeForwardInd, LikeBackwardInd;
     double norm = 0, llike = 0;
     int c1, c2, c12, cc;
     int k1, k2, k12, s;
@@ -56,9 +56,8 @@ inline double Admixture::runNaiveWithBigAss(int ind, const std::unique_ptr<BigAs
         LikeForwardInd.setZero(C * C, iM); // likelihood of forward recursion for ind i, not log
         LikeBackwardInd.setZero(C * C, iM); // likelihood of backward recursion for ind i, not log
         getClusterLikelihoods(ind, LikeForwardInd, LikeBackwardInd, genome->gls[ic], genome->transRate[ic],
-                              genome->PI[ic], genome->F[ic]);
+                              genome->PI[ic], genome->F[ic], true);
         iEkc.setZero(C * K, iM);
-        iNormF.setZero(K, iM);
         for(s = 0; s < iM; s++, m++)
         {
             for(norm = 0, cc = 0, c1 = 0; c1 < C; c1++)
@@ -94,8 +93,6 @@ inline double Admixture::runNaiveWithBigAss(int ind, const std::unique_ptr<BigAs
                             Ekg(ind * K + k2, m) += w(cc, k12) / norm;
                             iEkc(k1 * C + c1, s) += w(cc, k12) / norm;
                             iEkc(k2 * C + c2, s) += w(cc, k12) / norm;
-                            iNormF(k1, s) += w(cc, k12) / norm;
-                            iNormF(k2, s) += w(cc, k12) / norm;
                         }
                     }
                     ++cc;
@@ -105,57 +102,60 @@ inline double Admixture::runNaiveWithBigAss(int ind, const std::unique_ptr<BigAs
         {
             std::lock_guard<std::mutex> lock(mutex_it); // sum over all samples
             Ekc.middleCols(m - iM, iM) += iEkc;
-            NormF.middleCols(m - iM, iM) += iNormF;
+            // NormF.middleCols(m - iM, iM) += iNormF;
+            NormF.middleCols(m - iM, iM) += Ekg.middleRows(ind * K, K).middleCols(m - iM, iM);
         }
     }
-    // assert(m == M);
+    auto deno = Ekg.middleRows(ind * K, K).sum(); // 2 * M
     // update Q, Q.colwise().sum() should be 1
-    for(int k = 0; k < K; k++) Q(k, ind) = Ekg.row(ind * K + k).sum() / (2 * M);
+    for(int k = 0; k < K; k++) Q(k, ind) = Ekg.row(ind * K + k).sum() / deno;
 
     return llike;
 }
 
 inline double Admixture::runOptimalWithBigAss(int ind, const std::unique_ptr<BigAss> & genome)
 {
-    MyArr2D kapa, iEkc, iNormF;
+    MyArr2D kapa, iEkc;
     MyArr2D LikeForwardInd, LikeBackwardInd;
     double llike = 0;
     int c1, k1, s;
     for(int ic = 0, m = 0; ic < genome->nchunks; ic++)
     {
         int iM = genome->pos[ic].size();
-        LikeForwardInd.setZero(C * C, iM); // likelihood of forward recursion for ind i, not log
-        LikeBackwardInd.setZero(C * C, iM); // likelihood of backward recursion for ind i, not log
+        LikeForwardInd.setZero(C * C, iM);
+        LikeBackwardInd.setZero(C * C, iM);
         getClusterLikelihoods(ind, LikeForwardInd, LikeBackwardInd, genome->gls[ic], genome->transRate[ic],
-                              genome->PI[ic], genome->F[ic], true);
+                              genome->PI[ic], genome->F[ic], true); // return gamma
         kapa.setZero(K * C, iM);
-        iEkc.setZero(C * K, iM);
-        iNormF.setZero(K, iM);
+        iEkc.setZero(C * K, iM); // same value as kapa but different layout, could be removed
         for(s = 0; s < iM; s++, m++)
         {
             for(c1 = 0; c1 < C; c1++)
             {
-                auto Hsz = Q.col(ind) * FI.middleRows(c1 * K, K).col(m);
+                // auto Hsz = Q.col(ind) * FI.middleRows(c1 * K, K).col(m);
+                auto Hsz = Q.col(ind) * FI(Eigen::seqN(c1, K, C), m);
                 auto rho = (LikeForwardInd.middleRows(c1 * C, C).col(s)
                             * LikeBackwardInd.middleRows(c1 * C, C).col(s))
                                .sum();
                 kapa.middleRows(c1 * K, K).col(s) = Hsz * (rho / Hsz.sum());
             }
+            // std::cout << kapa.col(s).sum() << std::endl;
             for(k1 = 0; k1 < K; k1++)
             {
                 iEkc.middleRows(k1 * C, C).col(s) = 2 * kapa(Eigen::seqN(k1, C, K), s);
-                iNormF(k1, s) = iEkc.middleRows(k1 * C, C).col(s).sum();
-                Ekg(ind * K + k1, m) = iNormF(k1, s);
+                Ekg(ind * K + k1, m) = iEkc.middleRows(k1 * C, C).col(s).sum();
             }
         }
         {
             std::lock_guard<std::mutex> lock(mutex_it); // sum over all samples
             Ekc.middleCols(m - iM, iM) += iEkc;
-            NormF.middleCols(m - iM, iM) += iNormF;
+            NormF.middleCols(m - iM, iM) += Ekg.middleRows(ind * K, K).middleCols(m - iM, iM);
         }
     }
+    auto deno = Ekg.middleRows(ind * K, K).sum(); // 2 * M
+    // assert(abs(deno - 2 * M) < 1e-3);
     // update Q, Q.colwise().sum() should be 1
-    for(int k = 0; k < K; k++) Q(k, ind) = Ekg.row(ind * K + k).sum() / (2 * M);
+    for(int k = 0; k < K; k++) Q(k, ind) = Ekg.row(ind * K + k).sum() / deno;
     // std::cout << Q.col(ind).sum() << std::endl;
 
     return llike;

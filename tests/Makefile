@@ -12,7 +12,7 @@ OBJS = test-main.o test-io.o test-phaseless.o test-fastphasek2.o test-fastphasek
 
 BINS = test-io.bin test-phaseless.bin test-fastphasek2.bin test-fastphasek4.bin
 
-.PHONY: all clean
+.PHONY: all test clean
 
 all: test
 
