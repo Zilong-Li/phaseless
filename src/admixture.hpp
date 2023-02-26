@@ -37,7 +37,7 @@ inline Admixture::Admixture(int n, int m, int c, int k, int seed) : N(n), M(m), 
 {
     auto rng = std::default_random_engine{};
     rng.seed(seed);
-    FI = RandomUniform<MyArr2D, std::default_random_engine>(K * C, M, rng, 0.05, 0.95);
+    FI = RandomUniform<MyArr2D, std::default_random_engine>(C * K, M, rng, 0.05, 0.95);
     Q = RandomUniform<MyArr2D, std::default_random_engine>(K, N, rng, 0.05, 0.95);
 }
 
@@ -117,6 +117,7 @@ inline double Admixture::runOptimalWithBigAss(int ind, const std::unique_ptr<Big
 {
     MyArr2D kapa;
     MyArr2D LikeForwardInd, LikeBackwardInd;
+    MyArr1D Hsz(K);
     double llike = 0;
     int c1, k1, s;
     for(int ic = 0, m = 0; ic < genome->nchunks; ic++)
@@ -132,7 +133,7 @@ inline double Admixture::runOptimalWithBigAss(int ind, const std::unique_ptr<Big
             for(c1 = 0; c1 < C; c1++)
             {
                 // auto Hsz = Q.col(ind) * FI.middleRows(c1 * K, K).col(m);
-                auto Hsz = Q.col(ind) * FI(Eigen::seqN(c1, K, C), m);
+                Hsz = Q.col(ind) * FI(Eigen::seqN(c1, K, C), m);
                 auto rho = (LikeForwardInd.middleRows(c1 * C, C).col(s)
                             * LikeBackwardInd.middleRows(c1 * C, C).col(s))
                                .sum();
@@ -142,19 +143,18 @@ inline double Admixture::runOptimalWithBigAss(int ind, const std::unique_ptr<Big
             // std::cout << kapa.col(s).sum() << std::endl;
             for(k1 = 0; k1 < K; k1++)
             {
-                // iEkc.middleRows(k1 * C, C).col(s) = 2 * kapa(Eigen::seqN(k1, C, K), s);
-                // Ekg(ind * K + k1, m) = iEkc.middleRows(k1 * C, C).col(s).sum();
-                Ekg(ind * K + k1, m) = kapa.middleRows(k1 * C, C).col(s).sum();
+                Ekg(ind * K + k1, m) = 2 * kapa.middleRows(k1 * C, C).col(s).sum();
+                // Ekg(ind * K + k1, m) = 2 * kapa(Eigen::seqN(k1, C, K), s).sum();
             }
         }
         {
             std::lock_guard<std::mutex> lock(mutex_it); // sum over all samples
-            Ekc.middleCols(m - iM, iM) += kapa;
+            Ekc.middleCols(m - iM, iM) += 2 * kapa;
             NormF.middleCols(m - iM, iM) += Ekg.middleRows(ind * K, K).middleCols(m - iM, iM);
         }
     }
     auto deno = Ekg.middleRows(ind * K, K).sum(); // 2 * M
-    // assert(abs(deno - 2 * M) < 1e-3);
+    // assert(abs(deno - 2 * M) < 1e-4);
     // update Q, Q.colwise().sum() should be 1
     for(int k = 0; k < K; k++) Q(k, ind) = Ekg.row(ind * K + k).sum() / deno;
     // std::cout << Q.col(ind).sum() << std::endl;

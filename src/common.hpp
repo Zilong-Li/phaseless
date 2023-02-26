@@ -14,11 +14,6 @@
 #include <random>
 #include <vector>
 
-using MatDouble2D = Eigen::MatrixXd; // use matrix for linear algebra operations
-using ArrDouble2D = Eigen::ArrayXXd; // use array for element-wise operations
-using ArrDouble1D = Eigen::ArrayXd;
-using ArrFloat2D = Eigen::ArrayXXf;
-using ArrFloat1D = Eigen::ArrayXf;
 using IntVec1D = std::vector<int>;
 using IntVec2D = std::vector<IntVec1D>;
 using FloatVec1D = std::vector<float>;
@@ -27,12 +22,14 @@ using DoubleVec1D = std::vector<double>;
 using DoubleVec2D = std::vector<DoubleVec1D>;
 using StringVec1D = std::vector<std::string>;
 using MapStringInt1D = std::map<std::string, IntVec1D>;
-using MyFloat1D = FloatVec1D; // use float if no accuracy drops
-using MyFloat2D = FloatVec2D;
-using MyMat2D = Eigen::Matrix<float, Eigen::Dynamic, Eigen::Dynamic, Eigen::ColMajor>;
-using MyMat1D = Eigen::Matrix<float, Eigen::Dynamic, 1, Eigen::ColMajor>;
-using MyArr2D = Eigen::Array<float, Eigen::Dynamic, Eigen::Dynamic, Eigen::ColMajor>;
-using MyArr1D = Eigen::Array<float, Eigen::Dynamic, 1, Eigen::ColMajor>;
+
+using MyFloat = float; // use float if no accuracy drops
+using MyFloat1D = std::vector<MyFloat>;
+using MyFloat2D = std::vector<MyFloat1D>;
+using MyMat2D = Eigen::Matrix<MyFloat, Eigen::Dynamic, Eigen::Dynamic, Eigen::ColMajor>;
+using MyMat1D = Eigen::Matrix<MyFloat, Eigen::Dynamic, 1, Eigen::ColMajor>;
+using MyArr2D = Eigen::Array<MyFloat, Eigen::Dynamic, Eigen::Dynamic, Eigen::ColMajor>;
+using MyArr1D = Eigen::Array<MyFloat, Eigen::Dynamic, 1, Eigen::ColMajor>;
 
 template<typename MatrixType, typename RandomEngineType>
 inline MatrixType RandomUniform(const Eigen::Index numRows,

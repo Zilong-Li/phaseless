@@ -9,7 +9,7 @@
 /*
 ** @GP maps Eigen matrix layout, (3 x nsnps) x nsamples
 */
-inline IntVec1D write_bcf_genotype_probability(float * GP,
+inline IntVec1D write_bcf_genotype_probability(MyFloat * GP,
                                                std::string chr,
                                                const IntVec1D & markers,
                                                const StringVec1D & sampleids,
@@ -243,8 +243,8 @@ inline void chunk_beagle_genotype_likelihoods(const std::unique_ptr<BigAss> & ge
         if(nCol++ % 3 == 0) genome->sampleids.push_back(std::string(tok));
     if(nCol % 3) throw std::runtime_error("Number of columns should be a multiple of 3.\n");
     genome->nsamples = nCol / 3 - 1;
-    FloatVec2D glchunk; // gl for one chunk
-    FloatVec1D gli(genome->nsamples * 3); // current line
+    MyFloat2D glchunk; // gl for one chunk
+    MyFloat1D gli(genome->nsamples * 3); // current line
     genome->nsnps = 0;
     buffer = original;
     IntVec1D markers;
@@ -285,7 +285,7 @@ inline void chunk_beagle_genotype_likelihoods(const std::unique_ptr<BigAss> & ge
             genome->pos.push_back(markers);
             markers.clear();
             // transpose glchunk into genome->gl then clear it
-            FloatVec1D gl(genome->nsamples * im * 3);
+            MyFloat1D gl(genome->nsamples * im * 3);
             for(i = 0; i < genome->nsamples; i++)
             {
                 for(j = 0; j < im; j++)
@@ -321,7 +321,7 @@ inline void chunk_beagle_genotype_likelihoods(const std::unique_ptr<BigAss> & ge
         genome->nchunks++;
         genome->chrs.push_back(chr0);
         // transpose glchunk into genome->gl then clear it
-        FloatVec1D gl(genome->nsamples * im * 3);
+        MyFloat1D gl(genome->nsamples * im * 3);
         for(i = 0; i < genome->nsamples; i++)
         {
             for(j = 0; j < im; j++)
