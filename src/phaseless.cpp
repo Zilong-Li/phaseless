@@ -64,6 +64,7 @@ int main(int argc, char * argv[])
     string samples = "-", region = "";
     int chunksize{100000}, accel{1}, phase_only{0}, K{1}, C{0}, nadmix{1000}, nphase{40}, nthreads{4},
         seed{1};
+    double qtol{1e-6}, diff;
     for(size_t i = 0; i < args.size(); i++)
     {
         if(args[i] == "-a") accel = stoi(args[++i]);
@@ -107,7 +108,6 @@ int main(int argc, char * argv[])
 
     // ========= core calculation part ===========================================
     ThreadPool poolit(nthreads);
-    double loglike, diff, prevlike{std::numeric_limits<double>::lowest()};
     std::unique_ptr<BigAss> genome;
     constexpr auto OPTIONS = alpaca::options::fixed_length_encoding;
     if(in_bin.empty())
@@ -118,7 +118,7 @@ int main(int argc, char * argv[])
         chunk_beagle_genotype_likelihoods(genome, in_beagle, true);
         cao.print(tm.date(), "parsing input -> C =", genome->C, ", N =", genome->nsamples,
                   ", M =", genome->nsnps, ", nchunks =", genome->nchunks);
-        cao.done(tm.date(), "elapsed time for parsing beagle file", tm.reltime(), " secs");
+        cao.done(tm.date(), "elapsed time for parsing beagle file", std::fixed, tm.reltime(), " secs");
         vector<future<pars>> res;
         int ic;
         for(ic = 0; ic < genome->nchunks; ic++)
@@ -164,7 +164,7 @@ int main(int argc, char * argv[])
         MyArr2D FI0, Q0, FI1, Q1;
         const int istep{4};
         double alpha, stepMax{4}, alphaMax{1280};
-        for(int it = 0; it < nadmix; it++)
+        for(int it = 0; it < nadmix / 3; it++)
         {
             // first accel iteration
             admixer.initIteration();
@@ -180,8 +180,8 @@ int main(int argc, char * argv[])
             admixer.initIteration();
             FI1 = admixer.FI;
             Q1 = admixer.Q;
-            diff = sqrt((Q1 - Q0).array().square().sum() / (Q0.cols() * Q0.rows()));
-            if(diff < 1e-4) break;
+            diff = (Q1 - Q0).square().sum();
+            if(diff < qtol) break;
             tm.clock();
             for(int i = 0; i < genome->nsamples; i++)
                 llike.emplace_back(
@@ -189,8 +189,8 @@ int main(int argc, char * argv[])
             for(auto && ll : llike) ll.get();
             llike.clear(); // clear future and renew
             admixer.updateIteration();
-            cao.print(tm.date(), "SqS3 iteration", it * 3 + 1, ", RMSE(Q) =", diff, ",", tm.reltime(),
-                      " sec");
+            cao.print(tm.date(), "SqS3 iteration", it * 3 + 1, ", diff(Q) =", std::scientific, diff, ",",
+                      std::fixed, tm.reltime(), " sec");
             // accel iteration with steplen
             admixer.initIteration();
             alpha =
@@ -215,22 +215,22 @@ int main(int argc, char * argv[])
     }
     else
     {
+        MyArr2D Q0;
         for(int it = 0; it < nadmix; it++)
         {
             tm.clock();
             admixer.initIteration();
+            Q0 = admixer.Q;
             for(int i = 0; i < genome->nsamples; i++)
                 llike.emplace_back(
                     poolit.enqueue(&Admixture::runOptimalWithBigAss, &admixer, i, std::ref(genome)));
-            loglike = 0;
-            for(auto && ll : llike) loglike += ll.get();
+            for(auto && ll : llike) ll.get();
             llike.clear(); // clear future and renew
-            diff = it ? loglike - prevlike : 0;
-            cao.print(tm.date(), "normal iteration", it, ", log likelihoods =", loglike, ", diff =", diff,
-                      ",", tm.reltime(), " sec");
-            if(diff > 0 && diff < 0.1) break;
-            prevlike = loglike;
             admixer.updateIteration();
+            diff = (admixer.Q - Q0).square().sum();
+            cao.print(tm.date(), "normal iteration", it, ", diff(Q) =", std::scientific, diff, ",",
+                      std::fixed, tm.reltime(), " sec");
+            if(diff < qtol) break;
         }
     }
     cao.done(tm.date(), "admixture done and outputting");

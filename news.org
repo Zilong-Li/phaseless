@@ -1,5 +1,9 @@
 #+title: News and Changes
 
+* v0.1.7
+- add optimal version of O(CC+CK) complexity and reduce number errors
+- fix serialization
+- discard small chunks in phaseless
 * v0.1.6
 - change initial F and PI for phasing model
 - change PI storage layout to speedup forwards backwards

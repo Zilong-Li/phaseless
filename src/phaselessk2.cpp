@@ -64,6 +64,7 @@ int main(int argc, char * argv[])
     string samples = "-", region = "";
     int chunksize{100000}, accel{1}, phase_only{0}, K{1}, C{0}, nadmix{1000}, nphase{40}, nthreads{4},
         seed{1};
+    double reltol{1e-10};
     for(size_t i = 0; i < args.size(); i++)
     {
         if(args[i] == "-a") accel = stoi(args[++i]);
@@ -179,10 +180,10 @@ int main(int argc, char * argv[])
             llike.clear(); // clear future and renew
             admixer.updateIteration();
             diff = it ? loglike - prevlike : 0;
-            prevlike = loglike;
             cao.print(tm.date(), "SqS3 iteration", it++, ", log likelihoods =", loglike, ", diff =", diff,
                       ",", tm.reltime(), " sec");
-            if(diff > 0 && diff < 0.1) break;
+            if(diff > 0 && abs(diff / prevlike) < reltol) break;
+            prevlike = loglike;
             // second accel iteration
             tm.clock();
             admixer.initIteration();
@@ -196,10 +197,10 @@ int main(int argc, char * argv[])
             llike.clear(); // clear future and renew
             admixer.updateIteration();
             diff = it ? loglike - prevlike : 0;
-            prevlike = loglike;
             cao.print(tm.date(), "SqS3 iteration", it++, ", log likelihoods =", loglike, ", diff =", diff,
                       ",", tm.reltime(), " sec");
-            if(diff > 0 && diff < 0.1) break;
+            if(diff > 0 && abs(diff / prevlike) < reltol) break;
+            prevlike = loglike;
             // accel iteration with steplen
             tm.clock();
             admixer.initIteration();
@@ -223,10 +224,10 @@ int main(int argc, char * argv[])
             llike.clear(); // clear future and renew
             admixer.updateIteration();
             diff = it ? loglike - prevlike : 0;
-            prevlike = loglike;
             cao.print(tm.date(), "SqS3 iteration", it, ", log likelihoods =", loglike, ", diff =", diff, ",",
                       tm.reltime(), " sec");
-            if(diff > 0 && diff < 0.1) break;
+            if(diff > 0 && abs(diff / prevlike) < reltol) break;
+            prevlike = loglike;
         }
     }
     else
@@ -241,12 +242,12 @@ int main(int argc, char * argv[])
             loglike = 0;
             for(auto && ll : llike) loglike += ll.get();
             llike.clear(); // clear future and renew
+            admixer.updateIteration();
             diff = it ? loglike - prevlike : 0;
             cao.print(tm.date(), "normal iteration", it, ", log likelihoods =", loglike, ", diff =", diff,
                       ",", tm.reltime(), " sec");
-            if(diff > 0 && diff < 0.1) break;
+            if(diff > 0 && abs(diff / prevlike) < reltol) break;
             prevlike = loglike;
-            admixer.updateIteration();
         }
     }
     cao.done(tm.date(), "admixture done and outputting.");

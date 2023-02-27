@@ -50,6 +50,7 @@ inline double Admixture::runNaiveWithBigAss(int ind, const std::unique_ptr<BigAs
     double norm = 0, llike = 0;
     int c1, c2, c12, cc;
     int k1, k2, k12, s;
+    bool logscale = false;
     for(int ic = 0, m = 0; ic < genome->nchunks; ic++)
     {
         int iM = genome->pos[ic].size();
@@ -70,16 +71,30 @@ inline double Admixture::runNaiveWithBigAss(int ind, const std::unique_ptr<BigAs
                         for(k2 = 0; k2 < K; k2++)
                         {
                             k12 = k1 * K + k2;
-                            w(cc, k12) = LikeForwardInd(c12, s) * LikeBackwardInd(c12, s) * FI(k1 * C + c1, m)
-                                         * Q(k1, ind) * FI(k2 * C + c2, m) * Q(k2, ind);
-                            if(c1 != c2) w(cc, k12) *= 2;
-                            norm += w(cc, k12);
+                            if(logscale)
+                            {
+                                w(cc, k12) = log(LikeForwardInd(c12, s)) + log(LikeBackwardInd(c12, s))
+                                             + log(FI(k1 * C + c1, m)) + log(Q(k1, ind))
+                                             + log(FI(k2 * C + c2, m)) + log(Q(k2, ind));
+                                if(c1 != c2) w(cc, k12) -= log(2);
+                                norm += exp(w(cc, k12));
+                            }
+                            else
+                            {
+                                w(cc, k12) = LikeForwardInd(c12, s) * LikeBackwardInd(c12, s)
+                                             * FI(k1 * C + c1, m) * Q(k1, ind) * FI(k2 * C + c2, m)
+                                             * Q(k2, ind);
+                                if(c1 != c2) w(cc, k12) *= 2;
+                                norm += w(cc, k12);
+                            }
                         }
                     }
                     ++cc;
                 }
             }
             llike += log(norm);
+            if(logscale) w = w.exp();
+            w /= norm;
             for(cc = 0, c1 = 0; c1 < C; c1++)
             {
                 for(c2 = c1; c2 < C; c2++)
@@ -89,15 +104,19 @@ inline double Admixture::runNaiveWithBigAss(int ind, const std::unique_ptr<BigAs
                         for(k2 = 0; k2 < K; k2++)
                         {
                             k12 = k1 * K + k2;
-                            Ekg(ind * K + k1, m) += w(cc, k12) / norm;
-                            Ekg(ind * K + k2, m) += w(cc, k12) / norm;
-                            iEkc(k1 * C + c1, s) += w(cc, k12) / norm;
-                            iEkc(k2 * C + c2, s) += w(cc, k12) / norm;
+                            Ekg(ind * K + k1, m) += w(cc, k12);
+                            Ekg(ind * K + k2, m) += w(cc, k12);
+                            iEkc(k1 * C + c1, s) += w(cc, k12);
+                            iEkc(k2 * C + c2, s) += w(cc, k12);
                         }
                     }
                     ++cc;
                 }
             }
+            // iEkc = (iEkc < 2e-6).select(2e-6, iEkc);
+            // if(s == 10) std::cerr << ind << ": " << iEkc.col(s).transpose() << std::endl;
+            // if(m == 10)
+            //     std::cerr << ind << ": " << Ekg.middleRows(ind * K, K).col(m).transpose() << std::endl;
         }
         {
             std::lock_guard<std::mutex> lock(mutex_it); // sum over all samples
@@ -106,9 +125,9 @@ inline double Admixture::runNaiveWithBigAss(int ind, const std::unique_ptr<BigAs
             NormF.middleCols(m - iM, iM) += Ekg.middleRows(ind * K, K).middleCols(m - iM, iM);
         }
     }
-    auto deno = Ekg.middleRows(ind * K, K).sum(); // 2 * M
+    // auto deno = Ekg.middleRows(ind * K, K).sum(); // 2 * M
     // update Q, Q.colwise().sum() should be 1
-    for(int k = 0; k < K; k++) Q(k, ind) = Ekg.row(ind * K + k).sum() / deno;
+    for(int k = 0; k < K; k++) Q(k, ind) = Ekg.row(ind * K + k).sum() / (2 * M);
 
     return llike;
 }
@@ -138,25 +157,25 @@ inline double Admixture::runOptimalWithBigAss(int ind, const std::unique_ptr<Big
                             * LikeBackwardInd.middleRows(c1 * C, C).col(s))
                                .sum();
                 // kapa.middleRows(c1 * K, K).col(s) = Hsz * (rho / Hsz.sum()); // K x C x M layout
-                kapa(Eigen::seqN(c1, K, C), s) = Hsz * (rho / Hsz.sum()); // C x K x M layout
+                kapa(Eigen::seqN(c1, K, C), s) = 2 * Hsz * (rho / Hsz.sum()); // C x K x M layout
             }
+            // kapa = (kapa < 1e-6).select(1e-6, kapa);
             // std::cout << kapa.col(s).sum() << std::endl;
-            for(k1 = 0; k1 < K; k1++)
-            {
-                Ekg(ind * K + k1, m) = 2 * kapa.middleRows(k1 * C, C).col(s).sum();
-                // Ekg(ind * K + k1, m) = 2 * kapa(Eigen::seqN(k1, C, K), s).sum();
-            }
+            for(k1 = 0; k1 < K; k1++) Ekg(ind * K + k1, m) = kapa.middleRows(k1 * C, C).col(s).sum();
+            // if(s == 10) std::cerr << ind << ": " << kapa.col(s).transpose() << std::endl;
+            // if(m == 10)
+            //     std::cerr << ind << ": " << Ekg.middleRows(ind * K, K).col(m).transpose() << std::endl;
         }
         {
             std::lock_guard<std::mutex> lock(mutex_it); // sum over all samples
-            Ekc.middleCols(m - iM, iM) += 2 * kapa;
+            Ekc.middleCols(m - iM, iM) += kapa;
             NormF.middleCols(m - iM, iM) += Ekg.middleRows(ind * K, K).middleCols(m - iM, iM);
         }
     }
-    auto deno = Ekg.middleRows(ind * K, K).sum(); // 2 * M
+    // auto deno = Ekg.middleRows(ind * K, K).sum(); // 2 * M
     // assert(abs(deno - 2 * M) < 1e-4);
     // update Q, Q.colwise().sum() should be 1
-    for(int k = 0; k < K; k++) Q(k, ind) = Ekg.row(ind * K + k).sum() / deno;
+    for(int k = 0; k < K; k++) Q(k, ind) = Ekg.row(ind * K + k).sum() / (2 * M);
     // std::cout << Q.col(ind).sum() << std::endl;
 
     return llike;
@@ -205,6 +224,7 @@ inline double Admixture::runWithSingleChunk(int ind,
             }
         }
         llike += log(norm);
+        w /= norm;
         for(c1 = 0; c1 < C; c1++)
         {
             for(c2 = 0; c2 < C; c2++)
@@ -215,12 +235,12 @@ inline double Admixture::runWithSingleChunk(int ind,
                     for(k2 = 0; k2 < K; k2++)
                     {
                         k12 = k1 * K + k2;
-                        Ekg(ind * K + k1, s) += w(c12, k12) / norm;
-                        Ekg(ind * K + k2, s) += w(c12, k12) / norm;
-                        iEkc(k1 * C + c1, s) += w(c12, k12) / norm;
-                        iEkc(k2 * C + c2, s) += w(c12, k12) / norm;
-                        iNormF(k1, s) += w(c12, k12) / norm;
-                        iNormF(k2, s) += w(c12, k12) / norm;
+                        Ekg(ind * K + k1, s) += w(c12, k12);
+                        Ekg(ind * K + k2, s) += w(c12, k12);
+                        iEkc(k1 * C + c1, s) += w(c12, k12);
+                        iEkc(k2 * C + c2, s) += w(c12, k12);
+                        iNormF(k1, s) += w(c12, k12);
+                        iNormF(k2, s) += w(c12, k12);
                     }
                 }
             }
