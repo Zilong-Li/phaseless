@@ -50,7 +50,7 @@ inline double Admixture::runNaiveWithBigAss(int ind, const std::unique_ptr<BigAs
     double norm = 0, llike = 0;
     int c1, c2, c12, cc;
     int k1, k2, k12, s;
-    bool logscale = false;
+    const bool logscale = false;
     for(int ic = 0, m = 0; ic < genome->nchunks; ic++)
     {
         int iM = genome->pos[ic].size();
@@ -63,9 +63,11 @@ inline double Admixture::runNaiveWithBigAss(int ind, const std::unique_ptr<BigAs
         {
             for(norm = 0, cc = 0, c1 = 0; c1 < C; c1++)
             {
+                auto H1 = (Q.col(ind) * FI(Eigen::seqN(c1, K, C), m)).sum();
                 for(c2 = c1; c2 < C; c2++)
                 {
                     c12 = c1 * C + c2;
+                    auto H2 = (Q.col(ind) * FI(Eigen::seqN(c2, K, C), m)).sum();
                     for(k1 = 0; k1 < K; k1++)
                     {
                         for(k2 = 0; k2 < K; k2++)
@@ -84,6 +86,7 @@ inline double Admixture::runNaiveWithBigAss(int ind, const std::unique_ptr<BigAs
                                 w(cc, k12) = LikeForwardInd(c12, s) * LikeBackwardInd(c12, s)
                                              * FI(k1 * C + c1, m) * Q(k1, ind) * FI(k2 * C + c2, m)
                                              * Q(k2, ind);
+                                w(cc, k12) /= H1 * H2;
                                 if(c1 != c2) w(cc, k12) *= 2;
                                 norm += w(cc, k12);
                             }
@@ -104,10 +107,10 @@ inline double Admixture::runNaiveWithBigAss(int ind, const std::unique_ptr<BigAs
                         for(k2 = 0; k2 < K; k2++)
                         {
                             k12 = k1 * K + k2;
-                            Ekg(ind * K + k1, m) += w(cc, k12);
-                            Ekg(ind * K + k2, m) += w(cc, k12);
-                            iEkc(k1 * C + c1, s) += w(cc, k12);
-                            iEkc(k2 * C + c2, s) += w(cc, k12);
+                            Ekg(ind * K + k1, m) += w(cc, k12) ;
+                            Ekg(ind * K + k2, m) += w(cc, k12) ;
+                            iEkc(k1 * C + c1, s) += w(cc, k12) ;
+                            iEkc(k2 * C + c2, s) += w(cc, k12) ;
                         }
                     }
                     ++cc;
