@@ -16,7 +16,7 @@ using namespace std;
 
 using pars = std::tuple<MyFloat1D, MyFloat1D, MyFloat1D>;
 
-auto make_input_per_chunk(filesystem::path outdir,
+auto make_input_per_chunk(filesystem::path out,
                           const std::unique_ptr<BigAss> & genome,
                           const int ic,
                           const int niters,
@@ -26,7 +26,7 @@ auto make_input_per_chunk(filesystem::path outdir,
     auto transRate = calc_transRate(genome->pos[ic], genome->C);
     nofaith.runWithOneThread(niters, genome->gls[ic], transRate);
     write_bcf_genotype_probability(nofaith.GP.data(), genome->chrs[ic], genome->pos[ic], genome->sampleids,
-                                   outdir / string("chunk." + to_string(ic) + ".vcf.gz"));
+                                   out.string() + string("chunk." + to_string(ic) + ".vcf.gz"));
     return std::tuple(MyFloat1D(nofaith.PI.data(), nofaith.PI.data() + nofaith.PI.size()),
                       MyFloat1D(nofaith.F.data(), nofaith.F.data() + nofaith.F.size()),
                       MyFloat1D(transRate.data(), transRate.data() + transRate.size()));
@@ -51,7 +51,8 @@ int main(int argc, char * argv[])
                   << "     -I      maximum iterations of imputation [40]\n"
                   << "     -k      number of ancestry in admixture model\n"
                   << "     -n      number of threads\n"
-                  << "     -o      output directory\n"
+                  << "     -o      output prefix\n"
+                  << "     -p      print out log to screen [0]\n"
                   << "     -P      run phasing/imputation only [0]\n"
                   << "     -r      region in vcf/bcf to subset\n"
                   << "     -s      number of sites of each chunk [100000]\n"
@@ -61,10 +62,10 @@ int main(int argc, char * argv[])
         return 1;
     }
 
-    filesystem::path outdir, in_beagle, in_vcf, in_bin;
+    filesystem::path out, in_beagle, in_vcf, in_bin;
     string samples = "-", region = "";
-    int chunksize{100000}, accel{1}, phase_only{0}, K{1}, C{0}, nadmix{1000}, nphase{40}, nthreads{4},
-        seed{1};
+    int chunksize{100000}, accel{1}, phase_only{0}, K{1}, C{0}, nadmix{1000}, nphase{40}, nthreads{4};
+    int seed{1}, isscreen{0};
     double qtol{1e-6}, diff;
     for(size_t i = 0; i < args.size(); i++)
     {
@@ -73,11 +74,12 @@ int main(int argc, char * argv[])
         if(args[i] == "-c") C = stoi(args[++i]);
         if(args[i] == "-k") K = stoi(args[++i]);
         if(args[i] == "-f") in_vcf = args[++i];
-        if(args[i] == "-o") outdir.assign(args[++i]);
+        if(args[i] == "-o") out.assign(args[++i]);
         if(args[i] == "-g") in_beagle.assign(args[++i]);
         if(args[i] == "-i") nadmix = stoi(args[++i]);
         if(args[i] == "-I") nphase = stoi(args[++i]);
         if(args[i] == "-n") nthreads = stoi(args[++i]);
+        if(args[i] == "-p") isscreen = stoi(args[++i]);
         if(args[i] == "-P") phase_only = stoi(args[++i]);
         if(args[i] == "-r") region = args[++i];
         if(args[i] == "-s") chunksize = stoi(args[++i]);
@@ -85,20 +87,8 @@ int main(int argc, char * argv[])
         if(args[i] == "-seed") seed = stoi(args[++i]);
     }
 
-    if(!outdir.empty())
-    {
-        assert((K > 0) && (C > 0) && (C > K));
-        filesystem::create_directories(outdir);
-    }
-    else if(!in_bin.empty())
-    {
-        assert(K > 0);
-        outdir = in_bin.parent_path();
-    }
-    else
-        throw invalid_argument("please check the input and output options\n");
-
-    Logger cao(outdir / string("phaseless.k" + to_string(K) + ".log"));
+    Logger cao(out.string() + "phaseless.log");
+    cao.is_screen = isscreen;
     cao.cao << "Options in effect:\n";
     for(size_t i = 0; i < args.size(); i++) // print out options in effect
         i % 2 ? cao.cao << args[i] + "\n" : cao.cao << "  " + args[i] + " ";
@@ -124,8 +114,7 @@ int main(int argc, char * argv[])
         vector<future<pars>> res;
         int ic;
         for(ic = 0; ic < genome->nchunks; ic++)
-            res.emplace_back(
-                poolit.enqueue(make_input_per_chunk, outdir, std::ref(genome), ic, nphase, seed));
+            res.emplace_back(poolit.enqueue(make_input_per_chunk, out, std::ref(genome), ic, nphase, seed));
         ic = 0;
         for(auto && ll : res)
         {
@@ -136,10 +125,10 @@ int main(int argc, char * argv[])
             cao.print(tm.date(), "chunk", ic++, " imputation done and outputting");
         }
         res.clear(); // clear future and renew
-        std::ofstream ofs(outdir / "pars.bin", std::ios::out | std::ios::binary);
+        std::ofstream ofs(out.string() + "pars.bin", std::ios::out | std::ios::binary);
         auto bytes_written = alpaca::serialize<OPTIONS, BigAss>(*genome, ofs);
         ofs.close();
-        assert(std::filesystem::file_size(outdir / "pars.bin") == bytes_written);
+        assert(std::filesystem::file_size(out.string() + "pars.bin") == bytes_written);
         cao.done(tm.date(), "imputation done and outputting.", bytes_written, " bytes written to file");
     }
     else
@@ -236,7 +225,7 @@ int main(int argc, char * argv[])
         }
     }
     cao.done(tm.date(), "admixture done and outputting");
-    admixer.writeQ(outdir / string("admixture.k" + to_string(K) + ".Q"));
+    admixer.writeQ(out.string() + "admixture.Q");
     cao.done(tm.date(), "-> good job. have a nice day, bye!");
 
     return 0;

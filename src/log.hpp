@@ -58,42 +58,54 @@ class Logger
     template<typename... Args>
     void print(const Args &... args)
     {
-        std::cout.precision(3);
-        std::cout.flags(std::ios::fixed | std::ios::right);
-        (..., printSpace(std::cout, args));
-        std::cout << std::endl;
         (..., printSpace(cao, args));
         cao << std::endl;
+        if(is_screen)
+        {
+            std::cout.precision(3);
+            std::cout.flags(std::ios::fixed | std::ios::right);
+            (..., printSpace(std::cout, args));
+            std::cout << std::endl;
+        }
     }
 
     template<typename... Args>
     void warn(const Args &... args)
     {
-        std::cout << "\x1B[33m";
-        (..., printSpace(std::cout, args));
-        std::cout << "\033[0m" << std::endl;
         (..., printSpace(cao, args));
         cao << std::endl;
+        if(is_screen)
+        {
+            std::cout << "\x1B[33m";
+            (..., printSpace(std::cout, args));
+            std::cout << "\033[0m" << std::endl;
+        }
     }
 
     template<typename... Args>
     void error(const Args &... args)
     {
-        std::cout << "\x1B[31m";
-        (..., printSpace(std::cout, args));
-        std::cout << "\033[0m" << std::endl;
         (..., printSpace(cao, args));
         cao << std::endl;
+        if(is_screen)
+        {
+            std::cout << "\x1B[31m";
+            (..., printSpace(std::cout, args));
+            std::cout << "\033[0m" << std::endl;
+        }
     }
 
     template<typename... Args>
     void done(const Args &... args)
     {
-        std::cout << "\x1B[32m";
-        (..., printSpace(std::cout, args));
-        std::cout << "\033[0m" << std::endl;
         (..., printSpace(cao, args));
         cao << std::endl;
+        if(is_screen)
+        {
+            std::cout << "\x1B[32m";
+            (..., printSpace(std::cout, args));
+            std::cout << "\033[0m" << std::endl;
+        }
     }
 };
 
