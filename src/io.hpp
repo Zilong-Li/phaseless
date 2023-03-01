@@ -73,7 +73,7 @@ inline IntVec1D write_bcf_genotype_probability(MyFloat * GP,
         var.setINFO("INFO", info);
         var.setINFO("EAF", eaf);
         bw.writeRecord(var);
-        if(infotol > 0 && info > infotol) idx2rm.push_back(m);
+        if(infotol > 0 && info < infotol) idx2rm.push_back(m);
     }
     return idx2rm;
 }
@@ -340,17 +340,12 @@ inline void chunk_beagle_genotype_likelihoods(const std::unique_ptr<BigAss> & ge
     }
 }
 
-inline void thin_bigass(int ichunk,
-                        const IntVec1D & idx2rm,
-                        const std::unique_ptr<BigAss> & genome,
-                        MyArr2D & PI,
-                        MyArr2D & F,
-                        MyArr2D & transRate)
+inline auto thin_bigass_per_chunk(int ic, const IntVec1D & idx2rm, const std::unique_ptr<BigAss> & genome)
 {
     if(!idx2rm.empty())
     {
         IntVec1D idx2keep;
-        int M = genome->pos[ichunk].size();
+        int M = genome->pos[ic].size();
         for(int i = 0, j = 0; i < M; i++)
         {
             if(idx2rm[j] == i)
@@ -358,29 +353,23 @@ inline void thin_bigass(int ichunk,
             else
                 idx2keep.push_back(i);
         }
-        PI = PI(idx2keep, Eigen::all);
-        F = F(idx2keep, Eigen::all);
-        transRate = transRate(Eigen::all, idx2keep);
         int im = idx2keep.size();
         MyFloat1D gls(genome->nsamples * im * 3);
         for(int i = 0; i < genome->nsamples; i++)
         {
             for(int j = 0; j < im; j++)
             {
-                gls[i * im * 3 + 0 * im + j] = genome->gls[ichunk][i * M * 3 + 0 * M + idx2keep[j]];
-                gls[i * im * 3 + 1 * im + j] = genome->gls[ichunk][i * M * 3 + 1 * M + idx2keep[j]];
-                gls[i * im * 3 + 2 * im + j] = genome->gls[ichunk][i * M * 3 + 2 * M + idx2keep[j]];
+                gls[i * im * 3 + 0 * im + j] = genome->gls[ic][i * M * 3 + 0 * M + idx2keep[j]];
+                gls[i * im * 3 + 1 * im + j] = genome->gls[ic][i * M * 3 + 1 * M + idx2keep[j]];
+                gls[i * im * 3 + 2 * im + j] = genome->gls[ic][i * M * 3 + 2 * M + idx2keep[j]];
             }
         }
-        genome->gls[ichunk] = gls;
+        genome->gls[ic] = gls;
         IntVec1D pos(im);
-        for(int j = 0; j < im; j++) pos[j] = genome->pos[ichunk][idx2keep[j]];
-        genome->pos[ichunk] = pos;
-        genome->nsnps -= idx2rm.size();
+        for(int j = 0; j < im; j++) pos[j] = genome->pos[ic][idx2keep[j]];
+        genome->pos[ic] = pos;
     }
-    genome->transRate.emplace_back(MyFloat1D(transRate.data(), transRate.data() + transRate.size()));
-    genome->PI.emplace_back(MyFloat1D(PI.data(), PI.data() + PI.size()));
-    genome->F.emplace_back(MyFloat1D(F.data(), F.data() + F.size()));
+    return idx2rm.size();
 }
 
 #endif // PHASELESS_IO_H_

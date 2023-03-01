@@ -42,7 +42,6 @@ int main(int argc, char * argv[])
     filesystem::path outdir, in_beagle, in_vcf, in_bin;
     std::string samples = "-", region = "";
     int C{0}, niters{40}, nthreads{4}, seed{1}, chunksize{100000};
-    double info{0};
     for(size_t i = 0; i < args.size(); i++)
     {
         if(args[i] == "-c") C = stoi(args[++i]);
@@ -113,10 +112,12 @@ int main(int argc, char * argv[])
             nofaith.updateIteration();
         }
         tm.clock();
-        auto idx2rm = write_bcf_genotype_probability(
-            nofaith.GP.data(), genome->chrs[ic], genome->pos[ic], genome->sampleids,
-            outdir / string("chunk." + to_string(ic) + ".vcf.gz"), info);
-        thin_bigass(ic, idx2rm, genome, nofaith.PI, nofaith.F, transRate);
+        write_bcf_genotype_probability(nofaith.GP.data(), genome->chrs[ic], genome->pos[ic],
+                                       genome->sampleids,
+                                       outdir / string("chunk." + to_string(ic) + ".vcf.gz"));
+        genome->transRate.emplace_back(MyFloat1D(transRate.data(), transRate.data() + transRate.size()));
+        genome->PI.emplace_back(MyFloat1D(nofaith.PI.data(), nofaith.PI.data() + nofaith.PI.size()));
+        genome->F.emplace_back(MyFloat1D(nofaith.F.data(), nofaith.F.data() + nofaith.F.size()));
         cao.done(tm.date(), "chunk", ic, "done. outputting ", tm.reltime(), " secs");
     }
     constexpr auto OPTIONS = alpaca::options::fixed_length_encoding;

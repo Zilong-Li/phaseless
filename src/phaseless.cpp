@@ -15,6 +15,32 @@
 using namespace std;
 
 using pars = std::tuple<MyFloat1D, MyFloat1D, MyFloat1D>;
+using pars2 = std::tuple<int, MyFloat1D, MyFloat1D, MyFloat1D>;
+
+auto filter_input_per_chunk(filesystem::path out,
+                            const std::unique_ptr<BigAss> & genome,
+                            const int ic,
+                            const int niters,
+                            const int seed,
+                            const double info)
+{
+    int nsnp2rm{0};
+    {
+        FastPhaseK2 nofaith(genome->nsamples, genome->pos[ic].size(), genome->C, seed);
+        auto transRate = calc_transRate(genome->pos[ic], genome->C);
+        nofaith.runWithOneThread(niters, genome->gls[ic], transRate);
+        auto idx2rm = write_bcf_genotype_probability(
+            nofaith.GP.data(), genome->chrs[ic], genome->pos[ic], genome->sampleids,
+            out.string() + string("chunk." + to_string(ic) + ".vcf.gz"), info);
+        nsnp2rm = thin_bigass_per_chunk(ic, idx2rm, genome);
+    }
+    FastPhaseK2 faith(genome->nsamples, genome->pos[ic].size(), genome->C, seed);
+    auto transRate = calc_transRate(genome->pos[ic], genome->C);
+    faith.runWithOneThread(niters, genome->gls[ic], transRate);
+    return std::tuple(nsnp2rm, MyFloat1D(faith.PI.data(), faith.PI.data() + faith.PI.size()),
+                      MyFloat1D(faith.F.data(), faith.F.data() + faith.F.size()),
+                      MyFloat1D(transRate.data(), transRate.data() + transRate.size()));
+}
 
 auto make_input_per_chunk(filesystem::path out,
                           const std::unique_ptr<BigAss> & genome,
@@ -56,6 +82,7 @@ int main(int argc, char * argv[])
                   << "     -P      run phasing/imputation only [0]\n"
                   << "     -r      region in vcf/bcf to subset\n"
                   << "     -s      number of sites of each chunk [100000]\n"
+                  << "     -info   filter and re-impute sites with low info [0]\n"
                   << "     -qtol   tolerance of stopping criteria [1e-6]\n"
                   << "     -seed   for reproducing results [1]\n"
                   << std::endl;
@@ -66,7 +93,7 @@ int main(int argc, char * argv[])
     string samples = "-", region = "";
     int chunksize{100000}, accel{1}, phase_only{0}, K{1}, C{0}, nadmix{1000}, nphase{40}, nthreads{4};
     int seed{1}, isscreen{0};
-    double qtol{1e-6}, diff;
+    double qtol{1e-6}, diff, info{0};
     for(size_t i = 0; i < args.size(); i++)
     {
         if(args[i] == "-a") accel = stoi(args[++i]);
@@ -83,6 +110,7 @@ int main(int argc, char * argv[])
         if(args[i] == "-P") phase_only = stoi(args[++i]);
         if(args[i] == "-r") region = args[++i];
         if(args[i] == "-s") chunksize = stoi(args[++i]);
+        if(args[i] == "-info") info = stod(args[++i]);
         if(args[i] == "-qtol") qtol = stod(args[++i]);
         if(args[i] == "-seed") seed = stoi(args[++i]);
     }
@@ -111,20 +139,42 @@ int main(int argc, char * argv[])
         cao.print(tm.date(), "parsing input -> C =", genome->C, ", N =", genome->nsamples,
                   ", M =", genome->nsnps, ", nchunks =", genome->nchunks);
         cao.done(tm.date(), "elapsed time for parsing beagle file", std::fixed, tm.reltime(), " secs");
-        vector<future<pars>> res;
-        int ic;
-        for(ic = 0; ic < genome->nchunks; ic++)
-            res.emplace_back(poolit.enqueue(make_input_per_chunk, out, std::ref(genome), ic, nphase, seed));
-        ic = 0;
-        for(auto && ll : res)
+        if(info > 0)
         {
-            const auto [PI, F, transRate] = ll.get();
-            genome->PI.emplace_back(PI);
-            genome->F.emplace_back(F);
-            genome->transRate.emplace_back(transRate);
-            cao.print(tm.date(), "chunk", ic++, " imputation done and outputting");
+            cao.warn(tm.date(), "-info", info, " is applied, which will do two rounds imputation");
+            vector<future<pars2>> res;
+            for(int ic = 0; ic < genome->nchunks; ic++)
+                res.emplace_back(
+                    poolit.enqueue(filter_input_per_chunk, out, std::ref(genome), ic, nphase, seed, info));
+            int ic = 0;
+            for(auto && ll : res)
+            {
+                const auto [n, PI, F, transRate] = ll.get();
+                cao.error(genome->nsnps);
+                genome->nsnps -= n;
+                cao.error(genome->nsnps);
+                genome->PI.emplace_back(PI);
+                genome->F.emplace_back(F);
+                genome->transRate.emplace_back(transRate);
+                cao.print(tm.date(), "chunk", ic++, " imputation done and outputting");
+            }
         }
-        res.clear(); // clear future and renew
+        else
+        {
+            vector<future<pars>> res;
+            for(int ic = 0; ic < genome->nchunks; ic++)
+                res.emplace_back(
+                    poolit.enqueue(make_input_per_chunk, out, std::ref(genome), ic, nphase, seed));
+            int ic = 0;
+            for(auto && ll : res)
+            {
+                const auto [PI, F, transRate] = ll.get();
+                genome->PI.emplace_back(PI);
+                genome->F.emplace_back(F);
+                genome->transRate.emplace_back(transRate);
+                cao.print(tm.date(), "chunk", ic++, " imputation done and outputting");
+            }
+        }
         std::ofstream ofs(out.string() + "pars.bin", std::ios::out | std::ios::binary);
         auto bytes_written = alpaca::serialize<OPTIONS, BigAss>(*genome, ofs);
         ofs.close();
@@ -132,8 +182,7 @@ int main(int argc, char * argv[])
         cao.done(tm.date(), "imputation done and outputting.", bytes_written, " bytes written to file");
     }
     else
-    {
-        // Deserialize from file
+    { // Deserialize from file
         auto filesize = std::filesystem::file_size(in_bin);
         std::error_code ec;
         std::ifstream ifs(in_bin, std::ios::in | std::ios::binary);
