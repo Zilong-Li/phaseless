@@ -55,6 +55,7 @@ int main(int argc, char * argv[])
                   << "     -P      run phasing/imputation only [0]\n"
                   << "     -r      region in vcf/bcf to subset\n"
                   << "     -s      number of sites of each chunk [100000]\n"
+                  << "     -qtol   tolerance of stopping criteria [1e-6]\n"
                   << "     -seed   for reproducing results [1]\n"
                   << std::endl;
         return 1;
@@ -80,6 +81,7 @@ int main(int argc, char * argv[])
         if(args[i] == "-P") phase_only = stoi(args[++i]);
         if(args[i] == "-r") region = args[++i];
         if(args[i] == "-s") chunksize = stoi(args[++i]);
+        if(args[i] == "-qtol") qtol = stod(args[++i]);
         if(args[i] == "-seed") seed = stoi(args[++i]);
     }
 
