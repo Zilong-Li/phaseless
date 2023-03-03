@@ -13,7 +13,7 @@
 a.*
 t.*
 a-*
-.cache
+*cache
 tmp/
 *.bin
 *.o

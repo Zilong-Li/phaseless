@@ -19,7 +19,7 @@ class Admixture
     Admixture(int n, int m, int c, int k, int seed);
     ~Admixture();
     const int N, M, C, K; // C2 = C x C
-    MyArr2D FI; // (C x K) x M
+    MyArr2D F; // (C x K) x M
     MyArr2D Q; // K x N
     MyArr2D Ekg; // (M x K) x N, expected number of alleles per k per n
     MyArr2D Ekc; // (C * K) x M, expected number of alleles per c per k
@@ -37,7 +37,7 @@ inline Admixture::Admixture(int n, int m, int c, int k, int seed) : N(n), M(m), 
 {
     auto rng = std::default_random_engine{};
     rng.seed(seed);
-    FI = RandomUniform<MyArr2D, std::default_random_engine>(C * K, M, rng, 0.05, 0.95);
+    F = RandomUniform<MyArr2D, std::default_random_engine>(C * K, M, rng, 0.05, 0.95);
     Q = RandomUniform<MyArr2D, std::default_random_engine>(K, N, rng, 0.05, 0.95);
 }
 
@@ -63,11 +63,11 @@ inline double Admixture::runNaiveWithBigAss(int ind, const std::unique_ptr<BigAs
         {
             for(norm = 0, cc = 0, c1 = 0; c1 < C; c1++)
             {
-                auto H1 = (Q.col(ind) * FI(Eigen::seqN(c1, K, C), m)).sum();
+                auto H1 = (Q.col(ind) * F(Eigen::seqN(c1, K, C), m)).sum();
                 for(c2 = c1; c2 < C; c2++)
                 {
                     c12 = c1 * C + c2;
-                    auto H2 = (Q.col(ind) * FI(Eigen::seqN(c2, K, C), m)).sum();
+                    auto H2 = (Q.col(ind) * F(Eigen::seqN(c2, K, C), m)).sum();
                     for(k1 = 0; k1 < K; k1++)
                     {
                         for(k2 = 0; k2 < K; k2++)
@@ -76,15 +76,15 @@ inline double Admixture::runNaiveWithBigAss(int ind, const std::unique_ptr<BigAs
                             if(logscale)
                             {
                                 w(cc, k12) = log(LikeForwardInd(c12, s)) + log(LikeBackwardInd(c12, s))
-                                             + log(FI(k1 * C + c1, m)) + log(Q(k1, ind))
-                                             + log(FI(k2 * C + c2, m)) + log(Q(k2, ind));
+                                             + log(F(k1 * C + c1, m)) + log(Q(k1, ind))
+                                             + log(F(k2 * C + c2, m)) + log(Q(k2, ind));
                                 if(c1 != c2) w(cc, k12) -= log(2);
                                 norm += exp(w(cc, k12));
                             }
                             else
                             {
                                 w(cc, k12) = LikeForwardInd(c12, s) * LikeBackwardInd(c12, s)
-                                             * FI(k1 * C + c1, m) * Q(k1, ind) * FI(k2 * C + c2, m)
+                                             * F(k1 * C + c1, m) * Q(k1, ind) * F(k2 * C + c2, m)
                                              * Q(k2, ind);
                                 w(cc, k12) /= H1 * H2;
                                 if(c1 != c2) w(cc, k12) *= 2;
@@ -154,8 +154,8 @@ inline double Admixture::runOptimalWithBigAss(int ind, const std::unique_ptr<Big
         {
             for(c1 = 0; c1 < C; c1++)
             {
-                // auto Hsz = Q.col(ind) * FI.middleRows(c1 * K, K).col(m);
-                Hsz = Q.col(ind) * FI(Eigen::seqN(c1, K, C), m);
+                // auto Hsz = Q.col(ind) * F.middleRows(c1 * K, K).col(m);
+                Hsz = Q.col(ind) * F(Eigen::seqN(c1, K, C), m);
                 auto rho = (LikeForwardInd.middleRows(c1 * C, C).col(s)
                             * LikeBackwardInd.middleRows(c1 * C, C).col(s))
                                .sum();
@@ -219,7 +219,7 @@ inline double Admixture::runWithSingleChunk(int ind,
                     for(c2 = 0; c2 < C; c2++)
                     {
                         c12 = c1 * C + c2;
-                        w(c12, k12) = icluster(c12, s) * FI(k1 * C + c1, s) * Q(k1, ind) * FI(k2 * C + c2, s)
+                        w(c12, k12) = icluster(c12, s) * F(k1 * C + c1, s) * Q(k1, ind) * F(k2 * C + c2, s)
                                       * Q(k2, ind);
                         norm += w(c12, k12);
                     }
@@ -266,11 +266,11 @@ inline void Admixture::initIteration(double tol)
     Q = (Q > 1 - tol).select(1 - tol, Q); // upper bound
     Q.rowwise() /= Q.colwise().sum(); // normalize Q per individual
 
-    if(FI.isNaN().any()) throw std::runtime_error("NaN in FI\n");
-    FI = (FI < tol).select(tol, FI); // lower bound
-    FI = (FI > 1 - tol).select(1 - tol, FI); // upper bound
-    for(int k = 0; k < K; k++) // normalize FI per snp per k
-        FI.middleRows(k * C, C).rowwise() /= FI.middleRows(k * C, C).colwise().sum();
+    if(F.isNaN().any()) throw std::runtime_error("NaN in F\n");
+    F = (F < tol).select(tol, F); // lower bound
+    F = (F > 1 - tol).select(1 - tol, F); // upper bound
+    for(int k = 0; k < K; k++) // normalize F per snp per k
+        F.middleRows(k * C, C).rowwise() /= F.middleRows(k * C, C).colwise().sum();
 
     Ekg.setZero(N * K, M);
     Ekc.setZero(C * K, M);
@@ -279,9 +279,9 @@ inline void Admixture::initIteration(double tol)
 
 inline void Admixture::updateIteration()
 {
-    for(int k = 0; k < K; k++) FI.middleRows(k * C, C) = Ekc.middleRows(k * C, C).rowwise() / NormF.row(k);
-    // for(int k = 0; k < K; k++) std::cout << FI.middleRows(k * C, C).sum() << "\n";
-    // for(int k = 0; k < K; k++) std::cout << FI.middleRows(k * C, C).colwise().sum() << "\n";
+    for(int k = 0; k < K; k++) F.middleRows(k * C, C) = Ekc.middleRows(k * C, C).rowwise() / NormF.row(k);
+    // for(int k = 0; k < K; k++) std::cout << F.middleRows(k * C, C).sum() << "\n";
+    // for(int k = 0; k < K; k++) std::cout << F.middleRows(k * C, C).colwise().sum() << "\n";
 }
 
 inline void Admixture::writeQ(std::string out)

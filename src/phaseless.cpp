@@ -150,9 +150,7 @@ int main(int argc, char * argv[])
             for(auto && ll : res)
             {
                 const auto [n, PI, F, transRate] = ll.get();
-                cao.error(genome->nsnps);
                 genome->nsnps -= n;
-                cao.error(genome->nsnps);
                 genome->PI.emplace_back(PI);
                 genome->F.emplace_back(F);
                 genome->transRate.emplace_back(transRate);
@@ -201,14 +199,14 @@ int main(int argc, char * argv[])
     vector<future<double>> llike;
     if(accel)
     {
-        MyArr2D FI0, Q0, FI1, Q1;
+        MyArr2D F0, Q0, F1, Q1;
         const int istep{4};
         double alpha, stepMax{4}, alphaMax{1280};
         for(int it = 0; it < nadmix / 3; it++)
         {
             // first accel iteration
             admixer.initIteration();
-            FI0 = admixer.FI;
+            F0 = admixer.F;
             Q0 = admixer.Q;
             for(int i = 0; i < genome->nsamples; i++)
                 llike.emplace_back(
@@ -218,7 +216,7 @@ int main(int argc, char * argv[])
             admixer.updateIteration();
             // second accel iteration
             admixer.initIteration();
-            FI1 = admixer.FI;
+            F1 = admixer.F;
             Q1 = admixer.Q;
             diff = (Q1 - Q0).square().sum();
             if(diff < qtol) break;
@@ -234,15 +232,15 @@ int main(int argc, char * argv[])
             // accel iteration with steplen
             admixer.initIteration();
             alpha =
-                ((FI1 - FI0).square().sum() + (Q1 - Q0).square().sum())
-                / ((admixer.FI - 2 * FI1 + FI0).square().sum() + (admixer.Q - 2 * Q1 + Q0).square().sum());
+                ((F1 - F0).square().sum() + (Q1 - Q0).square().sum())
+                / ((admixer.F - 2 * F1 + F0).square().sum() + (admixer.Q - 2 * Q1 + Q0).square().sum());
             alpha = max(1.0, sqrt(alpha));
             if(alpha >= stepMax)
             {
                 alpha = min(stepMax, alphaMax);
                 stepMax = min(stepMax * istep, alphaMax);
             }
-            admixer.FI = FI0 + 2 * alpha * (FI1 - FI0) + alpha * alpha * (admixer.FI - 2 * FI1 + FI0);
+            admixer.F = F0 + 2 * alpha * (F1 - F0) + alpha * alpha * (admixer.F - 2 * F1 + F0);
             admixer.Q = Q0 + 2 * alpha * (Q1 - Q0) + alpha * alpha * (admixer.Q - 2 * Q1 + Q0);
             admixer.initIteration();
             for(int i = 0; i < genome->nsamples; i++)
