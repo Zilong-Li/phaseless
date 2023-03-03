@@ -66,7 +66,7 @@ int main(int argc, char * argv[])
     {
         std::cout << "Author: Zilong-Li (zilong.dk@gmail.com)\n"
                   << "Usage example:\n"
-                  << "     " + (std::string)argv[0] + " -g beagle.gz -o dir -c 10 -k 3 -n 20\n"
+                  << "     " + (std::string)argv[0] + " -g beagle.gz -o out -c 10 -k 3 -n 20\n"
                   << "\nOptions:\n"
                   << "     -a      accelerated EM with SqS3 scheme [1]\n"
                   << "     -b      input binary file with all parameters\n"

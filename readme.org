@@ -20,17 +20,17 @@ cd phaseless/src && make HTSLIB=/path/to/your/htslib -j4
 #+end_src
 
 * Usage
-- run admixture with bealge genotype likelihoods as input
+- run imputation/phasing only and create a binary input for admixture model
 #+begin_src shell
-phaseless -g data/bgl.gz -o outdir -c 10 -k 3 -n 20
+phaseless -g data/bgl.gz -o out -c 10 -n 6 -P 1
 #+end_src
 - run admixture for different =K= with same binary file as input
 #+begin_src shell
 phaseless -b outdir/pars.bin -k 9 -n 40
 #+end_src
-- run imputation/phasing only
+- run both imputation and admixture in one step
 #+begin_src shell
-phaseless -g data/bgl.gz -o outdir -c 10 -n 6 -P 1
+phaseless -g data/bgl.gz -o out -c 10 -k 3 -n 20
 #+end_src
 
 * Changes
