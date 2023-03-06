@@ -20,12 +20,12 @@ class FastPhaseK2
     ~FastPhaseK2();
 
     // SHARED VARIBALES
-    std::ofstream ofs;
     const int N, M, C, C2; // C2 = C x C
     MyArr2D GP; // genotype probabilies for all individuals, N x (M x 3)
     MyArr2D PI; // C x M
     MyArr2D F; // M x C
     MyArr2D Ek, Ekg; // MxC, MxCx2
+    MyArr2D GZP1, GZP2; // M x C
 
     void initIteration(double tol = 1e-6);
     void updateIteration();
@@ -43,6 +43,8 @@ inline FastPhaseK2::FastPhaseK2(int n, int m, int c, int seed) : N(n), M(m), C(c
     PI = MyArr2D::Ones(C, M);
     PI.rowwise() /= PI.colwise().sum();
     GP.setZero();
+    GZP1.setZero(M, C);
+    GZP2.setZero(M, C);
 }
 
 inline FastPhaseK2::~FastPhaseK2() {}
@@ -91,7 +93,7 @@ inline double FastPhaseK2::forwardAndBackwards(const MyArr2D & gli,
     MyArr1D sumTmp1(C); // store sum over internal loop
     double constTmp;
     // ======== forward recursion ===========
-    int k1, k2, k12;
+    int z1, z2, z12;
     int s{0};
     LikeForwardInd.col(s) =
         emitDip.col(s) * (PI.col(s).matrix() * PI.col(s).transpose().matrix()).reshaped().array();
@@ -101,15 +103,15 @@ inline double FastPhaseK2::forwardAndBackwards(const MyArr2D & gli,
     {
         sumTmp1 = LikeForwardInd.col(s - 1).reshaped(C, C).rowwise().sum() * transRate(1, s);
         constTmp = LikeForwardInd.col(s - 1).sum() * transRate(2, s);
-        for(k1 = 0; k1 < C; k1++)
+        for(z1 = 0; z1 < C; z1++)
         {
-            for(k2 = 0; k2 < C; k2++)
+            for(z2 = 0; z2 < C; z2++)
             {
-                k12 = k1 * C + k2;
-                LikeForwardInd(k12, s) =
-                    emitDip(k12, s)
-                    * (LikeForwardInd(k12, s - 1) * transRate(0, s) + PI(k1, s) * sumTmp1(k2)
-                       + PI(k2, s) * sumTmp1(k1) + PI(k1, s) * PI(k2, s) * constTmp);
+                z12 = z1 * C + z2;
+                LikeForwardInd(z12, s) =
+                    emitDip(z12, s)
+                    * (LikeForwardInd(z12, s - 1) * transRate(0, s) + PI(z1, s) * sumTmp1(z2)
+                       + PI(z2, s) * sumTmp1(z1) + PI(z1, s) * PI(z2, s) * constTmp);
             }
         }
         cs(s) = 1 / LikeForwardInd.col(s).sum();
@@ -125,23 +127,23 @@ inline double FastPhaseK2::forwardAndBackwards(const MyArr2D & gli,
     {
         auto beta_mult_emit = emitDip.col(s + 1) * LikeBackwardInd.col(s + 1);
         sumTmp1.setZero();
-        for(constTmp = 0, k1 = 0; k1 < C; k1++)
+        for(constTmp = 0, z1 = 0; z1 < C; z1++)
         {
-            for(k2 = 0; k2 < C; k2++)
+            for(z2 = 0; z2 < C; z2++)
             {
-                k12 = k1 * C + k2;
-                sumTmp1(k1) += beta_mult_emit(k12) * PI(k2, s + 1) * transRate(1, s + 1);
-                constTmp += beta_mult_emit(k12) * PI(k1, s + 1) * PI(k2, s + 1) * transRate(2, s + 1);
+                z12 = z1 * C + z2;
+                sumTmp1(z1) += beta_mult_emit(z12) * PI(z2, s + 1) * transRate(1, s + 1);
+                constTmp += beta_mult_emit(z12) * PI(z1, s + 1) * PI(z2, s + 1) * transRate(2, s + 1);
             }
         }
-        for(k1 = 0; k1 < C; k1++)
+        for(z1 = 0; z1 < C; z1++)
         {
-            for(k2 = 0; k2 < C; k2++)
+            for(z2 = 0; z2 < C; z2++)
             {
-                k12 = k1 * C + k2;
+                z12 = z1 * C + z2;
                 // apply scaling
-                LikeBackwardInd(k12, s) =
-                    (beta_mult_emit(k12) * transRate(0, s + 1) + sumTmp1(k1) + sumTmp1(k2) + constTmp)
+                LikeBackwardInd(z12, s) =
+                    (beta_mult_emit(z12) * transRate(0, s + 1) + sumTmp1(z1) + sumTmp1(z2) + constTmp)
                     * cs(s);
             }
         }
@@ -171,20 +173,20 @@ inline double FastPhaseK2::forwardAndBackwardsLowRam(int ind,
     MyArr1D ind_post_z_col(M); // col of indPostProbsZ
     MyArr2D ind_post_z_g(M, 4); // cols of indPostProbsZandG
     LikeForwardInd *= LikeBackwardInd;
-    int g1, g2, g3, g12, k1, k2, k12;
-    for(k1 = 0; k1 < C; k1++)
+    int g1, g2, g3, g12, z1, z2, z12;
+    for(z1 = 0; z1 < C; z1++)
     {
-        for(k2 = 0; k2 < C; k2++)
+        for(z2 = 0; z2 < C; z2++)
         {
-            k12 = k1 * C + k2;
-            ind_post_z_col = LikeForwardInd.row(k12).transpose() / cs;
+            z12 = z1 * C + z2;
+            ind_post_z_col = LikeForwardInd.row(z12).transpose() / cs;
             for(g1 = 0; g1 < 2; g1++)
             {
                 for(g2 = 0; g2 < 2; g2++)
                 {
                     g12 = g1 * 2 + g2;
-                    ind_post_z_g.col(g12) = gli.col(g1 + g2) * (g1 * F.col(k1) + (1 - g1) * (1 - F.col(k1)))
-                                            * (g2 * F.col(k2) + (1 - g2) * (1 - F.col(k2)));
+                    ind_post_z_g.col(g12) = gli.col(g1 + g2) * (g1 * F.col(z1) + (1 - g1) * (1 - F.col(z1)))
+                                            * (g2 * F.col(z2) + (1 - g2) * (1 - F.col(z2)));
                 }
             }
             ind_post_z_g.colwise() *= ind_post_z_col / ind_post_z_g.rowwise().sum();
@@ -200,18 +202,25 @@ inline double FastPhaseK2::forwardAndBackwardsLowRam(int ind,
                     }
                 }
             }
-            { // for update PI and F
+            { // sum over all samples, for update PI and F
                 std::lock_guard<std::mutex> lock(mutex_it);
-                Ek.col(k1) += ind_post_z_col;
-                Ek.col(k2) += ind_post_z_col;
+                Ek.col(z1) += ind_post_z_col;
+                Ek.col(z2) += ind_post_z_col;
                 for(g1 = 0; g1 < 2; g1++)
                 {
                     for(g2 = 0; g2 < 2; g2++)
                     {
                         g12 = g1 * 2 + g2;
-                        Ekg.col(k1 * 2 + g1) += ind_post_z_g.col(g12);
-                        Ekg.col(k2 * 2 + g2) += ind_post_z_g.col(g12);
+                        Ekg.col(z1 * 2 + g1) += ind_post_z_g.col(g12);
+                        Ekg.col(z2 * 2 + g2) += ind_post_z_g.col(g12);
                     }
+                }
+                if(call_geno)
+                {
+                    GZP1.col(z1) += ind_post_z_g.col(1) + ind_post_z_g.col(2);
+                    GZP1.col(z2) += ind_post_z_g.col(1) + ind_post_z_g.col(2);
+                    GZP2.col(z1) += ind_post_z_g.col(3);
+                    GZP2.col(z2) += ind_post_z_g.col(3);
                 }
             }
         }
@@ -240,20 +249,20 @@ inline auto FastPhaseK2::forwardAndBackwardsHighRam(int ind,
     MyArr2D ind_post_z_g(M, 4); // cols of indPostProbsZandG
     LikeForwardInd *= LikeBackwardInd;
     MyArr2D iEk = MyArr2D::Zero(M, C), iEkg = MyArr2D::Zero(M, C * 2); // MxC, MxCx2
-    int g1, g2, g3, g12, k1, k2, k12;
-    for(k1 = 0; k1 < C; k1++)
+    int g1, g2, g3, g12, z1, z2, z12;
+    for(z1 = 0; z1 < C; z1++)
     {
-        for(k2 = 0; k2 < C; k2++)
+        for(z2 = 0; z2 < C; z2++)
         {
-            k12 = k1 * C + k2;
-            ind_post_z_col = LikeForwardInd.row(k12).transpose() / cs;
+            z12 = z1 * C + z2;
+            ind_post_z_col = LikeForwardInd.row(z12).transpose() / cs;
             for(g1 = 0; g1 < 2; g1++)
             {
                 for(g2 = 0; g2 < 2; g2++)
                 {
                     g12 = g1 * 2 + g2;
-                    ind_post_z_g.col(g12) = gli.col(g1 + g2) * (g1 * F.col(k1) + (1 - g1) * (1 - F.col(k1)))
-                                            * (g2 * F.col(k2) + (1 - g2) * (1 - F.col(k2)));
+                    ind_post_z_g.col(g12) = gli.col(g1 + g2) * (g1 * F.col(z1) + (1 - g1) * (1 - F.col(z1)))
+                                            * (g2 * F.col(z2) + (1 - g2) * (1 - F.col(z2)));
                 }
             }
             ind_post_z_g.colwise() *= ind_post_z_col / ind_post_z_g.rowwise().sum();
@@ -270,15 +279,15 @@ inline auto FastPhaseK2::forwardAndBackwardsHighRam(int ind,
                 }
             }
             { // for update PI and F
-                iEk.col(k1) += ind_post_z_col;
-                iEk.col(k2) += ind_post_z_col;
+                iEk.col(z1) += ind_post_z_col;
+                iEk.col(z2) += ind_post_z_col;
                 for(g1 = 0; g1 < 2; g1++)
                 {
                     for(g2 = 0; g2 < 2; g2++)
                     {
                         g12 = g1 * 2 + g2;
-                        iEkg.col(k1 * 2 + g1) += ind_post_z_g.col(g12);
-                        iEkg.col(k2 * 2 + g2) += ind_post_z_g.col(g12);
+                        iEkg.col(z1 * 2 + g1) += ind_post_z_g.col(g12);
+                        iEkg.col(z2 * 2 + g2) += ind_post_z_g.col(g12);
                     }
                 }
             }
@@ -363,19 +372,19 @@ inline void FastPhaseK4::openClusterFile(std::string out)
 inline auto FastPhaseK4::callGenotypeInd(const MyArr2D & indPostProbsZandG)
 {
     MyArr1D geno = MyArr1D::Zero(M * 3);
-    int k1, k2, k12, g1, g2, g12, g3;
-    for(k1 = 0; k1 < C; k1++)
+    int z1, z2, z12, g1, g2, g12, g3;
+    for(z1 = 0; z1 < C; z1++)
     {
-        for(k2 = 0; k2 < C; k2++)
+        for(z2 = 0; z2 < C; z2++)
         {
-            k12 = k1 * C + k2;
+            z12 = z1 * C + z2;
             for(g1 = 0; g1 < 2; g1++)
             {
                 for(g2 = 0; g2 < 2; g2++)
                 {
                     g12 = g1 * 2 + g2;
                     g3 = g1 + g2;
-                    geno(Eigen::seqN(g3, M, 3)) += indPostProbsZandG.col(k12 * 4 + g12);
+                    geno(Eigen::seqN(g3, M, 3)) += indPostProbsZandG.col(z12 * 4 + g12);
                 }
             }
         }
@@ -400,16 +409,16 @@ inline double FastPhaseK4::forwardAndBackwards(int ind,
     MyArr2D logLikeBackwardInd(C2, M); // log likelihood of backward recursion for ind i
 
     // ======== forward recursion ===========
-    int k1, k2, k12, k12s, k12e;
+    int z1, z2, z12, z12s, z12e;
     double protect_me = 0; // for underflow protection
     // first site
     int s{0};
-    for(k1 = 0; k1 < C; k1++)
+    for(z1 = 0; z1 < C; z1++)
     {
-        for(k2 = 0; k2 < C; k2++)
+        for(z2 = 0; z2 < C; z2++)
         {
-            k12 = k1 * C + k2;
-            logLikeForwardInd(k12, s) = emitDip(s, k12) + PI(s, k1) * PI(s, k2);
+            z12 = z1 * C + z2;
+            logLikeForwardInd(z12, s) = emitDip(s, z12) + PI(s, z1) * PI(s, z2);
         }
     }
 
@@ -418,16 +427,16 @@ inline double FastPhaseK4::forwardAndBackwards(int ind,
     {
         // MyArr1D likeForwardTmp;
         auto likeForwardTmp = Eigen::exp(logLikeForwardInd.col(s - 1) - protect_me);
-        for(k1 = 0; k1 < C; k1++)
+        for(z1 = 0; z1 < C; z1++)
         {
-            for(k2 = 0; k2 < C; k2++)
+            for(z2 = 0; z2 < C; z2++)
             {
-                k12 = k1 * C + k2;
-                k12s = (k1 * C + k2) * C2; // fist index
-                k12e = k12s + C2 - 1; // last index
-                logLikeForwardInd(k12, s) =
-                    protect_me + emitDip(s, k12)
-                    + log((likeForwardTmp * transDip(s, Eigen::seq(k12s, k12e)).transpose()).sum());
+                z12 = z1 * C + z2;
+                z12s = (z1 * C + z2) * C2; // fist index
+                z12e = z12s + C2 - 1; // last index
+                logLikeForwardInd(z12, s) =
+                    protect_me + emitDip(s, z12)
+                    + log((likeForwardTmp * transDip(s, Eigen::seq(z12s, z12e)).transpose()).sum());
             }
         }
         // protect_me = logLikeForwardInd.row(s).maxCoeff();
@@ -445,14 +454,14 @@ inline double FastPhaseK4::forwardAndBackwards(int ind,
     {
         auto likeBackwardTmp =
             Eigen::exp(emitDip.row(s + 1).transpose() + logLikeBackwardInd.col(s + 1) - protect_me);
-        for(k1 = 0; k1 < C; k1++)
+        for(z1 = 0; z1 < C; z1++)
         {
-            for(k2 = 0; k2 < C; k2++)
+            for(z2 = 0; z2 < C; z2++)
             {
-                k12 = k1 * C + k2;
-                logLikeBackwardInd(k12, s) =
+                z12 = z1 * C + z2;
+                logLikeBackwardInd(z12, s) =
                     protect_me
-                    + log((likeBackwardTmp * transDip(s + 1, Eigen::seqN(k12, C2, C2)).transpose()).sum());
+                    + log((likeBackwardTmp * transDip(s + 1, Eigen::seqN(z12, C2, C2)).transpose()).sum());
             }
         }
         // protect_me = logLikeBackwardInd.row(s).maxCoeff();
@@ -469,25 +478,25 @@ inline double FastPhaseK4::forwardAndBackwards(int ind,
     MyArr2D indPostProbsZandG(M, C2 * 4);
     MyArr1D tmpSum(M);
     int g1, g2, g12;
-    for(k1 = 0; k1 < C; k1++)
+    for(z1 = 0; z1 < C; z1++)
     {
-        for(k2 = 0; k2 < C; k2++)
+        for(z2 = 0; z2 < C; z2++)
         {
             tmpSum.setZero();
-            k12 = k1 * C + k2;
+            z12 = z1 * C + z2;
             for(g1 = 0; g1 < 2; g1++)
             {
                 for(g2 = 0; g2 < 2; g2++)
                 {
                     g12 = g1 * 2 + g2;
-                    indPostProbsZandG.col(k12 * 4 + g12) = gli.col(g1 + g2)
-                                                           * (g1 * F.col(k1) + (1 - g1) * (1 - F.col(k1)))
-                                                           * (g2 * F.col(k2) + (1 - g2) * (1 - F.col(k2)));
-                    tmpSum += indPostProbsZandG.col(k12 * 4 + g12);
+                    indPostProbsZandG.col(z12 * 4 + g12) = gli.col(g1 + g2)
+                                                           * (g1 * F.col(z1) + (1 - g1) * (1 - F.col(z1)))
+                                                           * (g2 * F.col(z2) + (1 - g2) * (1 - F.col(z2)));
+                    tmpSum += indPostProbsZandG.col(z12 * 4 + g12);
                 }
             }
-            indPostProbsZandG.middleCols(k12 * 4, 4).colwise() *= indPostProbsZ.col(k12);
-            indPostProbsZandG.middleCols(k12 * 4, 4).colwise() /= tmpSum;
+            indPostProbsZandG.middleCols(z12 * 4, 4).colwise() *= indPostProbsZ.col(z12);
+            indPostProbsZandG.middleCols(z12 * 4, 4).colwise() /= tmpSum;
         }
     }
 
@@ -512,16 +521,16 @@ inline double FastPhaseK4::forwardAndBackwards(int ind,
 inline void FastPhaseK4::transitionCurIter(const MyArr1D & distRate)
 {
     int to1, to2, from1, from2;
-    int k4d, k2d1, k2d2;
+    int k4d, z2d1, z2d2;
     for(from1 = 0; from1 < C; from1++)
     {
         for(to1 = 0; to1 < C; to1++)
         {
-            k2d1 = from1 * C + to1;
+            z2d1 = from1 * C + to1;
             if(from1 == to1)
-                transHap.col(k2d1) = Eigen::exp(-distRate) + (1 - Eigen::exp(-distRate)) * PI.col(to1);
+                transHap.col(z2d1) = Eigen::exp(-distRate) + (1 - Eigen::exp(-distRate)) * PI.col(to1);
             else
-                transHap.col(k2d1) = (1 - Eigen::exp(-distRate)) * PI.col(to1);
+                transHap.col(z2d1) = (1 - Eigen::exp(-distRate)) * PI.col(to1);
         }
     }
 
@@ -534,9 +543,9 @@ inline void FastPhaseK4::transitionCurIter(const MyArr1D & distRate)
                 for(to2 = 0; to2 < C; to2++)
                 {
                     k4d = to2 + (to1 + (from2 + from1 * C) * C) * C;
-                    k2d1 = from1 * C + to1;
-                    k2d2 = from2 * C + to2;
-                    transDip.col(k4d) = transHap.col(k2d1) * transHap.col(k2d2);
+                    z2d1 = from1 * C + to1;
+                    z2d2 = from2 * C + to2;
+                    transDip.col(k4d) = transHap.col(z2d1) * transHap.col(z2d2);
                 }
             }
         }
@@ -545,15 +554,15 @@ inline void FastPhaseK4::transitionCurIter(const MyArr1D & distRate)
 
 inline void FastPhaseK4::updateClusterFreqPI(const MyArr2D & postProbsZ, double tol)
 {
-    int k1, k2, k12;
+    int z1, z2, z12;
     PI.setZero();
-    for(k1 = 0; k1 < C; k1++)
+    for(z1 = 0; z1 < C; z1++)
     {
-        for(k2 = 0; k2 < C; k2++)
+        for(z2 = 0; z2 < C; z2++)
         {
-            k12 = k1 * C + k2;
-            PI.col(k1) += postProbsZ.col(k12);
-            PI.col(k2) += postProbsZ.col(k12);
+            z12 = z1 * C + z2;
+            PI.col(z1) += postProbsZ.col(z12);
+            PI.col(z2) += postProbsZ.col(z12);
         }
     }
     PI /= 2 * N;
@@ -567,33 +576,30 @@ inline void FastPhaseK4::updateClusterFreqPI(const MyArr2D & postProbsZ, double 
 
 inline void FastPhaseK4::updateAlleleFreqWithinCluster(const MyArr2D & postProbsZandG, double tol)
 {
-    int k1, k2, k12, g1, g2, g12;
+    int z1, z2, z12, g1, g2, g12;
     MyArr2D Ekg = MyArr2D::Zero(M, C * 2);
-    for(k1 = 0; k1 < C; k1++)
+    for(z1 = 0; z1 < C; z1++)
     {
-        for(k2 = 0; k2 < C; k2++)
+        for(z2 = 0; z2 < C; z2++)
         {
-            k12 = k1 * C + k2;
+            z12 = z1 * C + z2;
             for(g1 = 0; g1 < 2; g1++)
             {
                 for(g2 = 0; g2 < 2; g2++)
                 {
                     g12 = g1 * 2 + g2;
-                    Ekg.col(k1 * 2 + g1) += postProbsZandG.col(k12 * 4 + g12);
-                    Ekg.col(k2 * 2 + g2) += postProbsZandG.col(k12 * 4 + g12);
+                    Ekg.col(z1 * 2 + g1) += postProbsZandG.col(z12 * 4 + g12);
+                    Ekg.col(z2 * 2 + g2) += postProbsZandG.col(z12 * 4 + g12);
                 }
             }
         }
     }
     F = Ekg(Eigen::all, Eigen::seq(1, Eigen::last, 2))
         / (Ekg(Eigen::all, Eigen::seq(1, Eigen::last, 2)) + Ekg(Eigen::all, Eigen::seq(0, Eigen::last, 2)));
-    // std::cout << F.rows() << "," << F.cols() << std::endl;
-    // std::cout << F.topRows(3) << std::endl;
     // map to domain but normalization
     if(F.isNaN().any()) throw std::runtime_error("NaN in PI\n");
     F = (F < tol).select(tol, F); // lower bound
     F = (F > 1 - tol).select(1 - tol, F); // upper bound
-    // std::cout << "updateAlleleFreqWithinCluster" << std::endl;
 }
 
 #endif // FASTPHASE_H_

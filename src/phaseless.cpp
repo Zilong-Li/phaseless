@@ -26,11 +26,11 @@ auto filter_input_per_chunk(filesystem::path out,
 {
     int nsnp2rm{0};
     {
-        FastPhaseK2 nofaith(genome->nsamples, genome->pos[ic].size(), genome->C, seed);
+        FastPhaseK2 faith(genome->nsamples, genome->pos[ic].size(), genome->C, seed);
         auto transRate = calc_transRate(genome->pos[ic], genome->C);
-        nofaith.runWithOneThread(niters, genome->gls[ic], transRate);
+        faith.runWithOneThread(niters, genome->gls[ic], transRate);
         auto idx2rm = write_bcf_genotype_probability(
-            nofaith.GP.data(), genome->chrs[ic], genome->pos[ic], genome->sampleids,
+            faith.GP.data(), genome->chrs[ic], genome->pos[ic], genome->sampleids,
             out.string() + string("chunk." + to_string(ic) + ".vcf.gz"), info);
         nsnp2rm = thin_bigass_per_chunk(ic, idx2rm, genome);
     }
@@ -48,13 +48,22 @@ auto make_input_per_chunk(filesystem::path out,
                           const int niters,
                           const int seed)
 {
-    FastPhaseK2 nofaith(genome->nsamples, genome->pos[ic].size(), genome->C, seed);
+    FastPhaseK2 faith(genome->nsamples, genome->pos[ic].size(), genome->C, seed);
     auto transRate = calc_transRate(genome->pos[ic], genome->C);
-    nofaith.runWithOneThread(niters, genome->gls[ic], transRate);
-    write_bcf_genotype_probability(nofaith.GP.data(), genome->chrs[ic], genome->pos[ic], genome->sampleids,
+    faith.runWithOneThread(niters, genome->gls[ic], transRate);
+    write_bcf_genotype_probability(faith.GP.data(), genome->chrs[ic], genome->pos[ic], genome->sampleids,
                                    out.string() + string("chunk." + to_string(ic) + ".vcf.gz"));
-    return std::tuple(MyFloat1D(nofaith.PI.data(), nofaith.PI.data() + nofaith.PI.size()),
-                      MyFloat1D(nofaith.F.data(), nofaith.F.data() + nofaith.F.size()),
+    auto eij = faith.GZP1 + faith.GZP2 * 2;
+    auto fij = faith.GZP1 + faith.GZP2 * 4;
+    MyArr2D info = 1 - (fij - eij) / (eij * (1 - eij / (2 * faith.N)));
+    info = (info < 0).select(0, info);
+    info = info.isNaN().select(1, info);
+    std::ofstream ofs(out.string() + string("chunk." + to_string(ic) + ".info"));
+    Eigen::IOFormat fmt(6, Eigen::DontAlignCols, "\t", "\n");
+    ofs << info.format(fmt) << "\n";
+    ofs.close();
+    return std::tuple(MyFloat1D(faith.PI.data(), faith.PI.data() + faith.PI.size()),
+                      MyFloat1D(faith.F.data(), faith.F.data() + faith.F.size()),
                       MyFloat1D(transRate.data(), transRate.data() + transRate.size()));
 }
 
@@ -231,9 +240,8 @@ int main(int argc, char * argv[])
                       std::fixed, tm.reltime(), " sec");
             // accel iteration with steplen
             admixer.initIteration();
-            alpha =
-                ((F1 - F0).square().sum() + (Q1 - Q0).square().sum())
-                / ((admixer.F - 2 * F1 + F0).square().sum() + (admixer.Q - 2 * Q1 + Q0).square().sum());
+            alpha = ((F1 - F0).square().sum() + (Q1 - Q0).square().sum())
+                    / ((admixer.F - 2 * F1 + F0).square().sum() + (admixer.Q - 2 * Q1 + Q0).square().sum());
             alpha = max(1.0, sqrt(alpha));
             if(alpha >= stepMax)
             {
