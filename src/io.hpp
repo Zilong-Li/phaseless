@@ -287,8 +287,7 @@ inline void read_beagle_genotype_likelihoods(const std::string & beagle,
 }
 
 inline void chunk_beagle_genotype_likelihoods(const std::unique_ptr<BigAss> & genome,
-                                              const std::string & beagle,
-                                              bool discard = false)
+                                              const std::string & beagle)
 {
     // VARIBLES
     gzFile fp = nullptr;
@@ -378,7 +377,7 @@ inline void chunk_beagle_genotype_likelihoods(const std::unique_ptr<BigAss> & ge
         buffer = original;
     }
     gzclose(fp);
-    if((!markers.empty() && discard == false) || genome->nchunks == 0)
+    if(!markers.empty())
     { // add the rest into genome
         im = markers.size();
         genome->pos.push_back(markers);
@@ -398,10 +397,6 @@ inline void chunk_beagle_genotype_likelihoods(const std::unique_ptr<BigAss> & ge
         }
         glchunk.clear();
         genome->gls.push_back(gl);
-    }
-    else
-    { // discard the rest small piece
-        genome->nsnps -= markers.size();
     }
 }
 
