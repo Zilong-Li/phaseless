@@ -33,5 +33,19 @@ phaseless -b outdir/pars.bin -k 9 -n 40
 phaseless -g data/bgl.gz -o out -c 10 -k 3 -n 20
 #+end_src
 
+* Output
+
+Without specifying the output prefix =-o=, the output filenames are as follows:
+
+#+begin_src shell
+❯ phaseless -g data/bgl.gz -n 4 -k 3 -i 10 -p 1 -c 10 && tree -L 1
+.
+├── admixture.Q
+├── all.info
+├── all.vcf.gz
+├── pars.bin
+└── phaseless.log
+#+end_src
+
 * Changes
 check out the [[file:news.org][news]] file.

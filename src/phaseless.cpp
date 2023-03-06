@@ -13,9 +13,33 @@
 #include <filesystem>
 
 using namespace std;
+using namespace vcfpp;
 
 using pars = std::tuple<MyFloat1D, MyFloat1D, MyFloat1D>;
 using pars2 = std::tuple<int, MyFloat1D, MyFloat1D, MyFloat1D>;
+
+auto make_input_per_chunk(BcfWriter & bw,
+                          std::ofstream & ofs,
+                          const std::unique_ptr<BigAss> & genome,
+                          const int ic,
+                          const int niters,
+                          const int seed)
+{
+    FastPhaseK2 faith(genome->nsamples, genome->pos[ic].size(), genome->C, seed);
+    auto transRate = calc_transRate(genome->pos[ic], genome->C);
+    faith.runWithOneThread(niters, genome->gls[ic], transRate);
+    write_bigass_to_bcf(bw, faith.GP.data(), genome->chrs[ic], genome->pos[ic]);
+    auto eij = faith.GZP1 + faith.GZP2 * 2;
+    auto fij = faith.GZP1 + faith.GZP2 * 4;
+    MyArr2D info = 1 - (fij - eij) / (eij * (1 - eij / (2 * faith.N)));
+    info = (info < 0).select(0, info);
+    // info = info.isNaN().select(1, info);
+    Eigen::IOFormat fmt(6, Eigen::DontAlignCols, "\t", "\n");
+    ofs << info.format(fmt) << "\n";
+    return std::tuple(MyFloat1D(faith.PI.data(), faith.PI.data() + faith.PI.size()),
+                      MyFloat1D(faith.F.data(), faith.F.data() + faith.F.size()),
+                      MyFloat1D(transRate.data(), transRate.data() + transRate.size()));
+}
 
 auto filter_input_per_chunk(filesystem::path out,
                             const std::unique_ptr<BigAss> & genome,
@@ -38,31 +62,6 @@ auto filter_input_per_chunk(filesystem::path out,
     auto transRate = calc_transRate(genome->pos[ic], genome->C);
     faith.runWithOneThread(niters, genome->gls[ic], transRate);
     return std::tuple(nsnp2rm, MyFloat1D(faith.PI.data(), faith.PI.data() + faith.PI.size()),
-                      MyFloat1D(faith.F.data(), faith.F.data() + faith.F.size()),
-                      MyFloat1D(transRate.data(), transRate.data() + transRate.size()));
-}
-
-auto make_input_per_chunk(filesystem::path out,
-                          const std::unique_ptr<BigAss> & genome,
-                          const int ic,
-                          const int niters,
-                          const int seed)
-{
-    FastPhaseK2 faith(genome->nsamples, genome->pos[ic].size(), genome->C, seed);
-    auto transRate = calc_transRate(genome->pos[ic], genome->C);
-    faith.runWithOneThread(niters, genome->gls[ic], transRate);
-    write_bcf_genotype_probability(faith.GP.data(), genome->chrs[ic], genome->pos[ic], genome->sampleids,
-                                   out.string() + string("chunk." + to_string(ic) + ".vcf.gz"));
-    auto eij = faith.GZP1 + faith.GZP2 * 2;
-    auto fij = faith.GZP1 + faith.GZP2 * 4;
-    MyArr2D info = 1 - (fij - eij) / (eij * (1 - eij / (2 * faith.N)));
-    info = (info < 0).select(0, info);
-    info = info.isNaN().select(1, info);
-    std::ofstream ofs(out.string() + string("chunk." + to_string(ic) + ".info"));
-    Eigen::IOFormat fmt(6, Eigen::DontAlignCols, "\t", "\n");
-    ofs << info.format(fmt) << "\n";
-    ofs.close();
-    return std::tuple(MyFloat1D(faith.PI.data(), faith.PI.data() + faith.PI.size()),
                       MyFloat1D(faith.F.data(), faith.F.data() + faith.F.size()),
                       MyFloat1D(transRate.data(), transRate.data() + transRate.size()));
 }
@@ -148,6 +147,8 @@ int main(int argc, char * argv[])
         cao.print(tm.date(), "parsing input -> C =", genome->C, ", N =", genome->nsamples,
                   ", M =", genome->nsnps, ", nchunks =", genome->nchunks);
         cao.done(tm.date(), "elapsed time for parsing beagle file", std::fixed, tm.reltime(), " secs");
+        auto bw = make_bcfwriter(out.string() + "all.vcf.gz", genome->chrs, genome->sampleids);
+        std::ofstream oinfo(out.string() + "all.info");
         if(info > 0)
         {
             cao.warn(tm.date(), "-info", info, " is applied, which will do two rounds imputation");
@@ -170,8 +171,8 @@ int main(int argc, char * argv[])
         {
             vector<future<pars>> res;
             for(int ic = 0; ic < genome->nchunks; ic++)
-                res.emplace_back(
-                    poolit.enqueue(make_input_per_chunk, out, std::ref(genome), ic, nphase, seed));
+                res.emplace_back(poolit.enqueue(make_input_per_chunk, std::ref(bw), std::ref(oinfo),
+                                                std::ref(genome), ic, nphase, seed));
             int ic = 0;
             for(auto && ll : res)
             {

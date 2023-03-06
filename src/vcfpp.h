@@ -859,6 +859,12 @@ class BcfRecord
         bcf_update_alleles_str(header.hdr, line, alleles_string);
     }
 
+    /** @brief modify CHROM value */
+    inline void setCHR(const char * chr)
+    {
+        line->rid = bcf_hdr_name2id(header.hdr, chr);
+    }
+
     /** @brief modify position given 1-based value */
     inline void setPOS(int64_t p)
     {
