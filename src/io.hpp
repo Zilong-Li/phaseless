@@ -24,7 +24,7 @@ inline auto make_bcfwriter(std::string vcfout, const StringVec1D & chrs, const S
 }
 
 inline void write_bigass_to_bcf(vcfpp::BcfWriter & bw,
-                                MyFloat * GP,
+                                const MyFloat * GP,
                                 std::string chr,
                                 const IntVec1D & markers)
 {
@@ -315,6 +315,7 @@ inline void chunk_beagle_genotype_likelihoods(const std::unique_ptr<BigAss> & ge
     genome->nchunks = 0;
     bool samechr;
     int i, j, im, isnp{0};
+    IntVec1D chr_ends;
     while(zlgets(fp, &buffer, &bufsize))
     {
         if(buffer != original) original = buffer;
@@ -363,6 +364,7 @@ inline void chunk_beagle_genotype_likelihoods(const std::unique_ptr<BigAss> & ge
             genome->gls.push_back(gl);
             if((isnp % genome->chunksize != 0) && samechr == false)
             {
+                chr_ends.push_back(genome->nchunks - 1);
                 markers.push_back(std::stoi(pos));
                 glchunk.push_back(gli);
                 isnp = 1;
@@ -397,7 +399,9 @@ inline void chunk_beagle_genotype_likelihoods(const std::unique_ptr<BigAss> & ge
         }
         glchunk.clear();
         genome->gls.push_back(gl);
+        chr_ends.push_back(genome->nchunks - 1);
     }
+    // now evenly split last two chunks of each chromosome
 }
 
 inline auto thin_bigass_per_chunk(int ic, const IntVec1D & idx2rm, const std::unique_ptr<BigAss> & genome)

@@ -1190,7 +1190,17 @@ class BcfReader
  **/
 class BcfWriter
 {
+  private:
+    htsFile * fp = NULL; // hts file
+    int ret;
+    bcf1_t * b = bcf_init();
+    kstring_t s = {0, 0, NULL}; // kstring
+    bool isHeaderWritten = false;
+
   public:
+    /// header object initialized by initalHeader
+    BcfHeader header;
+
     /// Construct an empty BcfWriter
     BcfWriter() {}
 
@@ -1342,15 +1352,6 @@ class BcfWriter
             return true;
     }
 
-    /// header object initialized by initalHeader
-    BcfHeader header;
-
-  private:
-    htsFile * fp = NULL; // hts file
-    int ret;
-    bcf1_t * b = bcf_init();
-    kstring_t s = {0, 0, NULL}; // kstring
-    bool isHeaderWritten = false;
 };
 
 } // namespace vcfpp

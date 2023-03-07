@@ -15,12 +15,10 @@
 using namespace std;
 using namespace vcfpp;
 
-using pars = std::tuple<MyFloat1D, MyFloat1D, MyFloat1D>;
+using pars = std::tuple<MyArr2D, MyFloat1D, MyFloat1D, MyFloat1D, MyFloat1D>;
 using pars2 = std::tuple<int, MyFloat1D, MyFloat1D, MyFloat1D>;
 
-auto make_input_per_chunk(BcfWriter & bw,
-                          std::ofstream & ofs,
-                          const std::unique_ptr<BigAss> & genome,
+auto make_input_per_chunk(const std::unique_ptr<BigAss> & genome,
                           const int ic,
                           const int niters,
                           const int seed)
@@ -28,15 +26,13 @@ auto make_input_per_chunk(BcfWriter & bw,
     FastPhaseK2 faith(genome->nsamples, genome->pos[ic].size(), genome->C, seed);
     auto transRate = calc_transRate(genome->pos[ic], genome->C);
     faith.runWithOneThread(niters, genome->gls[ic], transRate);
-    write_bigass_to_bcf(bw, faith.GP.data(), genome->chrs[ic], genome->pos[ic]);
     auto eij = faith.GZP1 + faith.GZP2 * 2;
     auto fij = faith.GZP1 + faith.GZP2 * 4;
-    MyArr2D info = 1 - (fij - eij) / (eij * (1 - eij / (2 * faith.N)));
-    info = (info < 0).select(0, info);
-    // info = info.isNaN().select(1, info);
-    Eigen::IOFormat fmt(6, Eigen::DontAlignCols, "\t", "\n");
-    ofs << info.format(fmt) << "\n";
-    return std::tuple(MyFloat1D(faith.PI.data(), faith.PI.data() + faith.PI.size()),
+    MyArr2D Info = 1 - (fij - eij) / (eij * (1 - eij / (2 * faith.N)));
+    Info = (Info < 0).select(0, Info);
+    // Info = Info.isNaN().select(1, Info);
+    return std::tuple(Info, MyFloat1D(faith.GP.data(), faith.GP.data() + faith.GP.size()),
+                      MyFloat1D(faith.PI.data(), faith.PI.data() + faith.PI.size()),
                       MyFloat1D(faith.F.data(), faith.F.data() + faith.F.size()),
                       MyFloat1D(transRate.data(), transRate.data() + transRate.size()));
 }
@@ -147,8 +143,6 @@ int main(int argc, char * argv[])
         cao.print(tm.date(), "parsing input -> C =", genome->C, ", N =", genome->nsamples,
                   ", M =", genome->nsnps, ", nchunks =", genome->nchunks);
         cao.done(tm.date(), "elapsed time for parsing beagle file", std::fixed, tm.reltime(), " secs");
-        auto bw = make_bcfwriter(out.string() + "all.vcf.gz", genome->chrs, genome->sampleids);
-        std::ofstream oinfo(out.string() + "all.info");
         if(info > 0)
         {
             cao.warn(tm.date(), "-info", info, " is applied, which will do two rounds imputation");
@@ -170,16 +164,20 @@ int main(int argc, char * argv[])
         else
         {
             vector<future<pars>> res;
+            auto bw = make_bcfwriter(out.string() + "all.vcf.gz", genome->chrs, genome->sampleids);
+            std::ofstream oinfo(out.string() + "all.info");
+            Eigen::IOFormat fmt(6, Eigen::DontAlignCols, "\t", "\n");
             for(int ic = 0; ic < genome->nchunks; ic++)
-                res.emplace_back(poolit.enqueue(make_input_per_chunk, std::ref(bw), std::ref(oinfo),
-                                                std::ref(genome), ic, nphase, seed));
+                res.emplace_back(poolit.enqueue(make_input_per_chunk, std::ref(genome), ic, nphase, seed));
             int ic = 0;
             for(auto && ll : res)
             {
-                const auto [PI, F, transRate] = ll.get();
+                const auto [Info, GP, PI, F, transRate] = ll.get();
+                write_bigass_to_bcf(bw, GP.data(), genome->chrs[ic], genome->pos[ic]);
                 genome->PI.emplace_back(PI);
                 genome->F.emplace_back(F);
                 genome->transRate.emplace_back(transRate);
+                oinfo << Info.format(fmt) << "\n";
                 cao.print(tm.date(), "chunk", ic++, " imputation done and outputting");
             }
         }

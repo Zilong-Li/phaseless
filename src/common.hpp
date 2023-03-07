@@ -68,10 +68,7 @@ inline auto calc_distRate(const IntVec1D & markers, int C, int Ne = 20000, doubl
 
 inline auto calc_transRate(const IntVec1D & markers, int C, int Ne = 20000, double expRate = 0.5)
 {
-    MyArr1D distRate(markers.size());
-    distRate(0) = exp(-1e20);
-    // int nGen = 4 * Ne / C;
-    for(size_t i = 1; i < markers.size(); i++) distRate(i) = exp(-(markers[i] - markers[i - 1]) / 1e6);
+    MyArr1D distRate = calc_distRate(markers, C, Ne, expRate);
     MyArr2D transRate(3, markers.size());
     transRate.row(0) = distRate.square();
     transRate.row(1) = distRate * (1 - distRate);

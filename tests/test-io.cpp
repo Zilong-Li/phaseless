@@ -50,10 +50,7 @@ TEST_CASE("test beagle parser for bigass genome with unbalanced chunksize - smal
     REQUIRE(genome->nsamples == 60);
     REQUIRE(genome->nsnps == 1000);
     REQUIRE(genome->nchunks == genome->pos.size());
-    for(int i = 0; i < genome->nchunks; i++)
-    {
-        cout << genome->chrs[i] << ": " << genome->pos[i].size() << endl;
-    }
+    // for(int i = 0; i < genome->nchunks; i++) cout << genome->chrs[i] << ": " << genome->pos[i].size() << endl;
 }
 
 TEST_CASE("test beagle parser for bigass genome with unbalanced chunksize - big", "[test-io]")
@@ -64,8 +61,5 @@ TEST_CASE("test beagle parser for bigass genome with unbalanced chunksize - big"
     REQUIRE(genome->nsamples == 60);
     REQUIRE(genome->nsnps == 1000);
     REQUIRE(genome->nchunks == genome->pos.size());
-    for(int i = 0; i < genome->nchunks; i++)
-    {
-        cout << genome->chrs[i] << ": " << genome->pos[i].size() << endl;
-    }
+    for(int i = 0; i < genome->nchunks; i++) cout << genome->chrs[i] << ": " << genome->pos[i].size() << endl;
 }
