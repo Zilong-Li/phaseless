@@ -55,7 +55,7 @@ inline void write_bigass_to_bcf(vcfpp::BcfWriter & bw,
         eaf = eij / 2 / N;
         info = 1 - fij / (eij * (1 - eaf));
         thetaHat = std::lround(1e2 * eaf) / 1e2;
-        if(thetaHat == 0 || thetaHat == 1)
+        if(thetaHat == 0 || thetaHat == 1 || info > 1)
             info = 1;
         else if(info < 0)
             info = 0;
@@ -71,10 +71,43 @@ inline void write_bigass_to_bcf(vcfpp::BcfWriter & bw,
     }
 }
 
+inline IntVec1D filter_sites_per_chunk(const MyFloat * GP, double tol, int N, int M)
+{
+    FloatVec1D gp(N * 3);
+    double thetaHat, info, eaf, eij, fij, a0, a1;
+    int i, m;
+    IntVec1D idx2rm;
+    for(m = 0; m < M; m++)
+    {
+        for(eij = 0, fij = 0, i = 0; i < N; i++)
+        {
+            gp[i * 3 + 0] = std::lround(1e3 * GP[i * M * 3 + m * 3 + 0]) / 1e3;
+            gp[i * 3 + 1] = std::lround(1e3 * GP[i * M * 3 + m * 3 + 1]) / 1e3;
+            gp[i * 3 + 2] = std::lround(1e3 * GP[i * M * 3 + m * 3 + 2]) / 1e3;
+            a0 = gp[i * 3 + 1] + gp[i * 3 + 2] * 2;
+            a1 = gp[i * 3 + 1] + gp[i * 3 + 2] * 4;
+            eij += a0;
+            fij += a1 - a0 * a0;
+        }
+        eaf = eij / 2 / N;
+        info = 1 - fij / (eij * (1 - eaf));
+        thetaHat = std::lround(1e2 * eaf) / 1e2;
+        if(thetaHat == 0 || thetaHat == 1)
+            info = 1;
+        else if(info < 0)
+            info = 0;
+        else
+            info = std::lround(1e3 * info) / 1e3;
+        eaf = std::lround(1e6 * eaf) / 1e6;
+        if(info < tol || info == 1) idx2rm.push_back(m);
+    }
+    return idx2rm;
+}
+
 /*
 ** @GP maps Eigen matrix layout, (3 x nsnps) x nsamples
 */
-inline IntVec1D write_bcf_genotype_probability(MyFloat * GP,
+inline IntVec1D write_bcf_genotype_probability(const MyFloat * GP,
                                                std::string chr,
                                                const IntVec1D & markers,
                                                const StringVec1D & sampleids,
@@ -315,7 +348,6 @@ inline void chunk_beagle_genotype_likelihoods(const std::unique_ptr<BigAss> & ge
     genome->nchunks = 0;
     bool samechr;
     int i, j, im, isnp{0};
-    IntVec1D chr_ends;
     while(zlgets(fp, &buffer, &bufsize))
     {
         if(buffer != original) original = buffer;
@@ -364,7 +396,7 @@ inline void chunk_beagle_genotype_likelihoods(const std::unique_ptr<BigAss> & ge
             genome->gls.push_back(gl);
             if((isnp % genome->chunksize != 0) && samechr == false)
             {
-                chr_ends.push_back(genome->nchunks - 1);
+                genome->ends.push_back(genome->nchunks - 1);
                 markers.push_back(std::stoi(pos));
                 glchunk.push_back(gli);
                 isnp = 1;
@@ -399,12 +431,12 @@ inline void chunk_beagle_genotype_likelihoods(const std::unique_ptr<BigAss> & ge
         }
         glchunk.clear();
         genome->gls.push_back(gl);
-        chr_ends.push_back(genome->nchunks - 1);
+        genome->ends.push_back(genome->nchunks - 1);
     }
     // now evenly split last two chunks of each chromosome
 }
 
-inline auto thin_bigass_per_chunk(int ic, const IntVec1D & idx2rm, const std::unique_ptr<BigAss> & genome)
+inline void thin_bigass_per_chunk(int ic, const IntVec1D & idx2rm, const std::unique_ptr<BigAss> & genome)
 {
     if(!idx2rm.empty())
     {
@@ -433,7 +465,28 @@ inline auto thin_bigass_per_chunk(int ic, const IntVec1D & idx2rm, const std::un
         for(int j = 0; j < im; j++) pos[j] = genome->pos[ic][idx2keep[j]];
         genome->pos[ic] = pos;
     }
-    return idx2rm.size();
+}
+
+inline void update_bigass_inplace(const std::unique_ptr<BigAss> & genome)
+{
+    int ic, ndiff;
+    for(ic = 0, genome->nsnps = 0; ic < genome->nchunks; ic++) genome->nsnps += genome->pos[ic].size();
+    for(ic = 0; ic < genome->nchunks; ic++)
+    {
+        if(ic == 0) continue; // assume the first chunksize is not greater than the defined
+        if(genome->pos[ic - 1].size() < genome->chunksize)
+        {
+            ndiff = genome->chunksize - genome->pos[ic - 1].size();
+            if(genome->pos[ic].size() >= ndiff)
+            {
+                genome->pos[ic - 1].insert(genome->pos[ic - 1].end(), genome->pos[ic].begin(),
+                                           genome->pos[ic].begin() + ndiff);
+                IntVec1D(genome->pos[ic].begin() + ndiff, genome->pos[ic].end()).swap(genome->pos[ic]);
+            }
+            else
+                break;
+        }
+    }
 }
 
 #endif // PHASELESS_IO_H_

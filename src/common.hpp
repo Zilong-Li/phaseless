@@ -47,12 +47,12 @@ inline MatrixType RandomUniform(const Eigen::Index numRows,
 // all the genome info I need from fastphase
 struct BigAss
 {
+    int chunksize, nsamples, nsnps, nchunks, C; // number of clusters
+    MyFloat2D PI, F, transRate; // M x C, 3 x M, fastphase pars
+    IntVec1D ends; // chunk index where each chromo ends
+    StringVec1D sampleids, chrs;
     IntVec2D pos; // store position of markers of each chunk
     MyFloat2D gls; // store gl(M, 3) of each chunk
-    StringVec1D sampleids, chrs;
-    int chunksize, nsamples, nsnps, nchunks;
-    MyFloat2D PI, F, transRate; // M x C, 3 x M
-    int C; // fastphase pars
 };
 
 // check initialize_sigmaCurrent_m in STITCH

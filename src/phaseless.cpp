@@ -30,6 +30,7 @@ auto make_input_per_chunk(const std::unique_ptr<BigAss> & genome,
     auto fij = faith.GZP1 + faith.GZP2 * 4;
     MyArr2D Info = 1 - (fij - eij) / (eij * (1 - eij / (2 * faith.N)));
     Info = (Info < 0).select(0, Info);
+    Info = (Info > 1).select(1, Info);
     // Info = Info.isNaN().select(1, Info);
     return std::tuple(Info, MyFloat1D(faith.GP.data(), faith.GP.data() + faith.GP.size()),
                       MyFloat1D(faith.PI.data(), faith.PI.data() + faith.PI.size()),
@@ -37,29 +38,18 @@ auto make_input_per_chunk(const std::unique_ptr<BigAss> & genome,
                       MyFloat1D(transRate.data(), transRate.data() + transRate.size()));
 }
 
-auto filter_input_per_chunk(filesystem::path out,
+void filter_input_per_chunk(filesystem::path out,
                             const std::unique_ptr<BigAss> & genome,
                             const int ic,
                             const int niters,
                             const int seed,
                             const double info)
 {
-    int nsnp2rm{0};
-    {
-        FastPhaseK2 faith(genome->nsamples, genome->pos[ic].size(), genome->C, seed);
-        auto transRate = calc_transRate(genome->pos[ic], genome->C);
-        faith.runWithOneThread(niters, genome->gls[ic], transRate);
-        auto idx2rm = write_bcf_genotype_probability(
-            faith.GP.data(), genome->chrs[ic], genome->pos[ic], genome->sampleids,
-            out.string() + string("chunk." + to_string(ic) + ".vcf.gz"), info);
-        nsnp2rm = thin_bigass_per_chunk(ic, idx2rm, genome);
-    }
     FastPhaseK2 faith(genome->nsamples, genome->pos[ic].size(), genome->C, seed);
     auto transRate = calc_transRate(genome->pos[ic], genome->C);
     faith.runWithOneThread(niters, genome->gls[ic], transRate);
-    return std::tuple(nsnp2rm, MyFloat1D(faith.PI.data(), faith.PI.data() + faith.PI.size()),
-                      MyFloat1D(faith.F.data(), faith.F.data() + faith.F.size()),
-                      MyFloat1D(transRate.data(), transRate.data() + transRate.size()));
+    auto idx2rm = filter_sites_per_chunk(faith.GP.data(), info, genome->nsamples, genome->pos[ic].size());
+    thin_bigass_per_chunk(ic, idx2rm, genome);
 }
 
 int main(int argc, char * argv[])
@@ -145,41 +135,31 @@ int main(int argc, char * argv[])
         cao.done(tm.date(), "elapsed time for parsing beagle file", std::fixed, tm.reltime(), " secs");
         if(info > 0)
         {
+            return 1;
             cao.warn(tm.date(), "-info", info, " is applied, which will do two rounds imputation");
-            vector<future<pars2>> res;
+            vector<future<void>> res;
             for(int ic = 0; ic < genome->nchunks; ic++)
                 res.emplace_back(
                     poolit.enqueue(filter_input_per_chunk, out, std::ref(genome), ic, nphase, seed, info));
-            int ic = 0;
-            for(auto && ll : res)
-            {
-                const auto [n, PI, F, transRate] = ll.get();
-                genome->nsnps -= n;
-                genome->PI.emplace_back(PI);
-                genome->F.emplace_back(F);
-                genome->transRate.emplace_back(transRate);
-                cao.print(tm.date(), "chunk", ic++, " imputation done and outputting");
-            }
+            for(auto && ll : res) ll.get();
+            update_bigass_inplace(genome);
         }
-        else
+        vector<future<pars>> res;
+        auto bw = make_bcfwriter(out.string() + "all.vcf.gz", genome->chrs, genome->sampleids);
+        std::ofstream oinfo(out.string() + "all.info");
+        Eigen::IOFormat fmt(6, Eigen::DontAlignCols, "\t", "\n");
+        for(int ic = 0; ic < genome->nchunks; ic++)
+            res.emplace_back(poolit.enqueue(make_input_per_chunk, std::ref(genome), ic, nphase, seed));
+        int ic = 0;
+        for(auto && ll : res)
         {
-            vector<future<pars>> res;
-            auto bw = make_bcfwriter(out.string() + "all.vcf.gz", genome->chrs, genome->sampleids);
-            std::ofstream oinfo(out.string() + "all.info");
-            Eigen::IOFormat fmt(6, Eigen::DontAlignCols, "\t", "\n");
-            for(int ic = 0; ic < genome->nchunks; ic++)
-                res.emplace_back(poolit.enqueue(make_input_per_chunk, std::ref(genome), ic, nphase, seed));
-            int ic = 0;
-            for(auto && ll : res)
-            {
-                const auto [Info, GP, PI, F, transRate] = ll.get();
-                write_bigass_to_bcf(bw, GP.data(), genome->chrs[ic], genome->pos[ic]);
-                genome->PI.emplace_back(PI);
-                genome->F.emplace_back(F);
-                genome->transRate.emplace_back(transRate);
-                oinfo << Info.format(fmt) << "\n";
-                cao.print(tm.date(), "chunk", ic++, " imputation done and outputting");
-            }
+            const auto [Info, GP, PI, F, transRate] = ll.get();
+            write_bigass_to_bcf(bw, GP.data(), genome->chrs[ic], genome->pos[ic]);
+            genome->PI.emplace_back(PI);
+            genome->F.emplace_back(F);
+            genome->transRate.emplace_back(transRate);
+            oinfo << Info.format(fmt) << "\n";
+            cao.print(tm.date(), "chunk", ic++, " imputation done and outputting");
         }
         std::ofstream ofs(out.string() + "pars.bin", std::ios::out | std::ios::binary);
         auto bytes_written = alpaca::serialize<OPTIONS, BigAss>(*genome, ofs);
