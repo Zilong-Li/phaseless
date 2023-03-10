@@ -41,13 +41,35 @@ inline FastPhaseK2::FastPhaseK2(int n, int m, int c, int seed) : N(n), M(m), C(c
     rng.seed(seed);
     F = RandomUniform<MyArr2D, std::default_random_engine>(M, C, rng, 0.001, 0.999);
     PI = MyArr2D::Ones(C, M);
-    PI.rowwise() /= PI.colwise().sum();
+    PI.rowwise() /= PI.colwise().sum(); // normalize it per site
     GP.setZero();
     GZP1.setZero(M, C);
     GZP2.setZero(M, C);
 }
 
 inline FastPhaseK2::~FastPhaseK2() {}
+
+inline void FastPhaseK2::initIteration(double tol)
+{
+    // map PI to domain with normalization
+    if(PI.isNaN().any()) throw std::runtime_error("NaN in PI\n");
+    PI = (PI < tol).select(tol, PI); // lower bound
+    PI = (PI > 1 - tol).select(1 - tol, PI); // upper bound
+    PI.rowwise() /= PI.colwise().sum(); // normalize it per site
+    // map F to domain but no normalization
+    if(F.isNaN().any()) throw std::runtime_error("NaN in F\n");
+    F = (F < tol).select(tol, F); // lower bound
+    F = (F > 1 - tol).select(1 - tol, F); // upper bound
+    Ek.setZero(M, C);
+    Ekg.setZero(M, C * 2);
+}
+
+inline void FastPhaseK2::updateIteration()
+{
+    PI = Ek.transpose() / (2 * N);
+    F = Ekg(Eigen::all, Eigen::seq(1, Eigen::last, 2))
+        / (Ekg(Eigen::all, Eigen::seq(1, Eigen::last, 2)) + Ekg(Eigen::all, Eigen::seq(0, Eigen::last, 2)));
+}
 
 /*
 ** @param niters    number of iterations
@@ -90,7 +112,7 @@ inline double FastPhaseK2::forwardAndBackwards(const MyArr2D & gli,
                                                bool call_geno)
 {
     MyArr2D emitDip = emissionCurIterInd(gli, F, false).transpose();
-    MyArr1D sumTmp1(C); // store sum over internal loop
+    MyArr1D sumTmp1(C), sumTmp2(C); // store sum over internal loop
     double constTmp;
     // ======== forward recursion ===========
     int z1, z2, z12;
@@ -102,6 +124,7 @@ inline double FastPhaseK2::forwardAndBackwards(const MyArr2D & gli,
     for(s = 1; s < M; s++)
     {
         sumTmp1 = LikeForwardInd.col(s - 1).reshaped(C, C).rowwise().sum() * transRate(1, s);
+        sumTmp2 = LikeForwardInd.col(s - 1).reshaped(C, C).colwise().sum() * transRate(1, s);
         constTmp = LikeForwardInd.col(s - 1).sum() * transRate(2, s);
         for(z1 = 0; z1 < C; z1++)
         {
@@ -111,7 +134,7 @@ inline double FastPhaseK2::forwardAndBackwards(const MyArr2D & gli,
                 LikeForwardInd(z12, s) =
                     emitDip(z12, s)
                     * (LikeForwardInd(z12, s - 1) * transRate(0, s) + PI(z1, s) * sumTmp1(z2)
-                       + PI(z2, s) * sumTmp1(z1) + PI(z1, s) * PI(z2, s) * constTmp);
+                       + PI(z2, s) * sumTmp2(z1) + PI(z1, s) * PI(z2, s) * constTmp);
             }
         }
         cs(s) = 1 / LikeForwardInd.col(s).sum();
@@ -127,12 +150,14 @@ inline double FastPhaseK2::forwardAndBackwards(const MyArr2D & gli,
     {
         auto beta_mult_emit = emitDip.col(s + 1) * LikeBackwardInd.col(s + 1);
         sumTmp1.setZero();
+        sumTmp2.setZero();
         for(constTmp = 0, z1 = 0; z1 < C; z1++)
         {
             for(z2 = 0; z2 < C; z2++)
             {
                 z12 = z1 * C + z2;
                 sumTmp1(z1) += beta_mult_emit(z12) * PI(z2, s + 1) * transRate(1, s + 1);
+                sumTmp2(z2) += beta_mult_emit(z12) * PI(z1, s + 1) * transRate(1, s + 1);
                 constTmp += beta_mult_emit(z12) * PI(z1, s + 1) * PI(z2, s + 1) * transRate(2, s + 1);
             }
         }
@@ -143,7 +168,7 @@ inline double FastPhaseK2::forwardAndBackwards(const MyArr2D & gli,
                 z12 = z1 * C + z2;
                 // apply scaling
                 LikeBackwardInd(z12, s) =
-                    (beta_mult_emit(z12) * transRate(0, s + 1) + sumTmp1(z1) + sumTmp1(z2) + constTmp)
+                    (beta_mult_emit(z12) * transRate(0, s + 1) + sumTmp1(z1) + sumTmp2(z2) + constTmp)
                     * cs(s);
             }
         }
@@ -295,28 +320,6 @@ inline auto FastPhaseK2::forwardAndBackwardsHighRam(int ind,
     }
 
     return std::tuple(indLogLikeForwardAll, iEk, iEkg);
-}
-
-inline void FastPhaseK2::initIteration(double tol)
-{
-    // map PI to domain with normalization
-    if(PI.isNaN().any()) throw std::runtime_error("NaN in PI\n");
-    PI = (PI < tol).select(tol, PI); // lower bound
-    PI = (PI > 1 - tol).select(1 - tol, PI); // upper bound
-    PI.rowwise() /= PI.colwise().sum(); // normalize it now
-    // map F to domain but no normalization
-    if(F.isNaN().any()) throw std::runtime_error("NaN in F\n");
-    F = (F < tol).select(tol, F); // lower bound
-    F = (F > 1 - tol).select(1 - tol, F); // upper bound
-    Ek.setZero(M, C);
-    Ekg.setZero(M, C * 2);
-}
-
-inline void FastPhaseK2::updateIteration()
-{
-    PI = Ek.transpose() / (2 * N);
-    F = Ekg(Eigen::all, Eigen::seq(1, Eigen::last, 2))
-        / (Ekg(Eigen::all, Eigen::seq(1, Eigen::last, 2)) + Ekg(Eigen::all, Eigen::seq(0, Eigen::last, 2)));
 }
 
 class FastPhaseK4
@@ -528,9 +531,9 @@ inline void FastPhaseK4::transitionCurIter(const MyArr1D & distRate)
         {
             z2d1 = from1 * C + to1;
             if(from1 == to1)
-                transHap.col(z2d1) = Eigen::exp(-distRate) + (1 - Eigen::exp(-distRate)) * PI.col(to1);
+                transHap.col(z2d1) = distRate + (1 - distRate) * PI.col(to1);
             else
-                transHap.col(z2d1) = (1 - Eigen::exp(-distRate)) * PI.col(to1);
+                transHap.col(z2d1) = (1 - distRate) * PI.col(to1);
         }
     }
 
