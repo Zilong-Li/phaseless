@@ -38,7 +38,6 @@ inline void write_bigass_to_bcf(vcfpp::BcfWriter & bw,
     IntVec1D gt(N * 2);
     for(m = 0; m < M; m++)
     {
-        var.setPOS(markers[m]);
         for(eij = 0, fij = 0, i = 0; i < N; i++)
         {
             gp[i * 3 + 0] = std::lround(1e3 * GP[i * M * 3 + m * 3 + 0]) / 1e3;
@@ -62,6 +61,7 @@ inline void write_bigass_to_bcf(vcfpp::BcfWriter & bw,
         else
             info = std::lround(1e3 * info) / 1e3;
         eaf = std::lround(1e6 * eaf) / 1e6;
+        var.setPOS(markers[m]);
         var.setGenotypes(gt);
         var.setFORMAT("GP", gp);
         var.setFORMAT("DS", ds);

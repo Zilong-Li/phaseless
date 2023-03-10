@@ -61,7 +61,7 @@ inline auto calc_distRate(const IntVec1D & markers, int C, int Ne = 20000, doubl
     // int nGen = 4 * Ne / C;
     // distRate(i) = (markers[i] - markers[i - 1]) * nGen * expRate / 1e8;
     distRate(0) = exp(-1e20);
-    for(size_t i = 1; i < markers.size(); i++) distRate(i) = exp(-(markers[i] - markers[i - 1]) / 1e6);
+    for(size_t i = 1; i < markers.size(); i++) distRate(i) = exp(-(markers[i] - markers[i - 1]) / 1e5);
     return distRate;
 }
 
