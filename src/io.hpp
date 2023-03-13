@@ -46,20 +46,23 @@ inline void write_bigass_to_bcf(vcfpp::BcfWriter & bw,
             ds[i] = gp[i * 3 + 1] + gp[i * 3 + 2] * 2;
             gt[i * 2 + 0] = !(gp[i * 3 + 0] > gp[i * 3 + 1] && gp[i * 3 + 0] > gp[i * 3 + 2]);
             gt[i * 2 + 1] = (gp[i * 3 + 2] > gp[i * 3 + 1] && gt[i * 2 + 0]);
-            a0 = gp[i * 3 + 1] + gp[i * 3 + 2] * 2;
-            a1 = gp[i * 3 + 1] + gp[i * 3 + 2] * 4;
+            a0 = GP[i * M * 3 + m * 3 + 1] + GP[i * M * 3 + m * 3 + 2] * 2;
+            a1 = GP[i * M * 3 + m * 3 + 1] + GP[i * M * 3 + m * 3 + 2] * 4;
             eij += a0;
             fij += a1 - a0 * a0;
         }
         eaf = eij / 2 / N;
-        info = 1 - fij / (eij * (1 - eaf));
         thetaHat = std::lround(1e2 * eaf) / 1e2;
-        if(thetaHat == 0 || thetaHat == 1 || info > 1)
+        if(thetaHat == 0 || thetaHat == 1)
             info = 1;
         else if(info < 0)
             info = 0;
         else
+        {
+            info = 1 - fij / (2 * N * eaf * (1 - eaf));
             info = std::lround(1e3 * info) / 1e3;
+            info = info > 1 ? 1 : info;
+        }
         eaf = std::lround(1e6 * eaf) / 1e6;
         var.setPOS(markers[m]);
         var.setGenotypes(gt);

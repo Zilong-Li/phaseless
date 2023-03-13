@@ -28,7 +28,7 @@ auto make_input_per_chunk(const std::unique_ptr<BigAss> & genome,
     faith.runWithOneThread(niters, genome->gls[ic], transRate);
     auto eij = faith.GZP1 + faith.GZP2 * 2;
     auto fij = faith.GZP1 + faith.GZP2 * 4;
-    MyArr2D Info = 1 - (fij - eij) / (eij * (1 - eij / (2 * faith.N)));
+    MyArr2D Info = 1 - (fij - eij.square()) / (eij * (1 - eij / (2 * faith.N)));
     Info = (Info < 0).select(0, Info);
     Info = (Info > 1).select(1, Info);
     // Info = Info.isNaN().select(1, Info);
