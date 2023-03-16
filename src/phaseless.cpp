@@ -15,8 +15,7 @@
 using namespace std;
 using namespace vcfpp;
 
-using pars = std::tuple<MyArr2D, MyFloat1D, MyFloat1D, MyFloat1D, MyFloat1D>;
-using pars2 = std::tuple<int, MyFloat1D, MyFloat1D, MyFloat1D>;
+using pars = std::tuple<MyFloat1D, MyArr2D, MyArr2D, MyArr2D, MyArr2D>;
 
 auto make_input_per_chunk(const std::unique_ptr<BigAss> & genome,
                           const int ic,
@@ -32,10 +31,8 @@ auto make_input_per_chunk(const std::unique_ptr<BigAss> & genome,
     Info = (Info < 0).select(0, Info);
     Info = (Info > 1).select(1, Info);
     // Info = Info.isNaN().select(1, Info);
-    return std::tuple(Info, MyFloat1D(faith.GP.data(), faith.GP.data() + faith.GP.size()),
-                      MyFloat1D(faith.PI.data(), faith.PI.data() + faith.PI.size()),
-                      MyFloat1D(faith.F.data(), faith.F.data() + faith.F.size()),
-                      MyFloat1D(transRate.data(), transRate.data() + transRate.size()));
+    return std::tuple(MyFloat1D(faith.GP.data(), faith.GP.data() + faith.GP.size()), Info, transRate,
+                      faith.PI, faith.F);
 }
 
 void filter_input_per_chunk(filesystem::path out,
@@ -120,7 +117,7 @@ int main(int argc, char * argv[])
     nthreads = nthreads < allthreads ? nthreads : allthreads;
     cao.print(tm.date(), allthreads, " concurrent threads are supported. use", nthreads, " threads");
 
-    // ========= core calculation part ===========================================
+    // ======================== core calculation part ===========================
     ThreadPool poolit(nthreads);
     std::unique_ptr<BigAss> genome;
     constexpr auto OPTIONS = alpaca::options::fixed_length_encoding;
@@ -147,18 +144,20 @@ int main(int argc, char * argv[])
         vector<future<pars>> res;
         auto bw = make_bcfwriter(out.string() + "all.vcf.gz", genome->chrs, genome->sampleids);
         std::ofstream oinfo(out.string() + "all.info");
+        std::ofstream opi(out.string() + "all.pi");
         Eigen::IOFormat fmt(6, Eigen::DontAlignCols, "\t", "\n");
         for(int ic = 0; ic < genome->nchunks; ic++)
             res.emplace_back(poolit.enqueue(make_input_per_chunk, std::ref(genome), ic, nphase, seed));
         int ic = 0;
         for(auto && ll : res)
         {
-            const auto [Info, GP, PI, F, transRate] = ll.get();
+            const auto [GP, Info, transRate, PI, F] = ll.get();
             write_bigass_to_bcf(bw, GP.data(), genome->chrs[ic], genome->pos[ic]);
-            genome->PI.emplace_back(PI);
-            genome->F.emplace_back(F);
-            genome->transRate.emplace_back(transRate);
+            genome->transRate.emplace_back(MyFloat1D(transRate.data(), transRate.data() + transRate.size()));
+            genome->PI.emplace_back(MyFloat1D(PI.data(), PI.data() + PI.size()));
+            genome->F.emplace_back(MyFloat1D(F.data(), F.data() + F.size()));
             oinfo << Info.format(fmt) << "\n";
+            opi << PI.format(fmt) << "\n";
             cao.print(tm.date(), "chunk", ic++, " imputation done and outputting");
         }
         std::ofstream ofs(out.string() + "pars.bin", std::ios::out | std::ios::binary);
@@ -207,7 +206,12 @@ int main(int argc, char * argv[])
             F1 = admixer.F;
             Q1 = admixer.Q;
             diff = (Q1 - Q0).square().sum();
-            if(diff < qtol) break;
+            if(diff < qtol)
+            {
+                cao.print(tm.date(), "SqS3 iteration", it * 3 + 1, ", diff(Q) =", std::scientific, diff, " <",
+                          qtol, ", hit stopping criteria.");
+                break;
+            }
             tm.clock();
             for(int i = 0; i < genome->nsamples; i++)
                 llike.emplace_back(
