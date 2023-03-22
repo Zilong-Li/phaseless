@@ -16,17 +16,17 @@ auto make_input_per_chunk(filesystem::path outdir,
                           const int niters,
                           const int seed)
 {
-    FastPhaseK2 nofaith(genome->nsamples, genome->pos[ic].size(), genome->C, seed);
+    FastPhaseK2 faith(genome->nsamples, genome->pos[ic].size(), genome->C, seed);
     auto transRate = calc_transRate(genome->pos[ic], genome->C);
-    nofaith.runWithOneThread(niters, genome->gls[ic], transRate);
-    write_bcf_genotype_probability(nofaith.GP.data(), genome->chrs[ic], genome->pos[ic], genome->sampleids,
+    faith.runWithOneThread(niters, genome->gls[ic], transRate);
+    write_bcf_genotype_probability(faith.GP.data(), genome->chrs[ic], genome->pos[ic], genome->sampleids,
                                    outdir / string("chunk." + to_string(ic) + ".vcf.gz"));
-    return std::tuple(MyFloat1D(nofaith.PI.data(), nofaith.PI.data() + nofaith.PI.size()),
-                      MyFloat1D(nofaith.F.data(), nofaith.F.data() + nofaith.F.size()),
+    return std::tuple(MyFloat1D(faith.PI.data(), faith.PI.data() + faith.PI.size()),
+                      MyFloat1D(faith.F.data(), faith.F.data() + faith.F.size()),
                       MyFloat1D(transRate.data(), transRate.data() + transRate.size()));
 }
 
-TEST_CASE("phaseless naive vs optimal", "[test-phaseless]")
+TEST_CASE("phaseless naive vs dump", "[test-phaseless]")
 {
     int K{3}, C{5}, seed{1}, nadmix{10}, chunksize{10000}, nphase{40};
     std::unique_ptr<BigAss> genome = std::make_unique<BigAss>();
@@ -38,7 +38,7 @@ TEST_CASE("phaseless naive vs optimal", "[test-phaseless]")
     filesystem::create_directories(outdir);
     for(int ic = 0; ic < genome->nchunks; ic++)
     {
-        FastPhaseK2 nofaith(genome->nsamples, genome->pos[ic].size(), C, seed);
+        FastPhaseK2 faith(genome->nsamples, genome->pos[ic].size(), C, seed);
         auto transRate = calc_transRate(genome->pos[ic], genome->C);
         res.emplace_back(poolit.enqueue(make_input_per_chunk, outdir, std::ref(genome), ic, nphase, seed));
     }
@@ -54,17 +54,19 @@ TEST_CASE("phaseless naive vs optimal", "[test-phaseless]")
     for(int it = 0; it < nadmix; it++)
     {
         admixer1.initIteration();
-        for(int i = 0; i < genome->nsamples; i++) admixer1.runNaiveWithBigAss(i, genome);
+        for(int i = 0; i < genome->nsamples; i++) admixer1.runDumpWithBigAss(i, genome);
         admixer1.updateIteration();
     }
     Admixture admixer2(genome->nsamples, genome->nsnps, genome->C, K, seed);
     for(int it = 0; it < nadmix; it++)
     {
         admixer2.initIteration();
-        for(int i = 0; i < genome->nsamples; i++) admixer2.runOptimalWithBigAss(i, genome);
+        for(int i = 0; i < genome->nsamples; i++) admixer2.runNativeWithBigAss(i, genome);
         admixer2.updateIteration();
     }
-    REQUIRE(((admixer1.Q - admixer2.Q).abs() > 1e-5).count() == 0);
+    cout << admixer1.Q.leftCols(10) << endl;
+    cout << admixer2.Q.leftCols(10) << endl;
+    REQUIRE(((admixer1.Q - admixer2.Q).abs() < 1e-6).all());
 }
 
 TEST_CASE("phaseless normal iteration with make_input_per_chunk", "[test-phaseless]")
@@ -79,7 +81,7 @@ TEST_CASE("phaseless normal iteration with make_input_per_chunk", "[test-phasele
     filesystem::create_directories(outdir);
     for(int ic = 0; ic < genome->nchunks; ic++)
     {
-        FastPhaseK2 nofaith(genome->nsamples, genome->pos[ic].size(), C, seed);
+        FastPhaseK2 faith(genome->nsamples, genome->pos[ic].size(), C, seed);
         auto transRate = calc_transRate(genome->pos[ic], genome->C);
         res.emplace_back(poolit.enqueue(make_input_per_chunk, outdir, std::ref(genome), ic, nphase, seed));
     }
@@ -98,7 +100,8 @@ TEST_CASE("phaseless normal iteration with make_input_per_chunk", "[test-phasele
     {
         admixer.initIteration();
         for(int i = 0; i < genome->nsamples; i++)
-            llike.emplace_back(poolit.enqueue(&Admixture::runNaiveWithBigAss, &admixer, i, std::ref(genome)));
+            llike.emplace_back(
+                poolit.enqueue(&Admixture::runNativeWithBigAss, &admixer, i, std::ref(genome)));
         loglike = 0;
         for(auto && ll : llike) loglike += ll.get();
         llike.clear(); // clear future and renew

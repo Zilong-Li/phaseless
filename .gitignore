@@ -20,3 +20,6 @@ tmp/
 *log
 *dSYM
 compile_commands.json
+*all.*
+*admixture.Q
+*phaseless.log

@@ -17,26 +17,6 @@ using namespace vcfpp;
 
 using pars = std::tuple<MyFloat1D, MyArr2D, MyArr2D, MyArr2D, MyArr2D>;
 
-int run_bootstrap(const std::unique_ptr<BigAss> & genome, ThreadPool & poolit, Logger & cao, int K, int nseeds)
-{
-    std::vector<std::future<double>> res;
-    std::vector<double> llikes;
-    for(int seed = 0; seed < nseeds; seed++)
-    {
-        Admixture admixer(genome->nsamples, genome->nsnps, genome->C, K, seed);
-        for(int i = 0; i < genome->nsamples; i++)
-            res.emplace_back(poolit.enqueue(&Admixture::runOptimalWithBigAss, &admixer, i, std::ref(genome)));
-        double loglike = 0;
-        for(auto && ll : res) loglike += ll.get();
-        res.clear(); // clear future and renew
-        llikes.push_back(loglike);
-    }
-    int seed = 0;
-    for(auto ll : llikes) cao.print("seed =", seed++, ", log likelihoods =", ll);
-    auto it = std::max_element(llikes.begin(), llikes.end());
-    return std::distance(llikes.begin(), it);
-}
-
 auto make_input_per_chunk(const std::unique_ptr<BigAss> & genome,
                           const int ic,
                           const int niters,
@@ -79,25 +59,24 @@ int main(int argc, char * argv[])
                   << "Usage example:\n"
                   << "     " + (std::string)argv[0] + " -g beagle.gz -o out -c 10 -k 3 -n 20\n"
                   << "\nOptions:\n"
-                  << "     -a          accelerated EM with SqS3 scheme [1]\n"
-                  << "     -b          input binary file with all parameters\n"
-                  << "     -c          number of ancestral haplotype clusters\n"
-                  << "     -f          input vcf/bcf format\n"
-                  << "     -g          gziped beagle format\n"
-                  << "     -i          maximum iterations of admixture [1000]\n"
-                  << "     -I          maximum iterations of imputation [40]\n"
-                  << "     -k          number of ancestry in admixture model\n"
-                  << "     -n          number of threads\n"
-                  << "     -o          output prefix\n"
-                  << "     -p          print out log to screen [0]\n"
-                  << "     -P          run phasing/imputation only [0]\n"
-                  << "     -r          region in vcf/bcf to subset\n"
-                  << "     -s          number of sites of each chunk [100000]\n"
-                  << "     -v          verbose for debugging purpose [0]\n"
-                  << "     -info       filter and re-impute sites with low info [0]\n"
-                  << "     -qtol       tolerance of stopping criteria [1e-6]\n"
-                  << "     -seed       for reproducing results [1]\n"
-                  << "     -bootstrap  number of bootstraps [0]\n"
+                  << "     -a      accelerated EM with SqS3 scheme [1]\n"
+                  << "     -b      input binary file with all parameters\n"
+                  << "     -c      number of ancestral haplotype clusters\n"
+                  << "     -f      input vcf/bcf format\n"
+                  << "     -g      gziped beagle format\n"
+                  << "     -i      maximum iterations of admixture [1000]\n"
+                  << "     -I      maximum iterations of imputation [40]\n"
+                  << "     -k      number of ancestry in admixture model\n"
+                  << "     -n      number of threads\n"
+                  << "     -o      output prefix\n"
+                  << "     -p      print out log to screen [0]\n"
+                  << "     -P      run phasing/imputation only [0]\n"
+                  << "     -r      region in vcf/bcf to subset\n"
+                  << "     -s      number of sites of each chunk [100000]\n"
+                  << "     -v      verbose for debugging purpose [0]\n"
+                  << "     -info   filter and re-impute sites with low info [0]\n"
+                  << "     -qtol   tolerance of stopping criteria [1e-6]\n"
+                  << "     -seed   for reproducing results [1]\n"
                   << std::endl;
         return 1;
     }
@@ -105,7 +84,7 @@ int main(int argc, char * argv[])
     filesystem::path out, in_beagle, in_vcf, in_bin;
     string samples = "-", region = "";
     int chunksize{100000}, accel{1}, phase_only{0}, K{1}, C{0}, nadmix{1000}, nphase{40}, nthreads{4};
-    int seed{1}, isscreen{0}, verbose{0}, bootstrap{0};
+    int seed{1}, isscreen{0}, verbose{0};
     double qtol{1e-6}, diff, info{0};
     for(size_t i = 0; i < args.size(); i++)
     {
@@ -127,7 +106,6 @@ int main(int argc, char * argv[])
         if(args[i] == "-info") info = stod(args[++i]);
         if(args[i] == "-qtol") qtol = stod(args[++i]);
         if(args[i] == "-seed") seed = stoi(args[++i]);
-        if(args[i] == "-bootstrap") bootstrap = stoi(args[++i]);
     }
 
     Logger cao(out.string() + "phaseless.log");
@@ -181,7 +159,7 @@ int main(int argc, char * argv[])
             genome->PI.emplace_back(MyFloat1D(PI.data(), PI.data() + PI.size()));
             genome->F.emplace_back(MyFloat1D(F.data(), F.data() + F.size()));
             oinfo << Info.format(fmt) << "\n";
-            opi << PI.transpose().format(fmt) << "\n";
+            opi << PI.format(fmt) << "\n";
             cao.print(tm.date(), "chunk", ic++, " imputation done and outputting");
         }
         std::ofstream ofs(out.string() + "pars.bin", std::ios::out | std::ios::binary);
@@ -205,12 +183,7 @@ int main(int argc, char * argv[])
     }
     if(phase_only) return 0;
 
-    if(bootstrap > 0)
-    {
-        cao.warn(tm.date(), "-> running bootstrap to select the best start point");
-        seed = run_bootstrap(genome, poolit, cao, K, bootstrap);
-    }
-    cao.warn(tm.date(), "-> running admixture with seed =", seed);
+    cao.warn(tm.date(), "-> running admixture");
     Admixture admixer(genome->nsamples, genome->nsnps, genome->C, K, seed);
     admixer.debug = verbose;
     vector<future<double>> llike;
@@ -227,7 +200,7 @@ int main(int argc, char * argv[])
             Q0 = admixer.Q;
             for(int i = 0; i < genome->nsamples; i++)
                 llike.emplace_back(
-                    poolit.enqueue(&Admixture::runOptimalWithBigAss, &admixer, i, std::ref(genome)));
+                    poolit.enqueue(&Admixture::runNativeWithBigAss, &admixer, i, std::ref(genome)));
             for(auto && ll : llike) ll.get();
             llike.clear(); // clear future and renew
             admixer.updateIteration();
@@ -245,7 +218,7 @@ int main(int argc, char * argv[])
             tm.clock();
             for(int i = 0; i < genome->nsamples; i++)
                 llike.emplace_back(
-                    poolit.enqueue(&Admixture::runOptimalWithBigAss, &admixer, i, std::ref(genome)));
+                    poolit.enqueue(&Admixture::runNativeWithBigAss, &admixer, i, std::ref(genome)));
             double loglike = 0;
             for(auto && ll : llike) loglike += ll.get();
             llike.clear(); // clear future and renew
@@ -267,7 +240,7 @@ int main(int argc, char * argv[])
             admixer.initIteration();
             for(int i = 0; i < genome->nsamples; i++)
                 llike.emplace_back(
-                    poolit.enqueue(&Admixture::runOptimalWithBigAss, &admixer, i, std::ref(genome)));
+                    poolit.enqueue(&Admixture::runNativeWithBigAss, &admixer, i, std::ref(genome)));
             for(auto && ll : llike) ll.get();
             llike.clear(); // clear future and renew
             admixer.updateIteration();
@@ -283,7 +256,7 @@ int main(int argc, char * argv[])
             Q0 = admixer.Q;
             for(int i = 0; i < genome->nsamples; i++)
                 llike.emplace_back(
-                    poolit.enqueue(&Admixture::runOptimalWithBigAss, &admixer, i, std::ref(genome)));
+                    poolit.enqueue(&Admixture::runNativeWithBigAss, &admixer, i, std::ref(genome)));
 
             double loglike = 0;
             for(auto && ll : llike) loglike += ll.get();
