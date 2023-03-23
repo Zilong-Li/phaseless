@@ -29,6 +29,7 @@ class Admixture
     void initIteration(double tol = 1e-6);
     void updateIteration();
     void writeQ(std::string out);
+    void writeBin(std::string out, const std::unique_ptr<BigAss> & genome);
     double runNativeWithBigAss(int ind, const std::unique_ptr<BigAss> & genome);
     double runDumpWithBigAss(int ind, const std::unique_ptr<BigAss> & genome);
     double runOptimalWithBigAss(int ind, const std::unique_ptr<BigAss> & genome);
@@ -54,7 +55,6 @@ inline double Admixture::runNativeWithBigAss(int ind, const std::unique_ptr<BigA
     int c1, c2, c12, cc;
     int k1, k2, k12, s;
     MyArr1D iQ = MyArr1D::Zero(K);
-    MyArr1D H(C);
     for(int ic = 0, m = 0; ic < genome->nchunks; ic++)
     {
         int iM = genome->pos[ic].size();
@@ -67,7 +67,6 @@ inline double Admixture::runNativeWithBigAss(int ind, const std::unique_ptr<BigA
 
         for(s = 0; s < iM; s++, m++)
         {
-            // for(c1 = 0; c1 < C; c1++) H(c1) = (Q.col(ind) * F(Eigen::seqN(c1, K, C), m)).sum();
             for(norm = 0, cc = 0, c1 = 0; c1 < C; c1++)
             {
                 for(c2 = c1; c2 < C; c2++)
@@ -178,32 +177,39 @@ inline double Admixture::runDumpWithBigAss(int ind, const std::unique_ptr<BigAss
     return llike;
 }
 
+// the complexity of this version should be O(2CC + CK)
 inline double Admixture::runOptimalWithBigAss(int ind, const std::unique_ptr<BigAss> & genome)
 {
     MyArr2D kapa, Ekg;
     MyArr2D LikeForwardInd, LikeBackwardInd;
     MyArr1D iQ = MyArr1D::Zero(K);
-    double llike = 0;
-    int c1, k1, s;
+    MyArr1D Hz(C);
+    double norm = 0, llike = 0, tmp = 0;
+    int c1, k1, s, c2, c12;
     for(int ic = 0, m = 0; ic < genome->nchunks; ic++)
     {
         int iM = genome->pos[ic].size();
         LikeForwardInd.setZero(C * C, iM);
         LikeBackwardInd.setZero(C * C, iM);
         getClusterLikelihoods(ind, LikeForwardInd, LikeBackwardInd, genome->gls[ic], genome->transRate[ic],
-                              genome->PI[ic], genome->F[ic], false); // return gamma
+                              genome->PI[ic], genome->F[ic], true); // return gamma
         kapa.setZero(C * K, iM); // C x K x M layout
         Ekg.setZero(K, iM);
         for(s = 0; s < iM; s++, m++)
         {
-            for(c1 = 0; c1 < C; c1++)
+            for(c1 = 0; c1 < C; c1++) Hz(c1) = (Q.col(ind) * F(Eigen::seqN(c1, K, C), m)).sum();
+            for(norm = 0, c1 = 0; c1 < C; c1++)
             {
-                auto rho = (LikeForwardInd.middleRows(c1 * C, C).col(s)
-                            * LikeBackwardInd.middleRows(c1 * C, C).col(s))
-                               .sum();
-                kapa(Eigen::seqN(c1, K, C), s) =
-                    Q.col(ind) * F(Eigen::seqN(c1, K, C), m) * (rho / genome->PI[ic][s * C + c1]);
+                for(tmp = 0, c2 = 0; c2 < C; c2++)
+                {
+                    c12 = c1 * C + c2;
+                    tmp += LikeBackwardInd(c12, s) * LikeBackwardInd(c12, s) * Hz(c1) * Hz(c2)
+                           / (genome->PI[ic][s * C + c1] * genome->PI[ic][s * C + c2]);
+                }
+                kapa(Eigen::seqN(c1, K, C), s) = (Q.col(ind) * F(Eigen::seqN(c1, K, C), m)) * tmp / Hz(c1);
+                norm += tmp;
             }
+            llike += log(norm);
             kapa.col(s) /= kapa.col(s).sum();
             // kapa = (kapa < 1e-6).select(1e-6, kapa);
             // std::cout << kapa.col(s).sum() << std::endl;
@@ -242,8 +248,6 @@ inline void Admixture::initIteration(double tol)
 inline void Admixture::updateIteration()
 {
     for(int k = 0; k < K; k++) F.middleRows(k * C, C) = Ekc.middleRows(k * C, C).rowwise() / NormF.row(k);
-    // for(int k = 0; k < K; k++) std::cout << F.middleRows(k * C, C).sum() << "\n";
-    // for(int k = 0; k < K; k++) std::cout << F.middleRows(k * C, C).colwise().sum() << "\n";
 }
 
 inline void Admixture::writeQ(std::string out)
@@ -253,5 +257,32 @@ inline void Admixture::writeQ(std::string out)
     Q = (Q * 1e6).round() / 1e6;
     ofs << std::fixed << Q.transpose() << "\n";
     ofs.close();
+}
+
+inline void Admixture::writeBin(std::string out, const std::unique_ptr<BigAss> & genome)
+{
+    std::ofstream ofs(out, std::ios::binary);
+    ofs.write((char *)&N, 4);
+    ofs.write((char *)&M, 4);
+    ofs.write((char *)&C, 4);
+    ofs.write((char *)&K, 4);
+    ofs.write((char *)Q.data(), K * N * 4);
+    ofs.write((char *)F.data(), C * K * M * 4);
+    for(int ic = 0; ic < genome->nchunks; ic++)
+        ofs.write((char *)genome->PI[ic].data(), C * genome->pos[ic].size() * 4);
+    MyArr2D LikeForwardInd, LikeBackwardInd;
+    for(int ind = 0; ind < N; ind++)
+    {
+        for(int ic = 0; ic < genome->nchunks; ic++)
+        {
+            int iM = genome->pos[ic].size();
+            LikeForwardInd.setZero(C * C, iM); // likelihood of forward recursion for ind i, not log
+            LikeBackwardInd.setZero(C * C, iM); // likelihood of backward recursion for ind i, not log
+            getClusterLikelihoods(ind, LikeForwardInd, LikeBackwardInd, genome->gls[ic],
+                                  genome->transRate[ic], genome->PI[ic], genome->F[ic], true);
+            ofs.write((char *)LikeForwardInd.data(), C * C * iM * 4);
+            ofs.write((char *)LikeBackwardInd.data(), C * C * iM * 4);
+        }
+    }
 }
 #endif // ADMIXTURE_H_

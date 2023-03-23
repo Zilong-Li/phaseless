@@ -200,7 +200,7 @@ int main(int argc, char * argv[])
             Q0 = admixer.Q;
             for(int i = 0; i < genome->nsamples; i++)
                 llike.emplace_back(
-                    poolit.enqueue(&Admixture::runNativeWithBigAss, &admixer, i, std::ref(genome)));
+                    poolit.enqueue(&Admixture::runDumpWithBigAss, &admixer, i, std::ref(genome)));
             for(auto && ll : llike) ll.get();
             llike.clear(); // clear future and renew
             admixer.updateIteration();
@@ -218,7 +218,7 @@ int main(int argc, char * argv[])
             tm.clock();
             for(int i = 0; i < genome->nsamples; i++)
                 llike.emplace_back(
-                    poolit.enqueue(&Admixture::runNativeWithBigAss, &admixer, i, std::ref(genome)));
+                    poolit.enqueue(&Admixture::runDumpWithBigAss, &admixer, i, std::ref(genome)));
             double loglike = 0;
             for(auto && ll : llike) loglike += ll.get();
             llike.clear(); // clear future and renew
@@ -240,7 +240,7 @@ int main(int argc, char * argv[])
             admixer.initIteration();
             for(int i = 0; i < genome->nsamples; i++)
                 llike.emplace_back(
-                    poolit.enqueue(&Admixture::runNativeWithBigAss, &admixer, i, std::ref(genome)));
+                    poolit.enqueue(&Admixture::runDumpWithBigAss, &admixer, i, std::ref(genome)));
             for(auto && ll : llike) ll.get();
             llike.clear(); // clear future and renew
             admixer.updateIteration();
@@ -256,7 +256,7 @@ int main(int argc, char * argv[])
             Q0 = admixer.Q;
             for(int i = 0; i < genome->nsamples; i++)
                 llike.emplace_back(
-                    poolit.enqueue(&Admixture::runNativeWithBigAss, &admixer, i, std::ref(genome)));
+                    poolit.enqueue(&Admixture::runDumpWithBigAss, &admixer, i, std::ref(genome)));
 
             double loglike = 0;
             for(auto && ll : llike) loglike += ll.get();
@@ -270,6 +270,7 @@ int main(int argc, char * argv[])
     }
     cao.done(tm.date(), "admixture done and outputting");
     admixer.writeQ(out.string() + "admixture.Q");
+    if(admixer.debug) admixer.writeBin(out.string() + "qf.bin", genome);
     cao.done(tm.date(), "-> good job. have a nice day, bye!");
 
     return 0;

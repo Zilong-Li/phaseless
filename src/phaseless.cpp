@@ -297,6 +297,7 @@ int main(int argc, char * argv[])
     }
     cao.done(tm.date(), "admixture done and outputting");
     admixer.writeQ(out.string() + "admixture.Q");
+    if(admixer.debug) admixer.writeBin(out.string() + "qf.bin", genome);
     cao.done(tm.date(), "-> good job. have a nice day, bye!");
 
     return 0;
