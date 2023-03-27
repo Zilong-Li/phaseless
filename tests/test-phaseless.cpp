@@ -28,7 +28,7 @@ auto make_input_per_chunk(filesystem::path outdir,
 
 TEST_CASE("phaseless naive vs dump", "[test-phaseless]")
 {
-    int K{3}, C{5}, seed{1}, nadmix{10}, chunksize{10000}, nphase{40};
+    int K{3}, C{10}, seed{1}, nadmix{10}, chunksize{10000}, nphase{40};
     std::unique_ptr<BigAss> genome = std::make_unique<BigAss>();
     genome->chunksize = chunksize, genome->C = C;
     chunk_beagle_genotype_likelihoods(genome, "../data/all.bgl.gz");
@@ -50,22 +50,22 @@ TEST_CASE("phaseless naive vs dump", "[test-phaseless]")
         genome->transRate.emplace_back(transRate);
     }
     res.clear(); // clear future and renew
+    double llike1, llike2;
     Admixture admixer1(genome->nsamples, genome->nsnps, genome->C, K, seed);
-    for(int it = 0; it < nadmix; it++)
-    {
-        admixer1.initIteration();
-        for(int i = 0; i < genome->nsamples; i++) admixer1.runDumpWithBigAss(i, genome);
-        admixer1.updateIteration();
-    }
     Admixture admixer2(genome->nsamples, genome->nsnps, genome->C, K, seed);
     for(int it = 0; it < nadmix; it++)
     {
+        admixer1.initIteration();
+        llike1 = 0;
+        for(int i = 0; i < genome->nsamples; i++) llike1 += admixer1.runOptimalWithBigAss(i, genome);
+        admixer1.updateIteration();
         admixer2.initIteration();
-        for(int i = 0; i < genome->nsamples; i++) admixer2.runNativeWithBigAss(i, genome);
+        llike2 = 0;
+        for(int i = 0; i < genome->nsamples; i++) llike2 += admixer2.runNativeWithBigAss(i, genome);
         admixer2.updateIteration();
+        cerr << std::setprecision(6) << llike2 << "\t" << llike1 << "\n";
+        REQUIRE(abs(llike1 - llike2) < 1e-2);
     }
-    cout << admixer1.Q.leftCols(10) << endl;
-    cout << admixer2.Q.leftCols(10) << endl;
     REQUIRE(((admixer1.Q - admixer2.Q).abs() < 1e-6).all());
 }
 

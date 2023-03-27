@@ -72,14 +72,15 @@ inline double Admixture::runNativeWithBigAss(int ind, const std::unique_ptr<BigA
                 for(c2 = c1; c2 < C; c2++)
                 {
                     c12 = c1 * C + c2;
+                    auto xz = LikeForwardInd(c12, s) * LikeBackwardInd(c12, s)
+                              / (genome->PI[ic][s * C + c1] * genome->PI[ic][s * C + c2]);
+
                     for(k1 = 0; k1 < K; k1++)
                     {
                         for(k2 = 0; k2 < K; k2++)
                         {
                             k12 = k1 * K + k2;
-                            w(cc, k12) = LikeForwardInd(c12, s) * LikeBackwardInd(c12, s) * F(k1 * C + c1, m)
-                                         * Q(k1, ind) * F(k2 * C + c2, m) * Q(k2, ind);
-                            // w(cc, k12) /= H(c1) * H(c2);
+                            w(cc, k12) = xz * F(k1 * C + c1, m) * Q(k1, ind) * F(k2 * C + c2, m) * Q(k2, ind);
                             if(c1 != c2) w(cc, k12) *= 2;
                             norm += w(cc, k12);
                         }
@@ -130,6 +131,7 @@ inline double Admixture::runDumpWithBigAss(int ind, const std::unique_ptr<BigAss
     int c1, c2, c12;
     int k1, k2, s, ck1, ck2;
     MyArr1D iQ = MyArr1D::Zero(K);
+    MyArr1D Hz(C);
     for(int ic = 0, m = 0; ic < genome->nchunks; ic++)
     {
         int iM = genome->pos[ic].size();
@@ -203,11 +205,20 @@ inline double Admixture::runOptimalWithBigAss(int ind, const std::unique_ptr<Big
                 for(tmp = 0, c2 = 0; c2 < C; c2++)
                 {
                     c12 = c1 * C + c2;
-                    tmp += LikeBackwardInd(c12, s) * LikeBackwardInd(c12, s) * Hz(c1) * Hz(c2)
-                           / (genome->PI[ic][s * C + c1] * genome->PI[ic][s * C + c2]);
+                    auto xz = LikeForwardInd(c12, s) * LikeBackwardInd(c12, s);
+                    auto zy = Hz(c1) * Hz(c2);
+                    // auto xzy = LikeBackwardInd(c12, s) * LikeBackwardInd(c12, s) * Hz(c1) * Hz(c2);
+                    // std::cerr << xzy << "\t" << xz << "\t" << zy << "\t" << xz * zy << "\n";
+
+                    // assert(xzy == xz * zy);
+                    // tmp += LikeBackwardInd(c12, s) * LikeBackwardInd(c12, s) * Hz(c1) * Hz(c2)
+                    //        / (genome->PI[ic][s * C + c1] * genome->PI[ic][s * C + c2]);
+                    tmp += xz * zy / (genome->PI[ic][s * C + c1] * genome->PI[ic][s * C + c2]);
+                    // tmp += LikeBackwardInd(c12, s) * LikeBackwardInd(c12, s) * Hz(c1) * Hz(c2);
+                    // tmp += xz * zy;
                 }
-                kapa(Eigen::seqN(c1, K, C), s) = (Q.col(ind) * F(Eigen::seqN(c1, K, C), m)) * tmp / Hz(c1);
                 norm += tmp;
+                kapa(Eigen::seqN(c1, K, C), s) = (Q.col(ind) * F(Eigen::seqN(c1, K, C), m)) * tmp / Hz(c1);
             }
             llike += log(norm);
             kapa.col(s) /= kapa.col(s).sum();
