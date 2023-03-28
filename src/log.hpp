@@ -14,10 +14,11 @@ class Logger
 {
   public:
     std::ofstream cao;
-    bool is_screen = true;
+    bool is_screen;
 
-    Logger(std::string filename)
+    Logger(std::string filename, bool screen = true)
     {
+        is_screen = screen;
         cao.open(filename.c_str());
         if(!cao) throw std::runtime_error(filename + " : " + strerror(errno));
         cao.precision(3);

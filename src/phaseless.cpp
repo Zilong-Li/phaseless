@@ -4,13 +4,13 @@
  * Copyright (C) 2023. The use of this code is governed by the LICENSE file.
  ******************************************************************************/
 #include "admixture.hpp"
-#include "alpaca/alpaca.h"
+#include "cli.hpp"
 #include "fastphase.hpp"
 #include "io.hpp"
 #include "log.hpp"
 #include "threadpool.hpp"
 #include "timer.hpp"
-#include <filesystem>
+#include <alpaca/alpaca.h>
 
 using namespace std;
 using namespace vcfpp;
@@ -72,105 +72,51 @@ void filter_input_per_chunk(filesystem::path out,
 int main(int argc, char * argv[])
 {
     // ========= helper message and parameters parsing ===========================
-    std::vector<std::string> args(argv + 1, argv + argc);
-    if(argc <= 1 || args[0] == "-h" || args[0] == "-help")
-    {
-        std::cout << "Author: Zilong-Li (zilong.dk@gmail.com)\n"
-                  << "Usage example:\n"
-                  << "     " + (std::string)argv[0] + " -g beagle.gz -o out -c 10 -k 3 -n 20\n"
-                  << "\nOptions:\n"
-                  << "     -a          accelerated EM with SqS3 scheme [1]\n"
-                  << "     -b          input binary file with all parameters\n"
-                  << "     -c          number of ancestral haplotype clusters\n"
-                  << "     -f          input vcf/bcf format\n"
-                  << "     -g          gziped beagle format\n"
-                  << "     -i          maximum iterations of admixture [1000]\n"
-                  << "     -I          maximum iterations of imputation [40]\n"
-                  << "     -k          number of ancestry in admixture model\n"
-                  << "     -n          number of threads\n"
-                  << "     -o          output prefix\n"
-                  << "     -p          print out log to screen [1]\n"
-                  << "     -P          run phasing/imputation only [0]\n"
-                  << "     -r          region in vcf/bcf to subset\n"
-                  << "     -s          number of sites of each chunk [100000]\n"
-                  << "     -v          verbose for debugging purpose [0]\n"
-                  << "     -info       filter and re-impute sites with low info [0]\n"
-                  << "     -qtol       tolerance of stopping criteria [1e-6]\n"
-                  << "     -seed       for reproducing results [1]\n"
-                  << std::endl;
-        return 1;
-    }
-
-    filesystem::path out, in_beagle, in_vcf, in_bin;
-    string samples = "-", region = "";
-    int chunksize{100000}, accel{1}, phase_only{0}, K{1}, C{0}, nadmix{1000}, nphase{40}, nthreads{4};
-    int seed{1}, isscreen{1}, verbose{0}, bootstrap{0};
-    double qtol{1e-6}, diff, info{0};
-    for(size_t i = 0; i < args.size(); i++)
-    {
-        if(args[i] == "-a") accel = stoi(args[++i]);
-        if(args[i] == "-b") in_bin = args[++i];
-        if(args[i] == "-c") C = stoi(args[++i]);
-        if(args[i] == "-k") K = stoi(args[++i]);
-        if(args[i] == "-f") in_vcf = args[++i];
-        if(args[i] == "-o") out.assign(args[++i]);
-        if(args[i] == "-g") in_beagle.assign(args[++i]);
-        if(args[i] == "-i") nadmix = stoi(args[++i]);
-        if(args[i] == "-I") nphase = stoi(args[++i]);
-        if(args[i] == "-n") nthreads = stoi(args[++i]);
-        if(args[i] == "-p") isscreen = stoi(args[++i]);
-        if(args[i] == "-P") phase_only = stoi(args[++i]);
-        if(args[i] == "-r") region = args[++i];
-        if(args[i] == "-v") verbose = stoi(args[++i]);
-        if(args[i] == "-s") chunksize = stoi(args[++i]);
-        if(args[i] == "-info") info = stod(args[++i]);
-        if(args[i] == "-qtol") qtol = stod(args[++i]);
-        if(args[i] == "-seed") seed = stoi(args[++i]);
-        if(args[i] == "-bootstrap") bootstrap = stoi(args[++i]);
-    }
-
-    Logger cao(out.string() + "phaseless.log");
-    cao.is_screen = isscreen;
-    cao.cao << "Options in effect:\n";
-    for(size_t i = 0; i < args.size(); i++) // print out options in effect
-        i % 2 ? cao.cao << args[i] + "\n" : cao.cao << "  " + args[i] + " ";
+    //
+    auto opts = parsecli(argc, argv);
+    Logger cao(opts.out.string() + "log", !opts.noscreen);
+    cao.print(opts.opts_in_effect);
     Timer tm;
     cao.warn(tm.date(), "-> running fastphase");
     int allthreads = std::thread::hardware_concurrency();
-    nthreads = nthreads < allthreads ? nthreads : allthreads;
-    cao.print(tm.date(), allthreads, " concurrent threads are supported. use", nthreads, " threads");
+    opts.nthreads = opts.nthreads < allthreads ? opts.nthreads : allthreads;
+    cao.print(tm.date(), allthreads, " concurrent threads are supported. use", opts.nthreads, " threads");
 
     // ======================== core calculation part ===========================
-    ThreadPool poolit(nthreads);
+    ThreadPool poolit(opts.nthreads);
     std::unique_ptr<BigAss> genome;
     constexpr auto OPTIONS = alpaca::options::fixed_length_encoding;
-    if(in_bin.empty())
+    if(opts.run_impute)
     {
         genome = std::make_unique<BigAss>();
-        genome->chunksize = chunksize, genome->C = C;
+        genome->chunksize = opts.chunksize, genome->C = opts.C;
         tm.clock();
-        chunk_beagle_genotype_likelihoods(genome, in_beagle);
+        chunk_beagle_genotype_likelihoods(genome, opts.in_beagle);
         cao.print(tm.date(), "parsing input -> C =", genome->C, ", N =", genome->nsamples,
                   ", M =", genome->nsnps, ", nchunks =", genome->nchunks);
         cao.done(tm.date(), "elapsed time for parsing beagle file", std::fixed, tm.reltime(), " secs");
-        if(info > 0)
+        if(genome->nchunks < opts.nthreads)
+            cao.warn(tm.date(), "nchunks < nthreads. only", genome->nchunks, " threads will be working");
+        if(opts.info > 0)
         {
+            // TODO implement this at some point
             return 1;
-            cao.warn(tm.date(), "-info", info, " is applied, which will do two rounds imputation");
+            cao.warn(tm.date(), "--info", opts.info, " is applied, which will do two rounds imputation");
             vector<future<void>> res;
             for(int ic = 0; ic < genome->nchunks; ic++)
-                res.emplace_back(
-                    poolit.enqueue(filter_input_per_chunk, out, std::ref(genome), ic, nphase, seed, info));
+                res.emplace_back(poolit.enqueue(filter_input_per_chunk, opts.out, std::ref(genome), ic,
+                                                opts.nphase, opts.seed, opts.info));
             for(auto && ll : res) ll.get();
             update_bigass_inplace(genome);
         }
         vector<future<pars>> res;
-        auto bw = make_bcfwriter(out.string() + "all.vcf.gz", genome->chrs, genome->sampleids);
-        std::ofstream oinfo(out.string() + "all.info");
-        std::ofstream opi(out.string() + "all.pi");
+        auto bw = make_bcfwriter(opts.out.string() + "all.vcf.gz", genome->chrs, genome->sampleids);
+        std::ofstream oinfo(opts.out.string() + "all.info");
+        std::ofstream opi(opts.out.string() + "all.pi");
         Eigen::IOFormat fmt(6, Eigen::DontAlignCols, "\t", "\n");
         for(int ic = 0; ic < genome->nchunks; ic++)
-            res.emplace_back(poolit.enqueue(make_input_per_chunk, std::ref(genome), ic, nphase, seed));
+            res.emplace_back(
+                poolit.enqueue(make_input_per_chunk, std::ref(genome), ic, opts.nphase, opts.seed));
         int ic = 0;
         for(auto && ll : res)
         {
@@ -183,42 +129,36 @@ int main(int argc, char * argv[])
             opi << PI.transpose().format(fmt) << "\n";
             cao.print(tm.date(), "chunk", ic++, " imputation done and outputting");
         }
-        std::ofstream ofs(out.string() + "pars.bin", std::ios::out | std::ios::binary);
+        std::ofstream ofs(opts.out.string() + "pars.bin", std::ios::out | std::ios::binary);
         auto bytes_written = alpaca::serialize<OPTIONS, BigAss>(*genome, ofs);
         ofs.close();
-        assert(std::filesystem::file_size(out.string() + "pars.bin") == bytes_written);
+        assert(std::filesystem::file_size(opts.out.string() + "pars.bin") == bytes_written);
         cao.done(tm.date(), "imputation done and outputting.", bytes_written, " bytes written to file");
+        return 0;
     }
-    else
+    else if(opts.run_admix)
     { // Deserialize from file
-        auto filesize = std::filesystem::file_size(in_bin);
+        auto filesize = std::filesystem::file_size(opts.in_bin);
         std::error_code ec;
-        std::ifstream ifs(in_bin, std::ios::in | std::ios::binary);
+        std::ifstream ifs(opts.in_bin, std::ios::in | std::ios::binary);
         genome = std::make_unique<BigAss>(alpaca::deserialize<OPTIONS, BigAss>(ifs, filesize, ec));
         ifs.close();
         assert((bool)ec == false);
         cao.done(tm.date(), filesize, " bytes deserialized from file. skip imputation, ec", ec);
         cao.print(tm.date(), "parsing input -> C =", genome->C, ", N =", genome->nsamples,
                   ", M =", genome->nsnps, ", nchunks =", genome->nchunks);
-        assert(K < genome->C);
+        assert(opts.K < genome->C);
     }
-    if(phase_only) return 0;
 
-    if(bootstrap > 0)
-    {
-        cao.warn(tm.date(), "-> running bootstrap to select the best start point");
-        seed = run_bootstrap(genome, poolit, cao, K, bootstrap);
-    }
-    cao.warn(tm.date(), "-> running admixture with seed =", seed);
-    Admixture admixer(genome->nsamples, genome->nsnps, genome->C, K, seed);
-    admixer.debug = verbose;
+    cao.warn(tm.date(), "-> running admixture with seed =", opts.seed);
+    Admixture admixer(genome->nsamples, genome->nsnps, genome->C, opts.K, opts.seed);
     vector<future<double>> llike;
-    if(accel)
+    if(!opts.noaccel)
     {
         MyArr2D F0, Q0, F1, Q1;
         const int istep{4};
-        double alpha, stepMax{4}, alphaMax{1280};
-        for(int it = 0; it < nadmix / 3; it++)
+        double alpha, diff, stepMax{4}, alphaMax{1280};
+        for(int it = 0; it < opts.nadmix / 3; it++)
         {
             // first accel iteration
             admixer.initIteration();
@@ -245,9 +185,10 @@ int main(int argc, char * argv[])
             admixer.updateIteration();
             cao.print(tm.date(), "SqS3 iteration", it * 3 + 1, ", diff(Q) =", std::scientific, diff,
                       ", likelihoods =", std::fixed, loglike, ",", tm.reltime(), " sec");
-            if(diff < qtol)
+            if(diff < opts.qtol)
             {
-                cao.print(tm.date(), "hit stopping criteria, diff(Q) =", std::scientific, diff, " <", qtol);
+                cao.print(tm.date(), "hit stopping criteria, diff(Q) =", std::scientific, diff, " <",
+                          opts.qtol);
                 break;
             }
             // accel iteration with steplen
@@ -274,7 +215,8 @@ int main(int argc, char * argv[])
     else
     {
         MyArr2D Q0;
-        for(int it = 0; it < nadmix; it++)
+        double diff, loglike;
+        for(int it = 0; it < opts.nadmix; it++)
         {
             tm.clock();
             admixer.initIteration();
@@ -283,18 +225,18 @@ int main(int argc, char * argv[])
                 llike.emplace_back(
                     poolit.enqueue(&Admixture::runOptimalWithBigAss, &admixer, i, std::ref(genome)));
 
-            double loglike = 0;
+            loglike = 0;
             for(auto && ll : llike) loglike += ll.get();
             llike.clear(); // clear future and renew
             admixer.updateIteration();
             diff = (admixer.Q - Q0).square().sum();
             cao.print(tm.date(), "normal iteration", it, ", diff(Q) =", std::scientific, diff,
                       ", likelihoods =", std::fixed, loglike, ",", tm.reltime(), " sec");
-            if(diff < qtol) break;
+            if(diff < opts.qtol) break;
         }
     }
     cao.done(tm.date(), "admixture done and outputting");
-    admixer.writeQ(out.string() + "admixture.Q");
+    admixer.writeQ(opts.out.string() + "Q");
     // if(admixer.debug) admixer.writeBin(out.string() + "qf.bin", genome);
     cao.done(tm.date(), "-> good job. have a nice day, bye!");
 
