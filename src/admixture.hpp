@@ -46,6 +46,56 @@ inline Admixture::Admixture(int n, int m, int c, int k, int seed) : N(n), M(m), 
 
 inline Admixture::~Admixture() {}
 
+// the complexity of this version should be O(CC + 2CK)
+inline double Admixture::runOptimalWithBigAss(int ind, const std::unique_ptr<BigAss> & genome)
+{
+    MyArr2D kapa, Ekg;
+    MyArr2D LikeForwardInd, LikeBackwardInd;
+    MyArr1D iQ = MyArr1D::Zero(K);
+    MyArr1D Hz(C);
+    double norm = 0, llike = 0, tmp = 0;
+    int c1, k1, s, c2, c12;
+    for(int ic = 0, m = 0; ic < genome->nchunks; ic++)
+    {
+        int iM = genome->pos[ic].size();
+        LikeForwardInd.setZero(C * C, iM);
+        LikeBackwardInd.setZero(C * C, iM);
+        getClusterLikelihoods(ind, LikeForwardInd, LikeBackwardInd, genome->gls[ic], genome->transRate[ic],
+                              genome->PI[ic], genome->F[ic], true); // return gamma
+        kapa.setZero(C * K, iM); // C x K x M layout
+        Ekg.setZero(K, iM);
+        for(s = 0; s < iM; s++, m++)
+        {
+            for(c1 = 0; c1 < C; c1++) Hz(c1) = (Q.col(ind) * F(Eigen::seqN(c1, K, C), m)).sum();
+            for(norm = 0, c1 = 0; c1 < C; c1++)
+            {
+                for(tmp = 0, c2 = 0; c2 < C; c2++)
+                {
+                    c12 = c1 * C + c2;
+                    auto xz = LikeForwardInd(c12, s) * LikeBackwardInd(c12, s);
+                    auto zy = Hz(c1) * Hz(c2);
+                    tmp += xz * zy / (genome->PI[ic][s * C + c1] * genome->PI[ic][s * C + c2]);
+                }
+                norm += tmp;
+                kapa(Eigen::seqN(c1, K, C), s) = (Q.col(ind) * F(Eigen::seqN(c1, K, C), m)) * tmp / Hz(c1);
+            }
+            llike += log(norm);
+            kapa.col(s) /= kapa.col(s).sum();
+            for(k1 = 0; k1 < K; k1++) Ekg(k1, s) = 2 * kapa.middleRows(k1 * C, C).col(s).sum();
+        }
+        iQ += Ekg.rowwise().sum();
+        { // for update F
+            std::lock_guard<std::mutex> lock(mutex_it); // sum over all samples
+            Ekc.middleCols(m - iM, iM) += 2 * kapa;
+            NormF.middleCols(m - iM, iM) += Ekg;
+        }
+    }
+
+    Q.col(ind) = iQ / (2 * M); // update Q, iQ.sum() should be 2M
+
+    return llike;
+}
+
 // the complexity of this version is O(CCKK)
 inline double Admixture::runNativeWithBigAss(int ind, const std::unique_ptr<BigAss> & genome)
 {
@@ -64,7 +114,6 @@ inline double Admixture::runNativeWithBigAss(int ind, const std::unique_ptr<BigA
                               genome->PI[ic], genome->F[ic], true);
         iEkc.setZero(C * K, iM);
         Ekg.setZero(K, iM);
-
         for(s = 0; s < iM; s++, m++)
         {
             for(norm = 0, cc = 0, c1 = 0; c1 < C; c1++)
@@ -170,66 +219,6 @@ inline double Admixture::runDumpWithBigAss(int ind, const std::unique_ptr<BigAss
         {
             std::lock_guard<std::mutex> lock(mutex_it); // sum over all samples
             Ekc.middleCols(m - iM, iM) += iEkc;
-            NormF.middleCols(m - iM, iM) += Ekg;
-        }
-    }
-    // update Q, iQ.sum() should be 2M
-    Q.col(ind) = iQ / (2 * M);
-
-    return llike;
-}
-
-// the complexity of this version should be O(2CC + CK)
-inline double Admixture::runOptimalWithBigAss(int ind, const std::unique_ptr<BigAss> & genome)
-{
-    MyArr2D kapa, Ekg;
-    MyArr2D LikeForwardInd, LikeBackwardInd;
-    MyArr1D iQ = MyArr1D::Zero(K);
-    MyArr1D Hz(C);
-    double norm = 0, llike = 0, tmp = 0;
-    int c1, k1, s, c2, c12;
-    for(int ic = 0, m = 0; ic < genome->nchunks; ic++)
-    {
-        int iM = genome->pos[ic].size();
-        LikeForwardInd.setZero(C * C, iM);
-        LikeBackwardInd.setZero(C * C, iM);
-        getClusterLikelihoods(ind, LikeForwardInd, LikeBackwardInd, genome->gls[ic], genome->transRate[ic],
-                              genome->PI[ic], genome->F[ic], true); // return gamma
-        kapa.setZero(C * K, iM); // C x K x M layout
-        Ekg.setZero(K, iM);
-        for(s = 0; s < iM; s++, m++)
-        {
-            for(c1 = 0; c1 < C; c1++) Hz(c1) = (Q.col(ind) * F(Eigen::seqN(c1, K, C), m)).sum();
-            for(norm = 0, c1 = 0; c1 < C; c1++)
-            {
-                for(tmp = 0, c2 = 0; c2 < C; c2++)
-                {
-                    c12 = c1 * C + c2;
-                    auto xz = LikeForwardInd(c12, s) * LikeBackwardInd(c12, s);
-                    auto zy = Hz(c1) * Hz(c2);
-                    // auto xzy = LikeBackwardInd(c12, s) * LikeBackwardInd(c12, s) * Hz(c1) * Hz(c2);
-                    // std::cerr << xzy << "\t" << xz << "\t" << zy << "\t" << xz * zy << "\n";
-
-                    // assert(xzy == xz * zy);
-                    // tmp += LikeBackwardInd(c12, s) * LikeBackwardInd(c12, s) * Hz(c1) * Hz(c2)
-                    //        / (genome->PI[ic][s * C + c1] * genome->PI[ic][s * C + c2]);
-                    tmp += xz * zy / (genome->PI[ic][s * C + c1] * genome->PI[ic][s * C + c2]);
-                    // tmp += LikeBackwardInd(c12, s) * LikeBackwardInd(c12, s) * Hz(c1) * Hz(c2);
-                    // tmp += xz * zy;
-                }
-                norm += tmp;
-                kapa(Eigen::seqN(c1, K, C), s) = (Q.col(ind) * F(Eigen::seqN(c1, K, C), m)) * tmp / Hz(c1);
-            }
-            llike += log(norm);
-            kapa.col(s) /= kapa.col(s).sum();
-            // kapa = (kapa < 1e-6).select(1e-6, kapa);
-            // std::cout << kapa.col(s).sum() << std::endl;
-            for(k1 = 0; k1 < K; k1++) Ekg(k1, s) = 2 * kapa.middleRows(k1 * C, C).col(s).sum();
-        }
-        iQ += Ekg.rowwise().sum();
-        { // for update F
-            std::lock_guard<std::mutex> lock(mutex_it); // sum over all samples
-            Ekc.middleCols(m - iM, iM) += 2 * kapa;
             NormF.middleCols(m - iM, iM) += Ekg;
         }
     }

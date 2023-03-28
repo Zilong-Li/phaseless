@@ -1,5 +1,8 @@
 #+title: News and Changes
 
+* v0.1.8
+- fix optimal version
+- output big vcf, pi and info files
 * v0.1.7
 - add optimal version of O(CC+CK) complexity and reduce number errors
 - fix serialization

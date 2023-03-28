@@ -71,7 +71,7 @@ void filter_input_per_chunk(filesystem::path out,
 
 int main(int argc, char * argv[])
 {
-    // ========= helper message and parameters parsing ============================
+    // ========= helper message and parameters parsing ===========================
     std::vector<std::string> args(argv + 1, argv + argc);
     if(argc <= 1 || args[0] == "-h" || args[0] == "-help")
     {
@@ -89,7 +89,7 @@ int main(int argc, char * argv[])
                   << "     -k          number of ancestry in admixture model\n"
                   << "     -n          number of threads\n"
                   << "     -o          output prefix\n"
-                  << "     -p          print out log to screen [0]\n"
+                  << "     -p          print out log to screen [1]\n"
                   << "     -P          run phasing/imputation only [0]\n"
                   << "     -r          region in vcf/bcf to subset\n"
                   << "     -s          number of sites of each chunk [100000]\n"
@@ -97,7 +97,6 @@ int main(int argc, char * argv[])
                   << "     -info       filter and re-impute sites with low info [0]\n"
                   << "     -qtol       tolerance of stopping criteria [1e-6]\n"
                   << "     -seed       for reproducing results [1]\n"
-                  << "     -bootstrap  number of bootstraps [0]\n"
                   << std::endl;
         return 1;
     }
@@ -105,7 +104,7 @@ int main(int argc, char * argv[])
     filesystem::path out, in_beagle, in_vcf, in_bin;
     string samples = "-", region = "";
     int chunksize{100000}, accel{1}, phase_only{0}, K{1}, C{0}, nadmix{1000}, nphase{40}, nthreads{4};
-    int seed{1}, isscreen{0}, verbose{0}, bootstrap{0};
+    int seed{1}, isscreen{1}, verbose{0}, bootstrap{0};
     double qtol{1e-6}, diff, info{0};
     for(size_t i = 0; i < args.size(); i++)
     {
@@ -236,12 +235,6 @@ int main(int argc, char * argv[])
             F1 = admixer.F;
             Q1 = admixer.Q;
             diff = (Q1 - Q0).square().sum();
-            if(diff < qtol)
-            {
-                cao.print(tm.date(), "SqS3 iteration", it * 3 + 1, ", diff(Q) =", std::scientific, diff, " <",
-                          qtol, ", hit stopping criteria.");
-                break;
-            }
             tm.clock();
             for(int i = 0; i < genome->nsamples; i++)
                 llike.emplace_back(
@@ -252,6 +245,11 @@ int main(int argc, char * argv[])
             admixer.updateIteration();
             cao.print(tm.date(), "SqS3 iteration", it * 3 + 1, ", diff(Q) =", std::scientific, diff,
                       ", likelihoods =", std::fixed, loglike, ",", tm.reltime(), " sec");
+            if(diff < qtol)
+            {
+                cao.print(tm.date(), "hit stopping criteria, diff(Q) =", std::scientific, diff, " <", qtol);
+                break;
+            }
             // accel iteration with steplen
             admixer.initIteration();
             alpha = ((F1 - F0).square().sum() + (Q1 - Q0).square().sum())
@@ -297,7 +295,7 @@ int main(int argc, char * argv[])
     }
     cao.done(tm.date(), "admixture done and outputting");
     admixer.writeQ(out.string() + "admixture.Q");
-    if(admixer.debug) admixer.writeBin(out.string() + "qf.bin", genome);
+    // if(admixer.debug) admixer.writeBin(out.string() + "qf.bin", genome);
     cao.done(tm.date(), "-> good job. have a nice day, bye!");
 
     return 0;
