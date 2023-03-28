@@ -6,11 +6,11 @@
 
 struct Options
 {
-    int chunksize, K, C, nadmix, nphase, nthreads, seed, bootstrap;
-    double qtol, info;
-    bool noaccel{0}, noscreen{0}, run_impute{0}, run_admix{0}, single_chunk{0};
+    int chunksize{10000}, K{2}, C{10}, nadmix{1000}, nphase{40}, nthreads{1}, seed{999};
+    double qtol{1e-6}, info{0};
+    bool noaccel{0}, noscreen{0}, run_impute{0}, run_admix{0}, run_pars{0},single_chunk{0};
     std::filesystem::path out, in_beagle, in_vcf, in_bin;
-    std::string samples, region;
+    std::string samples{"-"}, region{""};
     std::string opts_in_effect{"Options in effect:\n   "};
 };
 
@@ -22,7 +22,7 @@ inline auto parsecli(int argc, char * argv[])
     argparse::ArgumentParser program("phaseless", VERSION, argparse::default_arguments::help);
 
     argparse::ArgumentParser impute_command("impute", VERSION, argparse::default_arguments::help);
-    impute_command.add_description("run imputation only for low coverage sequencing data");
+    impute_command.add_description("run imputation for low coverage sequencing data");
     impute_command.add_argument("-c", "--cluster")
         .help("number of ancestral haplotype clusters")
         .default_value(10)
@@ -96,10 +96,21 @@ inline auto parsecli(int argc, char * argv[])
         .help("seed for reproducing results and different inits")
         .default_value(999)
         .scan<'i', int>();
+
+    argparse::ArgumentParser pars_command("parse", VERSION, argparse::default_arguments::help);
+    pars_command.add_description("manipulate pars.bin file outputted from impute command");
+    pars_command.add_argument("-b", "--bin")
+        .help("binary format from impute command as input")
+        .default_value(std::string{""});
+    pars_command.add_argument("-o", "--out")
+        .help("output prefix")
+        .default_value(std::string{"parse."});
+
     // clang-format on
 
     program.add_subparser(impute_command);
     program.add_subparser(admix_command);
+    program.add_subparser(pars_command);
 
     try
     {
@@ -139,6 +150,17 @@ inline auto parsecli(int argc, char * argv[])
             if(opts.in_bin.empty())
             {
                 std::cerr << admix_command.help().str();
+                std::exit(1);
+            }
+        }
+        else if(program.is_subcommand_used(pars_command))
+        {
+            opts.run_pars = true;
+            opts.in_bin.assign(pars_command.get("--bin"));
+            opts.out.assign(pars_command.get("--out"));
+            if(opts.in_bin.empty())
+            {
+                std::cerr << pars_command.help().str();
                 std::exit(1);
             }
         }

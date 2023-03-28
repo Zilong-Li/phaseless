@@ -3,7 +3,15 @@
 [[https://github.com/Zilong-Li/phaseless/actions/workflows/mac.yml/badge.svg]]
 
 Phaseless is designed for genotype imputation and admixture inference using low coverage sequencing data.
-Firstly, the imputation model is in the spirit of [[https://www.ncbi.nlm.nih.gov/pmc/articles/PMC1424677/][fastPHASE]] model but with genotype likelihood as input, and likewise [[https://www.nature.com/articles/ng.3594][STITCH]] works on raw read input. Next, the admixture inference is modeled on the haplotype cluster information from the fastphase model.
+Firstly, the imputation model is in the spirit of [[https://www.ncbi.nlm.nih.gov/pmc/articles/PMC1424677/][fastPHASE]] model but with genotype likelihood as input, and likewise [[https://www.nature.com/articles/ng.3594][STITCH]] works on raw reads. Next, the admixture inference is modeled on the haplotype cluster information from the fastphase model.
+
+* Table of Content :TOC:Quote:
+#+BEGIN_QUOTE
+- [[#build][Build]]
+- [[#usage][Usage]]
+- [[#output][Output]]
+- [[#changes][Changes]]
+#+END_QUOTE
 
 * Build
 
@@ -11,40 +19,45 @@ Assume you have =htslib= installed in your system path.
 
 #+begin_src shell
 git clone https://github.com/Zilong-Li/phaseless
-cd phaseless/src && make -j4
+make -j4
 #+end_src
 
 If you follow [[https://github.com/samtools/htslib][htslib]] installation guide and have it in your customized path
 #+begin_src shell
-cd phaseless/src && make HTSLIB=/path/to/your/htslib -j4
+make HTSLIB=/path/to/your/htslib -j4
 #+end_src
 
 * Usage
-- run imputation/phasing only and create a binary input for admixture model
++ run imputation/phasing only and create a binary input for admixture model
 #+begin_src shell
-phaseless -g data/bgl.gz -o out -c 10 -n 6 -P 1
+phaseless impute -g data/bgl.gz -c 10 -n 4 && tree -L 1
 #+end_src
-- run admixture for different =K= with same binary file as input
++ run admixture for different =K= with same binary file as input
 #+begin_src shell
-phaseless -b outdir/pars.bin -k 9 -n 40
+phaseless admix -b impute.pars.bin -k 3 -n 4
 #+end_src
-- run both imputation and admixture in one step
++ investigate the model parameters
 #+begin_src shell
-phaseless -g data/bgl.gz -o out -c 10 -k 3 -n 20
+phaseless parse -b impute.pars.bin
+./misc/plot_haplotype_cluster.R # see nice haplotype cluster information
 #+end_src
+[[file:misc/haplike.png]]
 
 * Output
 
-Without specifying the output prefix =-o=, the output filenames are as follows:
+Without specifying the output prefix =-o=, the output filenames of the above commands are as follows:
 
 #+begin_src shell
-❯ phaseless -g data/bgl.gz -n 4 -k 3 -i 10 -p 1 -c 10 && tree -L 1
+❯ tree -L 1
 .
-├── admixture.Q
-├── all.info
-├── all.vcf.gz
-├── pars.bin
-└── phaseless.log
+├── admix.Q
+├── admix.log
+├── parse.haplike.bin
+├── parse.log
+├── impute.all.info
+├── impute.all.vcf.gz
+├── impute.pars.bin
+└── impute.log
 #+end_src
 
 * Changes

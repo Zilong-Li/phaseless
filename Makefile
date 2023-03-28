@@ -1,4 +1,4 @@
-HTSINC   = ../external
+HTSINC   = ./external
 HTSLIB   = /usr/local/lib
 CXX      = g++
 # CXXFLAGS = -std=c++17 -Wall -O3 -g -fsanitize=address
@@ -8,7 +8,7 @@ INC      = -I../external -I$(HTSINC) -I$(HTSLIB)
 LDFLAGS  =  -L$(HTSLIB) -Wl,-rpath,$(HTSLIB)
 LIBS     = -lhts -lz -lm -lbz2 -llzma -lcurl -lpthread
 # OBJS     = $(patsubst %.cpp, %.o, $(wildcard *.cpp))
-BINS     = $(patsubst %.cpp, %, $(wildcard *.cpp))
+BINS     = $(patsubst src/%.cpp, src/%, $(wildcard src/*.cpp))
 
 .PHONY: all clean
 

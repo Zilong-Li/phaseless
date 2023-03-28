@@ -148,97 +148,127 @@ int main(int argc, char * argv[])
         cao.print(tm.date(), "parsing input -> C =", genome->C, ", N =", genome->nsamples,
                   ", M =", genome->nsnps, ", nchunks =", genome->nchunks);
         assert(opts.K < genome->C);
-    }
 
-    cao.warn(tm.date(), "-> running admixture with seed =", opts.seed);
-    Admixture admixer(genome->nsamples, genome->nsnps, genome->C, opts.K, opts.seed);
-    vector<future<double>> llike;
-    if(!opts.noaccel)
-    {
-        MyArr2D F0, Q0, F1, Q1;
-        const int istep{4};
-        double alpha, diff, stepMax{4}, alphaMax{1280};
-        for(int it = 0; it < opts.nadmix / 3; it++)
+        cao.warn(tm.date(), "-> running admixture with seed =", opts.seed);
+        Admixture admixer(genome->nsamples, genome->nsnps, genome->C, opts.K, opts.seed);
+        vector<future<double>> llike;
+        if(!opts.noaccel)
         {
-            // first accel iteration
-            admixer.initIteration();
-            F0 = admixer.F;
-            Q0 = admixer.Q;
-            for(int i = 0; i < genome->nsamples; i++)
-                llike.emplace_back(
-                    poolit.enqueue(&Admixture::runOptimalWithBigAss, &admixer, i, std::ref(genome)));
-            for(auto && ll : llike) ll.get();
-            llike.clear(); // clear future and renew
-            admixer.updateIteration();
-            // second accel iteration
-            admixer.initIteration();
-            F1 = admixer.F;
-            Q1 = admixer.Q;
-            diff = (Q1 - Q0).square().sum();
-            tm.clock();
-            for(int i = 0; i < genome->nsamples; i++)
-                llike.emplace_back(
-                    poolit.enqueue(&Admixture::runOptimalWithBigAss, &admixer, i, std::ref(genome)));
-            double loglike = 0;
-            for(auto && ll : llike) loglike += ll.get();
-            llike.clear(); // clear future and renew
-            admixer.updateIteration();
-            cao.print(tm.date(), "SqS3 iteration", it * 3 + 1, ", diff(Q) =", std::scientific, diff,
-                      ", likelihoods =", std::fixed, loglike, ",", tm.reltime(), " sec");
-            if(diff < opts.qtol)
+            MyArr2D F0, Q0, F1, Q1;
+            const int istep{4};
+            double alpha, diff, stepMax{4}, alphaMax{1280};
+            for(int it = 0; it < opts.nadmix / 3; it++)
             {
-                cao.print(tm.date(), "hit stopping criteria, diff(Q) =", std::scientific, diff, " <",
-                          opts.qtol);
-                break;
-            }
-            // accel iteration with steplen
-            admixer.initIteration();
-            alpha = ((F1 - F0).square().sum() + (Q1 - Q0).square().sum())
+                // first accel iteration
+                admixer.initIteration();
+                F0 = admixer.F;
+                Q0 = admixer.Q;
+                for(int i = 0; i < genome->nsamples; i++)
+                    llike.emplace_back(
+                        poolit.enqueue(&Admixture::runOptimalWithBigAss, &admixer, i, std::ref(genome)));
+                for(auto && ll : llike) ll.get();
+                llike.clear(); // clear future and renew
+                admixer.updateIteration();
+                // second accel iteration
+                admixer.initIteration();
+                F1 = admixer.F;
+                Q1 = admixer.Q;
+                diff = (Q1 - Q0).square().sum();
+                tm.clock();
+                for(int i = 0; i < genome->nsamples; i++)
+                    llike.emplace_back(
+                        poolit.enqueue(&Admixture::runOptimalWithBigAss, &admixer, i, std::ref(genome)));
+                double loglike = 0;
+                for(auto && ll : llike) loglike += ll.get();
+                llike.clear(); // clear future and renew
+                admixer.updateIteration();
+                cao.print(tm.date(), "SqS3 iteration", it * 3 + 1, ", diff(Q) =", std::scientific, diff,
+                          ", likelihoods =", std::fixed, loglike, ",", tm.reltime(), " sec");
+                if(diff < opts.qtol)
+                {
+                    cao.print(tm.date(), "hit stopping criteria, diff(Q) =", std::scientific, diff, " <",
+                              opts.qtol);
+                    break;
+                }
+                // accel iteration with steplen
+                admixer.initIteration();
+                alpha =
+                    ((F1 - F0).square().sum() + (Q1 - Q0).square().sum())
                     / ((admixer.F - 2 * F1 + F0).square().sum() + (admixer.Q - 2 * Q1 + Q0).square().sum());
-            alpha = max(1.0, sqrt(alpha));
-            if(alpha >= stepMax)
-            {
-                alpha = min(stepMax, alphaMax);
-                stepMax = min(stepMax * istep, alphaMax);
+                alpha = max(1.0, sqrt(alpha));
+                if(alpha >= stepMax)
+                {
+                    alpha = min(stepMax, alphaMax);
+                    stepMax = min(stepMax * istep, alphaMax);
+                }
+                admixer.F = F0 + 2 * alpha * (F1 - F0) + alpha * alpha * (admixer.F - 2 * F1 + F0);
+                admixer.Q = Q0 + 2 * alpha * (Q1 - Q0) + alpha * alpha * (admixer.Q - 2 * Q1 + Q0);
+                admixer.initIteration();
+                for(int i = 0; i < genome->nsamples; i++)
+                    llike.emplace_back(
+                        poolit.enqueue(&Admixture::runOptimalWithBigAss, &admixer, i, std::ref(genome)));
+                for(auto && ll : llike) ll.get();
+                llike.clear(); // clear future and renew
+                admixer.updateIteration();
             }
-            admixer.F = F0 + 2 * alpha * (F1 - F0) + alpha * alpha * (admixer.F - 2 * F1 + F0);
-            admixer.Q = Q0 + 2 * alpha * (Q1 - Q0) + alpha * alpha * (admixer.Q - 2 * Q1 + Q0);
-            admixer.initIteration();
-            for(int i = 0; i < genome->nsamples; i++)
-                llike.emplace_back(
-                    poolit.enqueue(&Admixture::runOptimalWithBigAss, &admixer, i, std::ref(genome)));
-            for(auto && ll : llike) ll.get();
-            llike.clear(); // clear future and renew
-            admixer.updateIteration();
         }
-    }
-    else
-    {
-        MyArr2D Q0;
-        double diff, loglike;
-        for(int it = 0; it < opts.nadmix; it++)
+        else
         {
-            tm.clock();
-            admixer.initIteration();
-            Q0 = admixer.Q;
-            for(int i = 0; i < genome->nsamples; i++)
-                llike.emplace_back(
-                    poolit.enqueue(&Admixture::runOptimalWithBigAss, &admixer, i, std::ref(genome)));
+            MyArr2D Q0;
+            double diff, loglike;
+            for(int it = 0; it < opts.nadmix; it++)
+            {
+                tm.clock();
+                admixer.initIteration();
+                Q0 = admixer.Q;
+                for(int i = 0; i < genome->nsamples; i++)
+                    llike.emplace_back(
+                        poolit.enqueue(&Admixture::runOptimalWithBigAss, &admixer, i, std::ref(genome)));
 
-            loglike = 0;
-            for(auto && ll : llike) loglike += ll.get();
-            llike.clear(); // clear future and renew
-            admixer.updateIteration();
-            diff = (admixer.Q - Q0).square().sum();
-            cao.print(tm.date(), "normal iteration", it, ", diff(Q) =", std::scientific, diff,
-                      ", likelihoods =", std::fixed, loglike, ",", tm.reltime(), " sec");
-            if(diff < opts.qtol) break;
+                loglike = 0;
+                for(auto && ll : llike) loglike += ll.get();
+                llike.clear(); // clear future and renew
+                admixer.updateIteration();
+                diff = (admixer.Q - Q0).square().sum();
+                cao.print(tm.date(), "normal iteration", it, ", diff(Q) =", std::scientific, diff,
+                          ", likelihoods =", std::fixed, loglike, ",", tm.reltime(), " sec");
+                if(diff < opts.qtol) break;
+            }
         }
-    }
-    cao.done(tm.date(), "admixture done and outputting");
-    admixer.writeQ(opts.out.string() + "Q");
-    // if(admixer.debug) admixer.writeBin(out.string() + "qf.bin", genome);
-    cao.done(tm.date(), "-> good job. have a nice day, bye!");
+        cao.done(tm.date(), "admixture done and outputting");
+        admixer.writeQ(opts.out.string() + "Q");
+        // if(admixer.debug) admixer.writeBin(out.string() + "qf.bin", genome);
+        cao.done(tm.date(), "-> good job. have a nice day, bye!");
 
-    return 0;
+        return 0;
+    }
+    else if(opts.run_pars)
+    {
+        auto filesize = std::filesystem::file_size(opts.in_bin);
+        std::error_code ec;
+        std::ifstream ifs(opts.in_bin, std::ios::in | std::ios::binary);
+        genome = std::make_unique<BigAss>(alpaca::deserialize<OPTIONS, BigAss>(ifs, filesize, ec));
+        ifs.close();
+        assert((bool)ec == false);
+        MyArr2D alpha, beta;
+        // haplike is p(X_is | Z_is, \theta) = alpha * beta
+        std::ofstream ofs(opts.out.string() + "haplike.bin", std::ios::binary);
+        ofs.write((char *)&genome->C, 4);
+        ofs.write((char *)&genome->nsamples, 4);
+        ofs.write((char *)&genome->nsnps, 4);
+        for(int ind = 0; ind < genome->nsamples; ind++)
+        {
+            for(int ic = 0; ic < genome->nchunks; ic++)
+            {
+                int iM = genome->pos[ic].size();
+                alpha.setZero(genome->C * genome->C, iM);
+                beta.setZero(genome->C * genome->C, iM);
+                getClusterLikelihoods(ind, alpha, beta, genome->gls[ic], genome->transRate[ic],
+                                      genome->PI[ic], genome->F[ic], false);
+                alpha *= beta;
+                ofs.write((char *)alpha.data(), genome->C * genome->C * iM * 4);
+            }
+        }
+        return 0;
+    }
 }
