@@ -30,7 +30,7 @@ make HTSLIB=/path/to/your/htslib -j4
 * Usage
 + run imputation/phasing only and create a binary input for admixture model
 #+begin_src shell
-phaseless impute -g data/bgl.gz -c 10 -n 4 && tree -L 1
+phaseless impute -g data/bgl.gz -c 10 -n 4
 #+end_src
 + run admixture for different =K= with same binary file as input
 #+begin_src shell
