@@ -6,7 +6,7 @@
 
 struct Options
 {
-    int chunksize{10000}, K{2}, C{10}, nadmix{1000}, nimpute{40}, nthreads{1}, seed{999};
+    int ichunk{0}, chunksize{10000}, K{2}, C{10}, nadmix{1000}, nimpute{40}, nthreads{1}, seed{999};
     double qtol{1e-6}, info{0};
     bool noaccel{0}, noscreen{0}, run_impute{0}, run_admix{0}, run_pars{0}, single_chunk{0};
     std::filesystem::path out, in_beagle, in_vcf, in_bin;
@@ -110,6 +110,10 @@ inline auto parsecli(int argc, char * argv[])
     pars_command.add_argument("-b", "--bin")
         .help("binary format from impute command as input")
         .default_value(std::string{""});
+    pars_command.add_argument("-e", "--chunk")
+        .help("which chunk to extract, 0-based")
+        .default_value(0)
+        .scan<'i', int>();
     pars_command.add_argument("-o", "--out")
         .help("output prefix")
         .default_value(std::string{"parse."});
@@ -169,6 +173,7 @@ inline auto parsecli(int argc, char * argv[])
             opts.run_pars = true;
             opts.in_bin.assign(pars_command.get("--bin"));
             opts.out.assign(pars_command.get("--out"));
+            opts.ichunk = pars_command.get<int>("--chunk");
             if(opts.in_bin.empty())
             {
                 std::cerr << pars_command.help().str();

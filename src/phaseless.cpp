@@ -300,24 +300,28 @@ int main(int argc, char * argv[])
         genome = std::make_unique<BigAss>(alpaca::deserialize<OPTIONS, BigAss>(ifs, filesize, ec));
         ifs.close();
         assert((bool)ec == false);
-        MyArr2D alpha, beta;
-        // haplike is p(X_is | Z_is, \theta) = alpha * beta
+        const int ic = opts.ichunk;
+        if(ic >= genome->nchunks)
+        {
+            cao.error("the chunk to extract", ic, "(0-baded) is not less than total chunks",
+                      genome->nchunks);
+            return 1;
+        }
+        const int iM = genome->pos[ic].size();
         std::ofstream ofs(opts.out.string() + "haplike.bin", std::ios::binary);
         ofs.write((char *)&genome->C, 4);
         ofs.write((char *)&genome->nsamples, 4);
-        ofs.write((char *)&genome->nsnps, 4);
+        ofs.write((char *)&iM, 4);
+        // haplike is p(X_is | Z_is, \theta) = alpha * beta
+        MyArr2D alpha, beta;
         for(int ind = 0; ind < genome->nsamples; ind++)
         {
-            for(int ic = 0; ic < genome->nchunks; ic++)
-            {
-                int iM = genome->pos[ic].size();
-                alpha.setZero(genome->C * genome->C, iM);
-                beta.setZero(genome->C * genome->C, iM);
-                getClusterLikelihoods(ind, alpha, beta, genome->gls[ic], genome->transRate[ic],
-                                      genome->PI[ic], genome->F[ic], false);
-                alpha *= beta;
-                ofs.write((char *)alpha.data(), genome->C * genome->C * iM * 4);
-            }
+            alpha.setZero(genome->C * genome->C, iM);
+            beta.setZero(genome->C * genome->C, iM);
+            getClusterLikelihoods(ind, alpha, beta, genome->gls[ic], genome->transRate[ic], genome->PI[ic],
+                                  genome->F[ic], false);
+            alpha *= beta;
+            ofs.write((char *)alpha.data(), genome->C * genome->C * iM * 4);
         }
         return 0;
     }
