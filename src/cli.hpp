@@ -6,9 +6,9 @@
 
 struct Options
 {
-    int chunksize{10000}, K{2}, C{10}, nadmix{1000}, nphase{40}, nthreads{1}, seed{999};
+    int chunksize{10000}, K{2}, C{10}, nadmix{1000}, nimpute{40}, nthreads{1}, seed{999};
     double qtol{1e-6}, info{0};
-    bool noaccel{0}, noscreen{0}, run_impute{0}, run_admix{0}, run_pars{0},single_chunk{0};
+    bool noaccel{0}, noscreen{0}, run_impute{0}, run_admix{0}, run_pars{0}, single_chunk{0};
     std::filesystem::path out, in_beagle, in_vcf, in_bin;
     std::string samples{"-"}, region{""};
     std::string opts_in_effect{"Options in effect:\n   "};
@@ -33,6 +33,10 @@ inline auto parsecli(int argc, char * argv[])
     impute_command.add_argument("-g", "--beagle")
         .help("gziped beagle format as input")
         .default_value(std::string{""});
+    impute_command.add_argument("-i", "--iterations")
+        .help("number of EM iterations")
+        .default_value(40)
+        .scan<'i', int>();
     impute_command.add_argument("-n", "--threads")
         .help("number of threads")
         .default_value(1)
@@ -76,6 +80,10 @@ inline auto parsecli(int argc, char * argv[])
     admix_command.add_argument("-k", "--ancestry")
         .help("number of ancestry in admixture assumption")
         .default_value(2)
+        .scan<'i', int>();
+    admix_command.add_argument("-i", "--iterations")
+        .help("number of maximun EM iterations")
+        .default_value(1000)
         .scan<'i', int>();
     admix_command.add_argument("-n", "--threads")
         .help("number of threads")
@@ -125,11 +133,13 @@ inline auto parsecli(int argc, char * argv[])
             opts.out.assign(impute_command.get("--out"));
             opts.C = impute_command.get<int>("--cluster");
             opts.nthreads = impute_command.get<int>("--threads");
+            opts.nimpute = impute_command.get<int>("--iterations");
             opts.seed = impute_command.get<int>("--seed");
             opts.chunksize = impute_command.get<int>("--chunksize");
             opts.info = impute_command.get<double>("--info");
             opts.single_chunk = impute_command.get<bool>("--single-chunk");
             opts.noscreen = impute_command.get<bool>("--no-print");
+            if(opts.single_chunk) opts.chunksize = INT_MAX;
             if(opts.in_beagle.empty() && opts.in_vcf.empty())
             {
                 std::cerr << impute_command.help().str();
@@ -144,6 +154,7 @@ inline auto parsecli(int argc, char * argv[])
             opts.seed = admix_command.get<int>("--seed");
             opts.K = admix_command.get<int>("-k");
             opts.nthreads = admix_command.get<int>("--threads");
+            opts.nadmix = admix_command.get<int>("--iterations");
             opts.qtol = admix_command.get<double>("--qtol");
             opts.noaccel = admix_command.get<bool>("--no-accel");
             opts.noscreen = admix_command.get<bool>("--no-print");

@@ -9,6 +9,9 @@ Firstly, the imputation model is in the spirit of [[https://www.ncbi.nlm.nih.gov
 #+BEGIN_QUOTE
 - [[#build][Build]]
 - [[#usage][Usage]]
+  - [[#imputation][Imputation]]
+  - [[#admixture][Admixture]]
+  - [[#parameters][Parameters]]
 - [[#output][Output]]
 - [[#changes][Changes]]
 #+END_QUOTE
@@ -28,15 +31,28 @@ make HTSLIB=/path/to/your/htslib -j4
 #+end_src
 
 * Usage
-+ run imputation/phasing only and create a binary input for admixture model
+=phaseless= owns subcommands. please use =phaseless -h= to check it out.
+
+** Imputation
+The parallelism of =phaseless impute= is designed for impute the whole genome at once, which means it run multiple chunks in parallel with each taken over by a thread. Check out the =--chunksize= option.
+
 #+begin_src shell
-phaseless impute -g data/bgl.gz -c 10 -n 4
+phaseless impute -g data/bgl.gz -c 10 -n 4 -s 100000
 #+end_src
-+ run admixture for different =K= with same binary file as input
+
+However, one might only be interested in imputing a single chunk for whatever reason. To change the behavior of parallelism and make it running in parallel for single chunk, we can use =--single-chunk= option to toggle the behavior.
+
+#+begin_src shell
+phaseless impute -g data/bgl.gz -c 10 -n 4 -S
+#+end_src
+
+** Admixture
+With the binary file outputted by the above =impute= command, we can run admixture inference for different =k= ancestry.
 #+begin_src shell
 phaseless admix -b impute.pars.bin -k 3 -n 4
 #+end_src
-+ investigate the model parameters
+** Parameters
+Besides, we can investigate and manipulate the parameters from =fastPHASE= model using the binary file by =impute= command.
 #+begin_src shell
 phaseless parse -b impute.pars.bin
 ./misc/plot_haplotype_cluster.R # see nice haplotype cluster information

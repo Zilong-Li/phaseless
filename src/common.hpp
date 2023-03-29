@@ -299,4 +299,15 @@ inline auto getClusterLikelihoods(int ind,
     }
 }
 
+inline auto calc_cluster_info(const int N, const MyArr2D & GZP1, const MyArr2D & GZP2)
+{
+    auto eij = GZP1 + GZP2 * 2;
+    auto fij = GZP1 + GZP2 * 4;
+    MyArr2D Info = 1 - (fij - eij.square()) / (eij * (1 - eij / (2 * N)));
+    Info = (Info < 0).select(0, Info);
+    Info = (Info > 1).select(1, Info);
+    // Info = Info.isNaN().select(1, Info);
+    return Info;
+}
+
 #endif // COMMON_H_
