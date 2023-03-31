@@ -64,7 +64,7 @@ inline auto parsecli(int argc, char * argv[])
         .default_value(0.0)
         .scan<'g', double>();
     impute_command.add_argument("--seed")
-        .help("seed for reproducing results and different inits")
+        .help("seed for reproducing results")
         .default_value(999)
         .scan<'i', int>();
 
@@ -101,12 +101,12 @@ inline auto parsecli(int argc, char * argv[])
         .default_value(1e-6)
         .scan<'g', double>();
     admix_command.add_argument("-s","--seed")
-        .help("seed for reproducing results and different inits")
+        .help("seed for reproducing results")
         .default_value(999)
         .scan<'i', int>();
 
     argparse::ArgumentParser pars_command("parse", VERSION, argparse::default_arguments::help);
-    pars_command.add_description("manipulate pars.bin file outputted from impute command");
+    pars_command.add_description("manipulate pars.bin file from impute command");
     pars_command.add_argument("-b", "--bin")
         .help("binary format from impute command as input")
         .default_value(std::string{""});

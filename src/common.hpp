@@ -292,11 +292,10 @@ inline auto getClusterLikelihoods(int ind,
             }
         }
     }
-    if(gamma)
-    {
-        // for(s = 0; s < M; s++) LikeForwardInd.col(s) /= cs(s);
-        LikeForwardInd.rowwise() /= cs.transpose();
-    }
+    // for(s = 0; s < M; s++) LikeForwardInd.col(s) /= cs(s);
+    LikeForwardInd.rowwise() /= cs.transpose();
+    // gamma = alpha * beta / likelhoods of the individual
+    if(gamma) LikeForwardInd /= (LikeForwardInd.col(M - 1).sum() / cs).sum();
 }
 
 inline auto calc_cluster_info(const int N, const MyArr2D & GZP1, const MyArr2D & GZP2)

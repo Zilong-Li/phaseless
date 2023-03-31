@@ -303,8 +303,7 @@ int main(int argc, char * argv[])
         const int ic = opts.ichunk;
         if(ic >= genome->nchunks)
         {
-            cao.error("the chunk to extract", ic, "(0-baded) is not less than total chunks",
-                      genome->nchunks);
+            cao.error("the chunk to extract", ic, "(0-baded) is not less than total chunks", genome->nchunks);
             return 1;
         }
         const int iM = genome->pos[ic].size();
@@ -312,14 +311,14 @@ int main(int argc, char * argv[])
         ofs.write((char *)&genome->C, 4);
         ofs.write((char *)&genome->nsamples, 4);
         ofs.write((char *)&iM, 4);
-        // haplike is p(X_is | Z_is, \theta) = alpha * beta
+        // haplike is p(X_is ,Z_is | \theta) = alpha * beta
         MyArr2D alpha, beta;
         for(int ind = 0; ind < genome->nsamples; ind++)
         {
             alpha.setZero(genome->C * genome->C, iM);
             beta.setZero(genome->C * genome->C, iM);
             getClusterLikelihoods(ind, alpha, beta, genome->gls[ic], genome->transRate[ic], genome->PI[ic],
-                                  genome->F[ic], false);
+                                  genome->F[ic]);
             alpha *= beta;
             ofs.write((char *)alpha.data(), genome->C * genome->C * iM * 4);
         }

@@ -1,7 +1,7 @@
 #!/usr/bin/env Rscript
 
 
-read_haplotype_likelihood <- function(fn) {
+read_haplike <- function(fn) {
   con <- file(fn, "rb")
   hdr <- readBin(con, integer(), n = 3) # C, N, M, nchunks
   C <- hdr[1]
@@ -9,7 +9,9 @@ read_haplotype_likelihood <- function(fn) {
   M <- hdr[3]
   l <- list()
   for (i in 1:N) {
-    haplike <- array(readBin(con, numeric(), n = C * C * M, size = 4), dim = c(C, C, M))
+    haplike <- array(readBin(con, numeric(), n = C * C * M, size = 4),
+      dim = c(C, C, M)
+    )
     l[[i]] <- haplike
   }
   close(con)
@@ -17,14 +19,17 @@ read_haplotype_likelihood <- function(fn) {
 }
 
 ## @param snps which snps to subset
-plot_haplotype_cluster <- function(haplike, nsamples, npop, snps) {
+plot_haplike <- function(haplike, nsamples, npop, snps) {
   C <- dim(haplike[[1]])[1]
   iN <- nsamples / npop # should be integer
   iM <- length(snps)
   idx <- 1:iM
   layout(matrix(1:2, nrow = 1), widths = c(12, 1))
-  par(mar = c(0, 0, 0, 0))
-  plot(0, 0, col = "transparent", xlim = c(1, iM), ylim = c(0, 0.7 * nsamples + 4), axes = F, xlab = "SNPs", ylab = "")
+  par(mar = c(0, 0, 1, 0))
+  plot(0, 0,
+    col = "transparent", axes = F, main = "Most Likely Haplotype Cluster Pairs",
+    xlim = c(1, iM), ylim = c(0, 0.7 * nsamples + 4)
+  )
   w <- 0.3
   w2 <- 0.1
   x <- 0
@@ -33,10 +38,9 @@ plot_haplotype_cluster <- function(haplike, nsamples, npop, snps) {
   for (i in 1:nsamples) {
     out <- t(sapply(snps, function(s) {
       imat <- haplike[[i]][, , s]
-      kk <- as.vector(which(imat == max(imat), arr.ind = T))[1:2]
+      kk <- sort(as.vector(which(imat == max(imat), arr.ind = T))[1:2])
       kk
     }))
-
     if (j == iN + 1 || j == 2 * iN + 1) {
       x <- x + 2
       y <- y + 2
@@ -65,14 +69,34 @@ colors <- c(
 )
 palette(colors)
 
-l <- read_haplotype_likelihood("parse.haplike.bin")
+l <- read_haplike("parse.haplike.bin")
+
+
+# check if sum(alpha*beta)==1
+## n <- 10
+## isTRUE(all.equal(colSums(l$haplike[[n]], dims = 2),
+##   rep(1, dim(l$haplike[[n]])[3]),
+##   tolerance = 1e-4
+## ))
 
 png("haplike.png", unit = "in", res = 300, width = 12, height = 6)
 npop <- 3
 snps <- 1:1000
 nsamples <- 60
-plot_haplotype_cluster(l$haplike, nsamples, npop, snps)
+plot_haplike(l$haplike, nsamples, npop, snps)
 dev.off()
+
+pi <- as.matrix(read.table("impute.all.pi", h = F, sep = "\t"))
+
+png("hapfreq.png", unit = "in", res = 300, width = 12, height = 6)
+par(mar = c(2, 0, 4, 0))
+res <- pi[1:200+800,]
+barplot(t(as.matrix(res)),
+  beside = F, col = colors, border = NA, space = 0,
+  main = "Haplotype Cluster Frequncy", axes = F
+)
+dev.off()
+
 
 ## Local Variables:
 ## eval: (flycheck-mode -1)

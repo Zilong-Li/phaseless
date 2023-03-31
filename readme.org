@@ -12,6 +12,7 @@ Firstly, the imputation model is in the spirit of [[https://www.ncbi.nlm.nih.gov
   - [[#imputation][Imputation]]
   - [[#admixture][Admixture]]
   - [[#parameters][Parameters]]
+  - [[#plotting][Plotting]]
 - [[#output][Output]]
 - [[#changes][Changes]]
 #+END_QUOTE
@@ -55,9 +56,16 @@ phaseless admix -b impute.pars.bin -k 3 -n 4
 Besides, we can investigate and manipulate the parameters from =fastPHASE= model using the binary file by =impute= command.
 #+begin_src shell
 phaseless parse -b impute.pars.bin
-./misc/plot_haplotype_cluster.R # see nice haplotype cluster information
 #+end_src
+
+** Plotting
+Now, we can do some interesting plotting.
+#+begin_src shell
+./misc/plot_haplotype_cluster.R
+#+end_src
+
 [[file:misc/haplike.png]]
+[[file:misc/hapfreq.png]]
 
 * Output
 

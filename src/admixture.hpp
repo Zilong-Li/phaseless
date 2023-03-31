@@ -31,9 +31,7 @@ class Admixture
     void writeQ(std::string out);
     void writeBin(std::string out, const std::unique_ptr<BigAss> & genome);
     double runNativeWithBigAss(int ind, const std::unique_ptr<BigAss> & genome);
-    double runDumpWithBigAss(int ind, const std::unique_ptr<BigAss> & genome);
     double runOptimalWithBigAss(int ind, const std::unique_ptr<BigAss> & genome);
-    double runWithSingleChunk(int, const MyFloat1D &, const MyArr2D &, const MyArr2D &, const MyArr2D &);
 };
 
 inline Admixture::Admixture(int n, int m, int c, int k, int seed) : N(n), M(m), C(c), K(k)
@@ -61,7 +59,7 @@ inline double Admixture::runOptimalWithBigAss(int ind, const std::unique_ptr<Big
         LikeForwardInd.setZero(C * C, iM);
         LikeBackwardInd.setZero(C * C, iM);
         getClusterLikelihoods(ind, LikeForwardInd, LikeBackwardInd, genome->gls[ic], genome->transRate[ic],
-                              genome->PI[ic], genome->F[ic], true); // return gamma
+                              genome->PI[ic], genome->F[ic]);
         kapa.setZero(C * K, iM); // C x K x M layout
         Ekg.setZero(K, iM);
         for(s = 0; s < iM; s++, m++)
@@ -111,7 +109,7 @@ inline double Admixture::runNativeWithBigAss(int ind, const std::unique_ptr<BigA
         LikeForwardInd.setZero(C * C, iM); // likelihood of forward recursion for ind i, not log
         LikeBackwardInd.setZero(C * C, iM); // likelihood of backward recursion for ind i, not log
         getClusterLikelihoods(ind, LikeForwardInd, LikeBackwardInd, genome->gls[ic], genome->transRate[ic],
-                              genome->PI[ic], genome->F[ic], true);
+                              genome->PI[ic], genome->F[ic]);
         iEkc.setZero(C * K, iM);
         Ekg.setZero(K, iM);
         for(s = 0; s < iM; s++, m++)
@@ -157,63 +155,6 @@ inline double Admixture::runNativeWithBigAss(int ind, const std::unique_ptr<BigA
                     ++cc;
                 }
             }
-        }
-        iQ += Ekg.rowwise().sum();
-        {
-            std::lock_guard<std::mutex> lock(mutex_it); // sum over all samples
-            Ekc.middleCols(m - iM, iM) += iEkc;
-            NormF.middleCols(m - iM, iM) += Ekg;
-        }
-    }
-    // update Q, iQ.sum() should be 2M
-    Q.col(ind) = iQ / (2 * M);
-
-    return llike;
-}
-
-// the complexity of this version is O(2CCKK)
-inline double Admixture::runDumpWithBigAss(int ind, const std::unique_ptr<BigAss> & genome)
-{
-    MyArr2D w(C * K, C * K);
-    MyArr2D Ekg, iEkc, LikeForwardInd, LikeBackwardInd;
-    double norm = 0, llike = 0;
-    int c1, c2, c12;
-    int k1, k2, s, ck1, ck2;
-    MyArr1D iQ = MyArr1D::Zero(K);
-    MyArr1D Hz(C);
-    for(int ic = 0, m = 0; ic < genome->nchunks; ic++)
-    {
-        int iM = genome->pos[ic].size();
-        LikeForwardInd.setZero(C * C, iM); // likelihood of forward recursion for ind i, not log
-        LikeBackwardInd.setZero(C * C, iM); // likelihood of backward recursion for ind i, not log
-        getClusterLikelihoods(ind, LikeForwardInd, LikeBackwardInd, genome->gls[ic], genome->transRate[ic],
-                              genome->PI[ic], genome->F[ic], true);
-        iEkc.setZero(C * K, iM);
-        Ekg.setZero(K, iM);
-        for(s = 0; s < iM; s++, m++)
-        {
-            for(norm = 0, c1 = 0; c1 < C; c1++)
-            {
-                for(k1 = 0; k1 < K; k1++)
-                {
-                    for(c2 = 0; c2 < C; c2++)
-                    {
-                        c12 = c1 * C + c2;
-                        for(k2 = 0; k2 < K; k2++)
-                        {
-                            ck1 = k1 * C + c1;
-                            ck2 = k2 * C + c2;
-                            w(ck1, ck2) = LikeForwardInd(c12, s) * LikeBackwardInd(c12, s) * F(k1 * C + c1, m)
-                                          * Q(k1, ind) * F(k2 * C + c2, m) * Q(k2, ind);
-                            norm += w(ck1, ck2);
-                        }
-                    }
-                }
-            }
-            llike += log(norm);
-            w /= norm;
-            iEkc.col(s) = 2 * w.rowwise().sum();
-            Ekg.col(s) = iEkc.col(s).reshaped(C, K).colwise().sum();
         }
         iQ += Ekg.rowwise().sum();
         {
