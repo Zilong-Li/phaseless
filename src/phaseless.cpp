@@ -33,7 +33,7 @@ int run_bootstrap(const std::unique_ptr<BigAss> & genome, ThreadPool & poolit, L
         llikes.push_back(loglike);
     }
     int seed = 0;
-    for(auto ll : llikes) cao.print("seed =", seed++, ", log likelihoods =", ll);
+    for(auto ll : llikes) cao.print("seed =", seed++, ", likelihoods =", ll);
     auto it = std::max_element(llikes.begin(), llikes.end());
     return std::distance(llikes.begin(), it);
 }
@@ -76,7 +76,7 @@ int main(int argc, char * argv[])
     cao.warn(tm.date(), "-> running fastphase");
     int allthreads = std::thread::hardware_concurrency();
     opts.nthreads = opts.nthreads < allthreads ? opts.nthreads : allthreads;
-    cao.print(tm.date(), allthreads, " concurrent threads are supported. use", opts.nthreads, " threads");
+    cao.print(tm.date(), allthreads, " concurrent threads are available. use", opts.nthreads, " threads");
 
     // ======================== core calculation part ===========================
     ThreadPool poolit(opts.nthreads);
@@ -90,7 +90,7 @@ int main(int argc, char * argv[])
         tm.clock();
         chunk_beagle_genotype_likelihoods(genome, opts.in_beagle);
         cao.print(tm.date(), "parsing input -> C =", genome->C, ", N =", genome->nsamples,
-                  ", M =", genome->nsnps, ", nchunks =", genome->nchunks);
+                  ", M =", genome->nsnps, ", nchunks =", genome->nchunks, ", seed =", opts.seed);
         cao.done(tm.date(), "elapsed time for parsing beagle file", std::fixed, tm.reltime(), " secs");
         if(opts.info > 0)
         {
@@ -140,7 +140,7 @@ int main(int argc, char * argv[])
                     }
                     res.clear(); // clear future and renew
                     cao.print(tm.date(), "run single chunk", ic, ", iteration", it,
-                              ", log likelihoods =", loglike, ",", tm.reltime(), " sec");
+                              ", likelihoods =", loglike, ",", tm.reltime(), " sec");
                     faith.updateIteration();
                 }
                 tm.clock();
@@ -152,7 +152,7 @@ int main(int argc, char * argv[])
                 auto ClusterInfo = calc_cluster_info(faith.N, faith.GZP1, faith.GZP2);
                 oinfo << ClusterInfo.format(fmt) << "\n";
                 opi << faith.PI.transpose().format(fmt) << "\n";
-                cao.done(tm.date(), "chunk", ic, "done. outputting ", tm.reltime(), " secs");
+                cao.done(tm.date(), "chunk", ic, " done. outputting elapsed", tm.reltime(), " secs");
             }
         }
         else
@@ -311,7 +311,7 @@ int main(int argc, char * argv[])
         ofs.write((char *)&genome->C, 4);
         ofs.write((char *)&genome->nsamples, 4);
         ofs.write((char *)&iM, 4);
-        // haplike is p(X_is ,Z_is | \theta) = alpha * beta
+        // haplike is p(Z_is |X_is , theta) = alpha * beta / p(X|theta) = gamma
         MyArr2D alpha, beta;
         for(int ind = 0; ind < genome->nsamples; ind++)
         {

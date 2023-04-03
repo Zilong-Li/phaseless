@@ -29,7 +29,6 @@ class Admixture
     void initIteration(double tol = 1e-6);
     void updateIteration();
     void writeQ(std::string out);
-    void writeBin(std::string out, const std::unique_ptr<BigAss> & genome);
     double runNativeWithBigAss(int ind, const std::unique_ptr<BigAss> & genome);
     double runOptimalWithBigAss(int ind, const std::unique_ptr<BigAss> & genome);
 };
@@ -59,7 +58,7 @@ inline double Admixture::runOptimalWithBigAss(int ind, const std::unique_ptr<Big
         LikeForwardInd.setZero(C * C, iM);
         LikeBackwardInd.setZero(C * C, iM);
         getClusterLikelihoods(ind, LikeForwardInd, LikeBackwardInd, genome->gls[ic], genome->transRate[ic],
-                              genome->PI[ic], genome->F[ic]);
+                              genome->PI[ic], genome->F[ic], true); // return gamma
         kapa.setZero(C * K, iM); // C x K x M layout
         Ekg.setZero(K, iM);
         for(s = 0; s < iM; s++, m++)
@@ -109,7 +108,7 @@ inline double Admixture::runNativeWithBigAss(int ind, const std::unique_ptr<BigA
         LikeForwardInd.setZero(C * C, iM); // likelihood of forward recursion for ind i, not log
         LikeBackwardInd.setZero(C * C, iM); // likelihood of backward recursion for ind i, not log
         getClusterLikelihoods(ind, LikeForwardInd, LikeBackwardInd, genome->gls[ic], genome->transRate[ic],
-                              genome->PI[ic], genome->F[ic]);
+                              genome->PI[ic], genome->F[ic], true);
         iEkc.setZero(C * K, iM);
         Ekg.setZero(K, iM);
         for(s = 0; s < iM; s++, m++)
@@ -200,30 +199,4 @@ inline void Admixture::writeQ(std::string out)
     ofs.close();
 }
 
-inline void Admixture::writeBin(std::string out, const std::unique_ptr<BigAss> & genome)
-{
-    std::ofstream ofs(out, std::ios::binary);
-    ofs.write((char *)&N, 4);
-    ofs.write((char *)&M, 4);
-    ofs.write((char *)&C, 4);
-    ofs.write((char *)&K, 4);
-    ofs.write((char *)Q.data(), K * N * 4);
-    ofs.write((char *)F.data(), C * K * M * 4);
-    for(int ic = 0; ic < genome->nchunks; ic++)
-        ofs.write((char *)genome->PI[ic].data(), C * genome->pos[ic].size() * 4);
-    MyArr2D LikeForwardInd, LikeBackwardInd;
-    for(int ind = 0; ind < N; ind++)
-    {
-        for(int ic = 0; ic < genome->nchunks; ic++)
-        {
-            int iM = genome->pos[ic].size();
-            LikeForwardInd.setZero(C * C, iM); // likelihood of forward recursion for ind i, not log
-            LikeBackwardInd.setZero(C * C, iM); // likelihood of backward recursion for ind i, not log
-            getClusterLikelihoods(ind, LikeForwardInd, LikeBackwardInd, genome->gls[ic],
-                                  genome->transRate[ic], genome->PI[ic], genome->F[ic], true);
-            ofs.write((char *)LikeForwardInd.data(), C * C * iM * 4);
-            ofs.write((char *)LikeBackwardInd.data(), C * C * iM * 4);
-        }
-    }
-}
 #endif // ADMIXTURE_H_

@@ -28,3 +28,4 @@ jobs:
       run: |
         cd tests
         make -j4
+        make test

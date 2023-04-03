@@ -29,7 +29,6 @@ class FastPhaseK2
 
     void initIteration(double tol = 1e-6);
     void updateIteration();
-    double forwardAndBackwards(const MyArr2D &, const MyArr2D &, MyArr2D &, MyArr2D &, MyArr1D &, bool);
     auto forwardAndBackwardsHighRam(int, const MyFloat1D &, const MyArr2D &, bool);
     double forwardAndBackwardsLowRam(int, const MyFloat1D &, const MyArr2D &, bool);
     double runWithOneThread(int, const MyFloat1D &, const MyArr2D &);
@@ -104,86 +103,6 @@ inline double FastPhaseK2::runWithOneThread(int niters, const MyFloat1D & GL, co
 ** @param transRate (x^2, x(1-x), (1-x)^2),M x 3
 ** @return individual total likelihood
 */
-inline double FastPhaseK2::forwardAndBackwards(const MyArr2D & gli,
-                                               const MyArr2D & transRate,
-                                               MyArr2D & LikeForwardInd,
-                                               MyArr2D & LikeBackwardInd,
-                                               MyArr1D & cs,
-                                               bool call_geno)
-{
-    MyArr2D emitDip = emissionCurIterInd(gli, F, false).transpose();
-    MyArr1D sumTmp1(C), sumTmp2(C); // store sum over internal loop
-    double constTmp;
-    // ======== forward recursion ===========
-    int z1, z2, z12;
-    int s{0};
-    LikeForwardInd.col(s) =
-        emitDip.col(s) * (PI.col(s).matrix() * PI.col(s).transpose().matrix()).reshaped().array();
-    cs(s) = 1 / LikeForwardInd.col(s).sum();
-    LikeForwardInd.col(s) *= cs(s); // normalize it
-    for(s = 1; s < M; s++)
-    {
-        sumTmp1 = LikeForwardInd.col(s - 1).reshaped(C, C).rowwise().sum() * transRate(1, s);
-        sumTmp2 = LikeForwardInd.col(s - 1).reshaped(C, C).colwise().sum() * transRate(1, s);
-        constTmp = LikeForwardInd.col(s - 1).sum() * transRate(2, s);
-        for(z1 = 0; z1 < C; z1++)
-        {
-            for(z2 = 0; z2 < C; z2++)
-            {
-                z12 = z1 * C + z2;
-                LikeForwardInd(z12, s) =
-                    emitDip(z12, s)
-                    * (LikeForwardInd(z12, s - 1) * transRate(0, s) + PI(z1, s) * sumTmp1(z2)
-                       + PI(z2, s) * sumTmp2(z1) + PI(z1, s) * PI(z2, s) * constTmp);
-            }
-        }
-        cs(s) = 1 / LikeForwardInd.col(s).sum();
-        LikeForwardInd.col(s) *= cs(s); // normalize it
-    }
-    double indLike = LikeForwardInd.col(M - 1).sum();
-    double indLogLikeForwardAll = log((indLike / cs).sum()); // log likelhoods of the individual
-
-    // ======== backward recursion ===========
-    s = M - 1; // set last site
-    LikeBackwardInd.col(s).setConstant(cs(s)); // not log scale
-    for(s = M - 2; s >= 0; s--)
-    {
-        auto beta_mult_emit = emitDip.col(s + 1) * LikeBackwardInd.col(s + 1);
-        sumTmp1.setZero();
-        sumTmp2.setZero();
-        for(constTmp = 0, z1 = 0; z1 < C; z1++)
-        {
-            for(z2 = 0; z2 < C; z2++)
-            {
-                z12 = z1 * C + z2;
-                sumTmp1(z1) += beta_mult_emit(z12) * PI(z2, s + 1) * transRate(1, s + 1);
-                sumTmp2(z2) += beta_mult_emit(z12) * PI(z1, s + 1) * transRate(1, s + 1);
-                constTmp += beta_mult_emit(z12) * PI(z1, s + 1) * PI(z2, s + 1) * transRate(2, s + 1);
-            }
-        }
-        for(z1 = 0; z1 < C; z1++)
-        {
-            for(z2 = 0; z2 < C; z2++)
-            {
-                z12 = z1 * C + z2;
-                // apply scaling
-                LikeBackwardInd(z12, s) =
-                    (beta_mult_emit(z12) * transRate(0, s + 1) + sumTmp1(z1) + sumTmp2(z2) + constTmp)
-                    * cs(s);
-            }
-        }
-    }
-    cs *= indLike; // get last forward likelihood back
-
-    return indLogLikeForwardAll;
-}
-
-/*
-** @param ind       current individual i
-** @param GL        genotype likelihood of all individuals in snp major form
-** @param transRate (x^2, x(1-x), (1-x)^2),M x 3
-** @return individual total likelihood
-*/
 inline double FastPhaseK2::forwardAndBackwardsLowRam(int ind,
                                                      const MyFloat1D & GL,
                                                      const MyArr2D & transRate,
@@ -192,19 +111,19 @@ inline double FastPhaseK2::forwardAndBackwardsLowRam(int ind,
     Eigen::Map<const MyArr2D> gli(GL.data() + ind * M * 3, M, 3);
     MyArr2D LikeForwardInd(C2, M); // likelihood of forward recursion for ind i, not log
     MyArr2D LikeBackwardInd(C2, M); // likelihood of backward recursion for ind i, not log
-    MyArr1D cs = MyArr1D::Zero(M);
     double indLogLikeForwardAll =
-        forwardAndBackwards(gli, transRate, LikeForwardInd, LikeBackwardInd, cs, call_geno);
+        getClusterLikelihoods(LikeForwardInd, LikeBackwardInd, gli, transRate, PI, F, true);
     MyArr1D ind_post_z_col(M); // col of indPostProbsZ
     MyArr2D ind_post_z_g(M, 4); // cols of indPostProbsZandG
     LikeForwardInd *= LikeBackwardInd;
+    LikeForwardInd.rowwise() /= LikeForwardInd.colwise().sum(); // normlize it so that colwise.sum()==1
     int g1, g2, g3, g12, z1, z2, z12;
     for(z1 = 0; z1 < C; z1++)
     {
         for(z2 = 0; z2 < C; z2++)
         {
             z12 = z1 * C + z2;
-            ind_post_z_col = LikeForwardInd.row(z12).transpose() / cs;
+            ind_post_z_col = LikeForwardInd.row(z12).transpose();
             for(g1 = 0; g1 < 2; g1++)
             {
                 for(g2 = 0; g2 < 2; g2++)
@@ -267,12 +186,12 @@ inline auto FastPhaseK2::forwardAndBackwardsHighRam(int ind,
     Eigen::Map<const MyArr2D> gli(GL.data() + ind * M * 3, M, 3);
     MyArr2D LikeForwardInd(C2, M); // likelihood of forward recursion for ind i, not log
     MyArr2D LikeBackwardInd(C2, M); // likelihood of backward recursion for ind i, not log
-    MyArr1D cs = MyArr1D::Zero(M);
-    auto indLogLikeForwardAll =
-        forwardAndBackwards(gli, transRate, LikeForwardInd, LikeBackwardInd, cs, call_geno);
+    double indLogLikeForwardAll =
+        getClusterLikelihoods(LikeForwardInd, LikeBackwardInd, gli, transRate, PI, F, true);
     MyArr1D ind_post_z_col(M); // col of indPostProbsZ
     MyArr2D ind_post_z_g(M, 4); // cols of indPostProbsZandG
     LikeForwardInd *= LikeBackwardInd;
+    LikeForwardInd.rowwise() /= LikeForwardInd.colwise().sum(); // normlize it so that colwise.sum()==1
     MyArr2D iEk = MyArr2D::Zero(M, C), iEkg = MyArr2D::Zero(M, C * 2); // MxC, MxCx2
     int g1, g2, g3, g12, z1, z2, z12;
     for(z1 = 0; z1 < C; z1++)
@@ -280,7 +199,7 @@ inline auto FastPhaseK2::forwardAndBackwardsHighRam(int ind,
         for(z2 = 0; z2 < C; z2++)
         {
             z12 = z1 * C + z2;
-            ind_post_z_col = LikeForwardInd.row(z12).transpose() / cs;
+            ind_post_z_col = LikeForwardInd.row(z12).transpose();
             for(g1 = 0; g1 < 2; g1++)
             {
                 for(g2 = 0; g2 < 2; g2++)

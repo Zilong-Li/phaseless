@@ -72,12 +72,14 @@ palette(colors)
 l <- read_haplike("parse.haplike.bin")
 
 
-# check if sum(alpha*beta)==1
-## n <- 10
-## isTRUE(all.equal(colSums(l$haplike[[n]], dims = 2),
-##   rep(1, dim(l$haplike[[n]])[3]),
-##   tolerance = 1e-4
-## ))
+## check if sum(alpha*beta)==1
+n <- 3
+isTRUE(all.equal(colSums(l$haplike[[n]], dims = 2),
+  rep(1, dim(l$haplike[[n]])[3]),
+  tolerance = 1e-4
+))
+
+colSums(l$haplike[[n]], dims = 2)
 
 png("haplike.png", unit = "in", res = 300, width = 12, height = 6)
 npop <- 3

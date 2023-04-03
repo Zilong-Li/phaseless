@@ -8,13 +8,13 @@ INC      = -I. -I../src -I../external -I$(HTSINC)
 LDFLAGS  =  -L$(HTSLIB) -Wl,-rpath,$(HTSLIB)
 LIBS     = -lhts -lz -lm -lbz2 -llzma -lcurl -lpthread
 
-OBJS = test-main.o test-io.o test-phaseless.o test-fastphasek2.o test-fastphasek4.o
+OBJS = test-main.o test-io.o test-phaseless.o test-fastphase.o test-forward-backward.o
 
-BINS = test-io.bin test-phaseless.bin test-fastphasek2.bin test-fastphasek4.bin
+BINS = test-io.bin test-phaseless.bin test-fastphase.bin test-forward-backward.bin
 
 .PHONY: all test clean
 
-all: test
+all: $(BINS) $(OBJS)
 
 %.o: %.cpp
 	$(CXX) $(CXXFLAGS) -o $@ -c $< ${INC}
@@ -22,11 +22,11 @@ all: test
 %.bin: %.o test-main.o
 	${CXX} ${CXXFLAGS} -o $@ $< test-main.o $(LDFLAGS) $(LIBS)
 
-test: $(BINS) $(OBJS)
+test: $(BINS)
 	./test-io.bin --success
 	./test-phaseless.bin --success
-	./test-fastphasek2.bin --success
-	./test-fastphasek4.bin --success
+	./test-fastphase.bin --success
+	./test-forward-backward.bin --success
 
 clean:
 	rm -f *.o *.bin
