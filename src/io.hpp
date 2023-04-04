@@ -439,36 +439,36 @@ inline void chunk_beagle_genotype_likelihoods(const std::unique_ptr<BigAss> & ge
     // now evenly split last two chunks of each chromosome
 }
 
-inline void thin_bigass_per_chunk(int ic, const IntVec1D & idx2rm, const std::unique_ptr<BigAss> & genome)
-{
-    if(!idx2rm.empty())
-    {
-        IntVec1D idx2keep;
-        int M = genome->pos[ic].size();
-        for(int i = 0, j = 0; i < M; i++)
-        {
-            if(idx2rm[j] == i)
-                j++;
-            else
-                idx2keep.push_back(i);
-        }
-        int im = idx2keep.size();
-        MyFloat1D gls(genome->nsamples * im * 3);
-        for(int i = 0; i < genome->nsamples; i++)
-        {
-            for(int j = 0; j < im; j++)
-            {
-                gls[i * im * 3 + 0 * im + j] = genome->gls[ic][i * M * 3 + 0 * M + idx2keep[j]];
-                gls[i * im * 3 + 1 * im + j] = genome->gls[ic][i * M * 3 + 1 * M + idx2keep[j]];
-                gls[i * im * 3 + 2 * im + j] = genome->gls[ic][i * M * 3 + 2 * M + idx2keep[j]];
-            }
-        }
-        genome->gls[ic] = gls;
-        IntVec1D pos(im);
-        for(int j = 0; j < im; j++) pos[j] = genome->pos[ic][idx2keep[j]];
-        genome->pos[ic] = pos;
-    }
-}
+// inline void thin_bigass_per_chunk(int ic, const IntVec1D & idx2rm, const std::unique_ptr<BigAss> & genome)
+// {
+//     if(!idx2rm.empty())
+//     {
+//         IntVec1D idx2keep;
+//         int M = genome->pos[ic].size();
+//         for(int i = 0, j = 0; i < M; i++)
+//         {
+//             if(idx2rm[j] == i)
+//                 j++;
+//             else
+//                 idx2keep.push_back(i);
+//         }
+//         int im = idx2keep.size();
+//         MyFloat1D gls(genome->nsamples * im * 3);
+//         for(int i = 0; i < genome->nsamples; i++)
+//         {
+//             for(int j = 0; j < im; j++)
+//             {
+//                 gls[i * im * 3 + 0 * im + j] = genome->gls[ic][i * M * 3 + 0 * M + idx2keep[j]];
+//                 gls[i * im * 3 + 1 * im + j] = genome->gls[ic][i * M * 3 + 1 * M + idx2keep[j]];
+//                 gls[i * im * 3 + 2 * im + j] = genome->gls[ic][i * M * 3 + 2 * M + idx2keep[j]];
+//             }
+//         }
+//         genome->gls[ic] = gls;
+//         IntVec1D pos(im);
+//         for(int j = 0; j < im; j++) pos[j] = genome->pos[ic][idx2keep[j]];
+//         genome->pos[ic] = pos;
+//     }
+// }
 
 inline void update_bigass_inplace(const std::unique_ptr<BigAss> & genome)
 {
@@ -490,6 +490,97 @@ inline void update_bigass_inplace(const std::unique_ptr<BigAss> & genome)
                 break;
         }
     }
+}
+
+inline size_t count_lines(std::string fpath)
+{
+    std::ifstream ifs(fpath);
+    size_t count = 0;
+    std::string line;
+    while(getline(ifs, line)) count++;
+    return count;
+}
+
+inline auto read_plink_bed(std::string plink)
+{
+    std::setlocale(LC_ALL, "C"); // use minial locale
+    std::ios_base::sync_with_stdio(false); // don't sync
+    uint64_t nsamples = count_lines(plink + ".fam");
+    uint64_t nsnps = count_lines(plink + ".bim");
+    uint64_t bed_bytes_per_snp = (nsamples + 3) >> 2; // get ceiling(nsamples/4)
+    std::ifstream ifs(plink + ".bed", std::ios::in | std::ios::binary);
+    uint8_t header[3];
+    ifs.read(reinterpret_cast<char *>(&header[0]), 3);
+    if((header[0] != 0x6c) || (header[1] != 0x1b) || (header[2] != 0x01))
+        throw std::invalid_argument("Incorrect magic number in plink bed file.\n");
+    // read all into inbed
+    std::vector<uint8_t> bed(bed_bytes_per_snp * nsnps);
+    ifs.read(reinterpret_cast<char *>(&bed[0]), bed_bytes_per_snp * nsnps);
+    return bed;
+}
+
+inline auto read_plink_bed(std::ifstream & ifs_bed,
+                           std::ifstream & ifs_bim,
+                           const uint64_t nsamples,
+                           const uint64_t nsnps)
+{
+    uint64_t bed_bytes_per_snp = (nsamples + 3) >> 2; // get ceiling(nsamples/4)
+    auto size = bed_bytes_per_snp * nsnps;
+    std::vector<uint8_t> bed(size);
+    ifs_bed.read(reinterpret_cast<char *>(&bed[0]), size);
+    std::string line;
+    std::vector<std::string> marker;
+    for(int i = 0; i < nsnps; i++)
+    {
+        getline(ifs_bim, line);
+        std::stringstream ss(line);
+        std::vector<std::string> token(std::istream_iterator<std::string>{ss},
+                                       std::istream_iterator<std::string>{});
+        marker.push_back(token[0] + "_" + token[3] + "\t" + token[4] + "\t" + token[5]);
+    }
+    return std::tuple(bed, marker);
+}
+
+inline auto convert_geno2like(std::vector<uint8_t> bed,
+                              std::vector<std::string> marker,
+                              const uint64_t nsamples)
+{
+    uint64_t bed_bytes_per_snp = (nsamples + 3) >> 2; // get ceiling(nsamples/4)
+    std::string res;
+    uint8_t buf;
+    uint64_t i, b, j, k;
+    /**
+     * 00 ->  0 Homozygous for first allele in .bim file
+     * 01 ->  1 Missing genotype
+     * 10 ->  2 Heterozygous (copy of A1)
+     * 11 ->  3 Homozygous for second allele in .bim file
+     */
+    for(i = 0; i < marker.size(); i++)
+    {
+        std::string gl = marker[i];
+        for(j = 0, b = 0; b < bed_bytes_per_snp; b++)
+        {
+            buf = bed[i * bed_bytes_per_snp + b];
+            for(k = 0; k < 4; ++k, ++j)
+            {
+                if(j < nsamples)
+                {
+                    if((buf & 3) == 0)
+                        gl += "\t1\t0\t0";
+                    else if((buf & 3) == 1)
+                        gl += "\t0\t0\t0";
+                    else if((buf & 3) == 2)
+                        gl += "\t0\t1\t0";
+                    else if((buf & 3) == 2)
+                        gl += "\t0\t0\t2";
+                    buf >>= 2; // shift packed data and throw away genotype just processed.
+                }
+            }
+        }
+        gl += "\n";
+        res += gl;
+    }
+    return res;
 }
 
 #endif // PHASELESS_IO_H_

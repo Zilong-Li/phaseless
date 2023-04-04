@@ -7,7 +7,6 @@
 #define FASTPHASE_H_
 
 #include "common.hpp"
-#include <fstream>
 #include <mutex>
 
 class FastPhaseK2

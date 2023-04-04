@@ -8,7 +8,12 @@
 #define COMMON_H_
 
 #include <Eigen/Dense>
+#include <climits>
+#include <clocale>
+#include <filesystem>
+#include <fstream>
 #include <iostream>
+#include <iterator>
 #include <map>
 #include <memory>
 #include <random>
@@ -42,6 +47,16 @@ inline MatrixType RandomUniform(const Eigen::Index numRows,
         a, b}; // or using 0.05, 0.95
     const auto uniform{[&](typename MatrixType::Scalar) { return uniform_real_distribution(engine); }};
     return MatrixType::NullaryExpr(numRows, numCols, uniform);
+};
+
+struct Options
+{
+    int ichunk{0}, chunksize{10000}, K{2}, C{10}, nadmix{1000}, nimpute{40}, nthreads{1}, seed{999};
+    double qtol{1e-6}, info{0};
+    bool noaccel{0}, noscreen{0}, single_chunk{0};
+    std::filesystem::path out, in_beagle, in_vcf, in_bin;
+    std::string region{""}, in_plink{""};
+    std::string opts_in_effect{"Options in effect:\n   "};
 };
 
 // all the genome info I need from fastphase

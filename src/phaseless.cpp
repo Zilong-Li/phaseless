@@ -3,325 +3,224 @@
  * @author      Zilong Li
  * Copyright (C) 2023. The use of this code is governed by the LICENSE file.
  ******************************************************************************/
-#include "admixture.hpp"
-#include "cli.hpp"
-#include "fastphase.hpp"
-#include "io.hpp"
-#include "log.hpp"
-#include "threadpool.hpp"
-#include "timer.hpp"
-#include <alpaca/alpaca.h>
-
-using namespace std;
-using namespace vcfpp;
-
-using pars1 = std::tuple<double, MyArr2D, MyArr2D>;
-using pars2 = std::tuple<MyFloat1D, MyArr2D, MyArr2D, MyArr2D, MyArr2D>;
-
-int run_bootstrap(const std::unique_ptr<BigAss> & genome, ThreadPool & poolit, Logger & cao, int K, int nseeds)
-{
-    std::vector<std::future<double>> res;
-    std::vector<double> llikes;
-    for(int seed = 0; seed < nseeds; seed++)
-    {
-        Admixture admixer(genome->nsamples, genome->nsnps, genome->C, K, seed);
-        for(int i = 0; i < genome->nsamples; i++)
-            res.emplace_back(poolit.enqueue(&Admixture::runOptimalWithBigAss, &admixer, i, std::ref(genome)));
-        double loglike = 0;
-        for(auto && ll : res) loglike += ll.get();
-        res.clear(); // clear future and renew
-        llikes.push_back(loglike);
-    }
-    int seed = 0;
-    for(auto ll : llikes) cao.print("seed =", seed++, ", likelihoods =", ll);
-    auto it = std::max_element(llikes.begin(), llikes.end());
-    return std::distance(llikes.begin(), it);
-}
-
-auto make_input_per_chunk(const std::unique_ptr<BigAss> & genome,
-                          const int ic,
-                          const int niters,
-                          const int seed)
-{
-    FastPhaseK2 faith(genome->nsamples, genome->pos[ic].size(), genome->C, seed);
-    auto transRate = calc_transRate(genome->pos[ic], genome->C);
-    faith.runWithOneThread(niters, genome->gls[ic], transRate);
-    auto Info = calc_cluster_info(faith.N, faith.GZP1, faith.GZP2);
-    return std::tuple(MyFloat1D(faith.GP.data(), faith.GP.data() + faith.GP.size()), Info, transRate,
-                      faith.PI, faith.F);
-}
-
-void filter_input_per_chunk(filesystem::path out,
-                            const std::unique_ptr<BigAss> & genome,
-                            const int ic,
-                            const int niters,
-                            const int seed,
-                            const double info)
-{
-    FastPhaseK2 faith(genome->nsamples, genome->pos[ic].size(), genome->C, seed);
-    auto transRate = calc_transRate(genome->pos[ic], genome->C);
-    faith.runWithOneThread(niters, genome->gls[ic], transRate);
-    auto idx2rm = filter_sites_per_chunk(faith.GP.data(), info, genome->nsamples, genome->pos[ic].size());
-    thin_bigass_per_chunk(ic, idx2rm, genome);
-}
+#include "admix.cpp"
+#include "convert.cpp"
+#include "impute.cpp"
+#include "parse.cpp"
+#include <argparse/argparse.hpp>
 
 int main(int argc, char * argv[])
 {
     // ========= helper message and parameters parsing ===========================
-    //
-    auto opts = parsecli(argc, argv);
-    Logger cao(opts.out.string() + "log", !opts.noscreen);
-    cao.print(opts.opts_in_effect);
-    Timer tm;
-    cao.warn(tm.date(), "-> running fastphase");
-    int allthreads = std::thread::hardware_concurrency();
-    opts.nthreads = opts.nthreads < allthreads ? opts.nthreads : allthreads;
-    cao.print(tm.date(), allthreads, " concurrent threads are available. use", opts.nthreads, " threads");
 
-    // ======================== core calculation part ===========================
-    ThreadPool poolit(opts.nthreads);
-    std::unique_ptr<BigAss> genome;
-    constexpr auto OPTIONS = alpaca::options::fixed_length_encoding;
+    const std::string VERSION{"0.1.9"};
 
-    if(opts.run_impute)
+    // clang-format off
+    argparse::ArgumentParser program("phaseless", VERSION, argparse::default_arguments::help);
+
+    argparse::ArgumentParser cmd_impute("impute", VERSION, argparse::default_arguments::help);
+    cmd_impute.add_description("run imputation for low coverage sequencing data");
+    cmd_impute.add_argument("-c", "--cluster")
+        .help("number of ancestral haplotype clusters")
+        .default_value(10)
+        .scan<'i', int>();
+    cmd_impute.add_argument("-f", "--vcf")
+        .help("vcf/bcf format with GL/PL tag as input")
+        .default_value(std::string{""});
+    cmd_impute.add_argument("-g", "--beagle")
+        .help("gziped beagle format as input")
+        .default_value(std::string{""});
+    cmd_impute.add_argument("-i", "--iterations")
+        .help("number of EM iterations")
+        .default_value(40)
+        .scan<'i', int>();
+    cmd_impute.add_argument("-n", "--threads")
+        .help("number of threads")
+        .default_value(1)
+        .scan<'i', int>();
+    cmd_impute.add_argument("-o", "--out")
+        .help("output prefix")
+        .default_value(std::string{"impute."});
+    cmd_impute.add_argument("-p", "--no-print")
+        .help("disable print log to screen")
+        .default_value(false)
+        .implicit_value(true);
+    cmd_impute.add_argument("-r", "--region")
+        .help("region in vcf/bcf to subset")
+        .default_value(std::string{""});
+    cmd_impute.add_argument("-s", "--chunksize")
+        .help("size of each chunk in sites unit ")
+        .default_value(10000)
+        .scan<'i', int>();
+    cmd_impute.add_argument("-S", "--single-chunk")
+        .help("treat input as big single chunk")
+        .default_value(false)
+        .implicit_value(true);
+    cmd_impute.add_argument("--info")
+        .help("filter and re-impute sites with low info")
+        .default_value(0.0)
+        .scan<'g', double>();
+    cmd_impute.add_argument("--seed")
+        .help("seed for reproducing results")
+        .default_value(999)
+        .scan<'i', int>();
+
+    argparse::ArgumentParser cmd_admix("admix", VERSION, argparse::default_arguments::help);
+    cmd_admix.add_description("run admixture with cluster likelihoods as input");
+    cmd_admix.add_argument("-a", "--no-accel")
+        .help("disable accelerated EM")
+        .default_value(false)
+        .implicit_value(true);
+    cmd_admix.add_argument("-b", "--bin")
+        .help("binary format from impute command as input")
+        .default_value(std::string{""});
+    cmd_admix.add_argument("-k", "--ancestry")
+        .help("number of ancestry in admixture assumption")
+        .default_value(2)
+        .scan<'i', int>();
+    cmd_admix.add_argument("-i", "--iterations")
+        .help("number of maximun EM iterations")
+        .default_value(1000)
+        .scan<'i', int>();
+    cmd_admix.add_argument("-n", "--threads")
+        .help("number of threads")
+        .default_value(4)
+        .scan<'i', int>();
+    cmd_admix.add_argument("-o", "--out")
+        .help("output prefix")
+        .default_value(std::string{"admix."});
+    cmd_admix.add_argument("-p", "--no-print")
+        .help("disable print log to screen")
+        .default_value(false)
+        .implicit_value(true);
+    cmd_admix.add_argument("-q", "--qtol")
+        .help("tolerance of stopping criteria for diff(Q)")
+        .default_value(1e-6)
+        .scan<'g', double>();
+    cmd_admix.add_argument("-s","--seed")
+        .help("seed for reproducing results")
+        .default_value(999)
+        .scan<'i', int>();
+
+    argparse::ArgumentParser cmd_convert("convert", VERSION, argparse::default_arguments::help);
+    cmd_convert.add_description("different file format converter");
+    cmd_convert.add_argument("-p", "--plink")
+        .help("plink1 file as input")
+        .default_value(std::string{""});
+    cmd_convert.add_argument("-o", "--out")
+        .help("output file")
+        .default_value(std::string{"convert."});
+    cmd_convert.add_argument("-n", "--threads")
+        .help("number of threads")
+        .default_value(4)
+        .scan<'i', int>();
+    cmd_convert.add_argument("-s", "--chunksize")
+        .help("size of each chunk in sites unit ")
+        .default_value(10000)
+        .scan<'i', int>();
+
+    argparse::ArgumentParser cmd_parse("parse", VERSION, argparse::default_arguments::help);
+    cmd_parse.add_description("manipulate pars.bin file from impute command");
+    cmd_parse.add_argument("-b", "--bin")
+        .help("binary format from impute command as input")
+        .default_value(std::string{""});
+    cmd_parse.add_argument("-e", "--chunk")
+        .help("which chunk to extract, 0-based")
+        .default_value(0)
+        .scan<'i', int>();
+    cmd_parse.add_argument("-o", "--out")
+        .help("output prefix")
+        .default_value(std::string{"parse."});
+
+    program.add_subparser(cmd_impute);
+    program.add_subparser(cmd_admix);
+    program.add_subparser(cmd_parse);
+    program.add_subparser(cmd_convert);
+    // clang-format on
+
+    try
     {
-        genome = std::make_unique<BigAss>();
-        genome->chunksize = opts.chunksize, genome->C = opts.C;
-        tm.clock();
-        chunk_beagle_genotype_likelihoods(genome, opts.in_beagle);
-        cao.print(tm.date(), "parsing input -> C =", genome->C, ", N =", genome->nsamples,
-                  ", M =", genome->nsnps, ", nchunks =", genome->nchunks, ", seed =", opts.seed);
-        cao.done(tm.date(), "elapsed time for parsing beagle file", std::fixed, tm.reltime(), " secs");
-        if(opts.info > 0)
+
+        Options opts;
+        for(int i = 0; i < argc; i++) opts.opts_in_effect += " " + std::string{argv[i]};
+        program.parse_args(argc, argv);
+
+        if(program.is_subcommand_used(cmd_impute))
         {
-            // TODO implement this at some point
-            return 1;
-            cao.warn(tm.date(), "--info", opts.info, " is applied, which will do two rounds imputation");
-            vector<future<void>> res;
-            for(int ic = 0; ic < genome->nchunks; ic++)
-                res.emplace_back(poolit.enqueue(filter_input_per_chunk, opts.out, std::ref(genome), ic,
-                                                opts.nimpute, opts.seed, opts.info));
-            for(auto && ll : res) ll.get();
-            update_bigass_inplace(genome);
-        }
-        auto bw = make_bcfwriter(opts.out.string() + "all.vcf.gz", genome->chrs, genome->sampleids);
-        std::ofstream oinfo(opts.out.string() + "all.info");
-        std::ofstream opi(opts.out.string() + "all.pi");
-        Eigen::IOFormat fmt(6, Eigen::DontAlignCols, "\t", "\n");
-        if(opts.single_chunk)
-        {
-            vector<future<pars1>> res;
-            for(int ic = 0; ic < genome->nchunks; ic++)
+            opts.in_beagle.assign(cmd_impute.get("--beagle"));
+            opts.in_vcf.assign(cmd_impute.get("--vcf"));
+            opts.out.assign(cmd_impute.get("--out"));
+            opts.C = cmd_impute.get<int>("--cluster");
+            opts.nthreads = cmd_impute.get<int>("--threads");
+            opts.nimpute = cmd_impute.get<int>("--iterations");
+            opts.seed = cmd_impute.get<int>("--seed");
+            opts.chunksize = cmd_impute.get<int>("--chunksize");
+            opts.info = cmd_impute.get<double>("--info");
+            opts.single_chunk = cmd_impute.get<bool>("--single-chunk");
+            opts.noscreen = cmd_impute.get<bool>("--no-print");
+            if(opts.single_chunk) opts.chunksize = INT_MAX;
+            if(opts.in_beagle.empty() && opts.in_vcf.empty())
             {
-                FastPhaseK2 faith(genome->nsamples, genome->pos[ic].size(), opts.C, opts.seed);
-                auto transRate = calc_transRate(genome->pos[ic], opts.C);
-                for(int it = 0; it <= opts.nimpute; it++)
-                {
-                    tm.clock();
-                    faith.initIteration();
-                    for(int i = 0; i < genome->nsamples; i++)
-                    {
-                        if(it == opts.nimpute)
-                            res.emplace_back(poolit.enqueue(&FastPhaseK2::forwardAndBackwardsHighRam, &faith,
-                                                            i, std::ref(genome->gls[ic]), std::ref(transRate),
-                                                            true));
-                        else
-                            res.emplace_back(poolit.enqueue(&FastPhaseK2::forwardAndBackwardsHighRam, &faith,
-                                                            i, std::ref(genome->gls[ic]), std::ref(transRate),
-                                                            false));
-                    }
-                    double loglike = 0;
-                    for(auto && ll : res)
-                    {
-                        const auto [l, iEk, iEkg] = ll.get();
-                        loglike += l;
-                        faith.Ek += iEk;
-                        faith.Ekg += iEkg;
-                    }
-                    res.clear(); // clear future and renew
-                    cao.print(tm.date(), "run single chunk", ic, ", iteration", it,
-                              ", likelihoods =", loglike, ",", tm.reltime(), " sec");
-                    faith.updateIteration();
-                }
-                tm.clock();
-                write_bigass_to_bcf(bw, faith.GP.data(), genome->chrs[ic], genome->pos[ic]);
-                genome->transRate.emplace_back(
-                    MyFloat1D(transRate.data(), transRate.data() + transRate.size()));
-                genome->PI.emplace_back(MyFloat1D(faith.PI.data(), faith.PI.data() + faith.PI.size()));
-                genome->F.emplace_back(MyFloat1D(faith.F.data(), faith.F.data() + faith.F.size()));
-                auto ClusterInfo = calc_cluster_info(faith.N, faith.GZP1, faith.GZP2);
-                oinfo << ClusterInfo.format(fmt) << "\n";
-                opi << faith.PI.transpose().format(fmt) << "\n";
-                cao.done(tm.date(), "chunk", ic, " done. outputting elapsed", tm.reltime(), " secs");
+                std::cerr << cmd_impute.help().str();
+                std::exit(1);
             }
+            run_impute_main(opts);
+        }
+        else if(program.is_subcommand_used(cmd_admix))
+        {
+            opts.in_bin.assign(cmd_admix.get("--bin"));
+            opts.out.assign(cmd_admix.get("--out"));
+            opts.seed = cmd_admix.get<int>("--seed");
+            opts.K = cmd_admix.get<int>("-k");
+            opts.nthreads = cmd_admix.get<int>("--threads");
+            opts.nadmix = cmd_admix.get<int>("--iterations");
+            opts.qtol = cmd_admix.get<double>("--qtol");
+            opts.noaccel = cmd_admix.get<bool>("--no-accel");
+            opts.noscreen = cmd_admix.get<bool>("--no-print");
+            if(opts.in_bin.empty())
+            {
+                std::cerr << cmd_admix.help().str();
+                std::exit(1);
+            }
+            run_admix_main(opts);
+        }
+        else if(program.is_subcommand_used(cmd_parse))
+        {
+            opts.in_bin.assign(cmd_parse.get("--bin"));
+            opts.out.assign(cmd_parse.get("--out"));
+            opts.ichunk = cmd_parse.get<int>("--chunk");
+            if(opts.in_bin.empty())
+            {
+                std::cerr << cmd_parse.help().str();
+                std::exit(1);
+            }
+            run_parse_main(opts);
+        }
+        else if(program.is_subcommand_used(cmd_convert))
+        {
+            opts.nthreads = cmd_convert.get<int>("--threads");
+            opts.in_plink = cmd_convert.get("--plink");
+            opts.out = cmd_convert.get("--out");
+            opts.chunksize = cmd_convert.get<int>("--chunksize");
+            if(opts.in_plink.empty())
+            {
+                std::cerr << cmd_convert.help().str();
+                std::exit(1);
+            }
+            run_convert_main(opts);
         }
         else
         {
-            if(genome->nchunks < opts.nthreads)
-                cao.warn(tm.date(), "nchunks < nthreads. only", genome->nchunks, " threads will be working");
-            vector<future<pars2>> res;
-            for(int ic = 0; ic < genome->nchunks; ic++)
-                res.emplace_back(
-                    poolit.enqueue(make_input_per_chunk, std::ref(genome), ic, opts.nimpute, opts.seed));
-            int ic = 0;
-            for(auto && ll : res)
-            {
-                const auto [GP, ClusterInfo, transRate, PI, F] = ll.get();
-                write_bigass_to_bcf(bw, GP.data(), genome->chrs[ic], genome->pos[ic]);
-                genome->transRate.emplace_back(
-                    MyFloat1D(transRate.data(), transRate.data() + transRate.size()));
-                genome->PI.emplace_back(MyFloat1D(PI.data(), PI.data() + PI.size()));
-                genome->F.emplace_back(MyFloat1D(F.data(), F.data() + F.size()));
-                oinfo << ClusterInfo.format(fmt) << "\n";
-                opi << PI.transpose().format(fmt) << "\n";
-                cao.print(tm.date(), "chunk", ic++, " imputation done and outputting");
-            }
+            std::cerr << program.help().str();
+            std::exit(1);
         }
-        std::ofstream ofs(opts.out.string() + "pars.bin", std::ios::out | std::ios::binary);
-        auto bytes_written = alpaca::serialize<OPTIONS, BigAss>(*genome, ofs);
-        ofs.close();
-        assert(std::filesystem::file_size(opts.out.string() + "pars.bin") == bytes_written);
-        cao.done(tm.date(), "imputation done and outputting.", bytes_written, " bytes written to file");
-        return 0;
     }
-
-    if(opts.run_admix)
-    { // Deserialize from file
-        auto filesize = std::filesystem::file_size(opts.in_bin);
-        std::error_code ec;
-        std::ifstream ifs(opts.in_bin, std::ios::in | std::ios::binary);
-        genome = std::make_unique<BigAss>(alpaca::deserialize<OPTIONS, BigAss>(ifs, filesize, ec));
-        ifs.close();
-        assert((bool)ec == false);
-        cao.done(tm.date(), filesize, " bytes deserialized from file. skip imputation, ec", ec);
-        cao.print(tm.date(), "parsing input -> C =", genome->C, ", N =", genome->nsamples,
-                  ", M =", genome->nsnps, ", nchunks =", genome->nchunks);
-        assert(opts.K < genome->C);
-
-        cao.warn(tm.date(), "-> running admixture with seed =", opts.seed);
-        Admixture admixer(genome->nsamples, genome->nsnps, genome->C, opts.K, opts.seed);
-        vector<future<double>> llike;
-        if(!opts.noaccel)
-        {
-            MyArr2D F0, Q0, F1, Q1;
-            const int istep{4};
-            double alpha, diff, stepMax{4}, alphaMax{1280};
-            for(int it = 0; it < opts.nadmix / 3; it++)
-            {
-                // first accel iteration
-                admixer.initIteration();
-                F0 = admixer.F;
-                Q0 = admixer.Q;
-                for(int i = 0; i < genome->nsamples; i++)
-                    llike.emplace_back(
-                        poolit.enqueue(&Admixture::runOptimalWithBigAss, &admixer, i, std::ref(genome)));
-                for(auto && ll : llike) ll.get();
-                llike.clear(); // clear future and renew
-                admixer.updateIteration();
-                // second accel iteration
-                admixer.initIteration();
-                F1 = admixer.F;
-                Q1 = admixer.Q;
-                diff = (Q1 - Q0).square().sum();
-                tm.clock();
-                for(int i = 0; i < genome->nsamples; i++)
-                    llike.emplace_back(
-                        poolit.enqueue(&Admixture::runOptimalWithBigAss, &admixer, i, std::ref(genome)));
-                double loglike = 0;
-                for(auto && ll : llike) loglike += ll.get();
-                llike.clear(); // clear future and renew
-                admixer.updateIteration();
-                cao.print(tm.date(), "SqS3 iteration", it * 3 + 1, ", diff(Q) =", std::scientific, diff,
-                          ", likelihoods =", std::fixed, loglike, ",", tm.reltime(), " sec");
-                if(diff < opts.qtol)
-                {
-                    cao.print(tm.date(), "hit stopping criteria, diff(Q) =", std::scientific, diff, " <",
-                              opts.qtol);
-                    break;
-                }
-                // accel iteration with steplen
-                admixer.initIteration();
-                alpha =
-                    ((F1 - F0).square().sum() + (Q1 - Q0).square().sum())
-                    / ((admixer.F - 2 * F1 + F0).square().sum() + (admixer.Q - 2 * Q1 + Q0).square().sum());
-                alpha = max(1.0, sqrt(alpha));
-                if(alpha >= stepMax)
-                {
-                    alpha = min(stepMax, alphaMax);
-                    stepMax = min(stepMax * istep, alphaMax);
-                }
-                admixer.F = F0 + 2 * alpha * (F1 - F0) + alpha * alpha * (admixer.F - 2 * F1 + F0);
-                admixer.Q = Q0 + 2 * alpha * (Q1 - Q0) + alpha * alpha * (admixer.Q - 2 * Q1 + Q0);
-                admixer.initIteration();
-                for(int i = 0; i < genome->nsamples; i++)
-                    llike.emplace_back(
-                        poolit.enqueue(&Admixture::runOptimalWithBigAss, &admixer, i, std::ref(genome)));
-                for(auto && ll : llike) ll.get();
-                llike.clear(); // clear future and renew
-                admixer.updateIteration();
-            }
-        }
-        else
-        {
-            MyArr2D Q0;
-            double diff, loglike;
-            for(int it = 0; it < opts.nadmix; it++)
-            {
-                tm.clock();
-                admixer.initIteration();
-                Q0 = admixer.Q;
-                for(int i = 0; i < genome->nsamples; i++)
-                    llike.emplace_back(
-                        poolit.enqueue(&Admixture::runOptimalWithBigAss, &admixer, i, std::ref(genome)));
-
-                loglike = 0;
-                for(auto && ll : llike) loglike += ll.get();
-                llike.clear(); // clear future and renew
-                admixer.updateIteration();
-                diff = (admixer.Q - Q0).square().sum();
-                cao.print(tm.date(), "normal iteration", it, ", diff(Q) =", std::scientific, diff,
-                          ", likelihoods =", std::fixed, loglike, ",", tm.reltime(), " sec");
-                if(diff < opts.qtol) break;
-            }
-        }
-        cao.done(tm.date(), "admixture done and outputting");
-        admixer.writeQ(opts.out.string() + "Q");
-        // if(admixer.debug) admixer.writeBin(out.string() + "qf.bin", genome);
-        cao.done(tm.date(), "-> good job. have a nice day, bye!");
-
-        return 0;
-    }
-
-    if(opts.run_pars)
+    catch(const std::runtime_error & err)
     {
-        auto filesize = std::filesystem::file_size(opts.in_bin);
-        std::error_code ec;
-        std::ifstream ifs(opts.in_bin, std::ios::in | std::ios::binary);
-        genome = std::make_unique<BigAss>(alpaca::deserialize<OPTIONS, BigAss>(ifs, filesize, ec));
-        ifs.close();
-        assert((bool)ec == false);
-        const int ic = opts.ichunk;
-        if(ic >= genome->nchunks)
-        {
-            cao.error("the chunk to extract", ic, "(0-baded) is not less than total chunks", genome->nchunks);
-            return 1;
-        }
-        const int iM = genome->pos[ic].size();
-        std::ofstream ofs(opts.out.string() + "haplike.bin", std::ios::binary);
-        ofs.write((char *)&genome->C, 4);
-        ofs.write((char *)&genome->nsamples, 4);
-        ofs.write((char *)&iM, 4);
-        // haplike is p(Z_is |X_is , theta) = alpha * beta / p(X|theta) = gamma
-        MyArr2D alpha, beta;
-        for(int ind = 0; ind < genome->nsamples; ind++)
-        {
-            alpha.setZero(genome->C * genome->C, iM);
-            beta.setZero(genome->C * genome->C, iM);
-            getClusterLikelihoods(ind, alpha, beta, genome->gls[ic], genome->transRate[ic], genome->PI[ic],
-                                  genome->F[ic]);
-            alpha *= beta;
-            ofs.write((char *)alpha.data(), genome->C * genome->C * iM * 4);
-        }
-        return 0;
+        std::cerr << err.what() << std::endl;
+        std::cerr << program;
+        std::exit(1);
     }
+
+    return 0;
 }
