@@ -524,20 +524,21 @@ inline auto read_plink_bed(std::ifstream & ifs_bed,
                            const uint64_t nsamples,
                            const uint64_t nsnps)
 {
-    uint64_t bed_bytes_per_snp = (nsamples + 3) >> 2; // get ceiling(nsamples/4)
-    auto size = bed_bytes_per_snp * nsnps;
-    std::vector<uint8_t> bed(size);
-    ifs_bed.read(reinterpret_cast<char *>(&bed[0]), size);
     std::string line;
     std::vector<std::string> marker;
-    for(int i = 0; i < nsnps; i++)
+    uint64_t i = 0;
+    while(i < nsnps && getline(ifs_bim, line))
     {
-        getline(ifs_bim, line);
         std::stringstream ss(line);
         std::vector<std::string> token(std::istream_iterator<std::string>{ss},
                                        std::istream_iterator<std::string>{});
         marker.push_back(token[0] + "_" + token[3] + "\t" + token[4] + "\t" + token[5]);
+        i++;
     }
+    uint64_t bed_bytes_per_snp = (nsamples + 3) >> 2; // get ceiling(nsamples/4)
+    uint64_t bed_size = bed_bytes_per_snp * i;
+    std::vector<uint8_t> bed(bed_size);
+    ifs_bed.read(reinterpret_cast<char *>(bed.data()), bed_size);
     return std::tuple(bed, marker);
 }
 
@@ -547,7 +548,7 @@ inline auto convert_geno2like(std::vector<uint8_t> bed,
 {
     uint64_t bed_bytes_per_snp = (nsamples + 3) >> 2; // get ceiling(nsamples/4)
     std::string res;
-    uint8_t buf;
+    uint8_t buf, g;
     uint64_t i, b, j, k;
     /**
      * 00 ->  0 Homozygous for first allele in .bim file
@@ -565,14 +566,15 @@ inline auto convert_geno2like(std::vector<uint8_t> bed,
             {
                 if(j < nsamples)
                 {
-                    if((buf & 3) == 0)
+                    g = buf & 3;
+                    if(g == 0)
                         gl += "\t1\t0\t0";
-                    else if((buf & 3) == 1)
+                    else if(g == 1)
                         gl += "\t0\t0\t0";
-                    else if((buf & 3) == 2)
+                    else if(g == 2)
                         gl += "\t0\t1\t0";
-                    else if((buf & 3) == 2)
-                        gl += "\t0\t0\t2";
+                    else if(g == 3)
+                        gl += "\t0\t0\t1";
                     buf >>= 2; // shift packed data and throw away genotype just processed.
                 }
             }
