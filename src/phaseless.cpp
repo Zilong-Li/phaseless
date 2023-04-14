@@ -16,7 +16,7 @@ int main(int argc, char * argv[])
     const std::string VERSION{"0.1.9"};
 
     // clang-format off
-    argparse::ArgumentParser program("phaseless", VERSION, argparse::default_arguments::help);
+    argparse::ArgumentParser program("phaseless", VERSION);
 
     argparse::ArgumentParser cmd_impute("impute", VERSION, argparse::default_arguments::help);
     cmd_impute.add_description("run imputation for low coverage sequencing data");
@@ -40,7 +40,7 @@ int main(int argc, char * argv[])
         .scan<'i', int>();
     cmd_impute.add_argument("-o", "--out")
         .help("output prefix")
-        .default_value(std::string{"impute."});
+        .default_value(std::string{"impute"});
     cmd_impute.add_argument("-p", "--no-print")
         .help("disable print log to screen")
         .default_value(false)
@@ -88,7 +88,7 @@ int main(int argc, char * argv[])
         .scan<'i', int>();
     cmd_admix.add_argument("-o", "--out")
         .help("output prefix")
-        .default_value(std::string{"admix."});
+        .default_value(std::string{"admix"});
     cmd_admix.add_argument("-p", "--no-print")
         .help("disable print log to screen")
         .default_value(false)
@@ -104,12 +104,15 @@ int main(int argc, char * argv[])
 
     argparse::ArgumentParser cmd_convert("convert", VERSION, argparse::default_arguments::help);
     cmd_convert.add_description("different file format converter");
-    cmd_convert.add_argument("-p", "--plink")
-        .help("plink1 file as input")
-        .default_value(std::string{""});
-    cmd_convert.add_argument("-o", "--out")
-        .help("output file")
-        .default_value(std::string{"convert."});
+    cmd_convert.add_argument("input")
+        .help("input file to be converted");
+    cmd_convert.add_argument("output")
+        .help("output file prefix")
+        .default_value(std::string{"convert"});
+    cmd_convert.add_argument("-p", "--plink2beagle")
+        .help("use plink1 file as input without .bed")
+        .default_value(false)
+        .implicit_value(true);
     cmd_convert.add_argument("-n", "--threads")
         .help("number of threads")
         .default_value(4)
@@ -130,7 +133,7 @@ int main(int argc, char * argv[])
         .scan<'i', int>();
     cmd_parse.add_argument("-o", "--out")
         .help("output prefix")
-        .default_value(std::string{"parse."});
+        .default_value(std::string{"parse"});
 
     program.add_subparser(cmd_impute);
     program.add_subparser(cmd_admix);
@@ -140,7 +143,6 @@ int main(int argc, char * argv[])
 
     try
     {
-
         Options opts;
         for(int i = 0; i < argc; i++) opts.opts_in_effect += " " + std::string{argv[i]};
         program.parse_args(argc, argv);
@@ -199,15 +201,18 @@ int main(int argc, char * argv[])
         else if(program.is_subcommand_used(cmd_convert))
         {
             opts.nthreads = cmd_convert.get<int>("--threads");
-            opts.in_plink = cmd_convert.get("--plink");
-            opts.out = cmd_convert.get("--out");
+            opts.in_plink = cmd_convert.get("input");
+            opts.out = cmd_convert.get("output");
             opts.chunksize = cmd_convert.get<int>("--chunksize");
-            if(opts.in_plink.empty())
+            if(cmd_convert.get<bool>("--plink2beagle"))
+            {
+                run_convert_main(opts);
+            }
+            else
             {
                 std::cerr << cmd_convert.help().str();
                 std::exit(1);
             }
-            run_convert_main(opts);
         }
         else
         {

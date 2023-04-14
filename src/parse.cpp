@@ -5,7 +5,7 @@
 
 inline int run_parse_main(Options & opts)
 {
-    Logger cao(opts.out.string() + "log", !opts.noscreen);
+    Logger cao(opts.out.string() + ".log", !opts.noscreen);
     cao.print(opts.opts_in_effect);
     auto filesize = std::filesystem::file_size(opts.in_bin);
     std::error_code ec;
@@ -22,7 +22,7 @@ inline int run_parse_main(Options & opts)
         return 1;
     }
     const int iM = genome->pos[ic].size();
-    std::ofstream ofs(opts.out.string() + "haplike.bin", std::ios::binary);
+    std::ofstream ofs(opts.out.string() + ".haplike.bin", std::ios::binary);
     ofs.write((char *)&genome->C, 4);
     ofs.write((char *)&genome->nsamples, 4);
     ofs.write((char *)&iM, 4);

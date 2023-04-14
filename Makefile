@@ -1,10 +1,10 @@
-HTSINC   = ./external
+HTSINC   = /usr/local/include
 HTSLIB   = /usr/local/lib
 CXX      = g++
 # CXXFLAGS = -std=c++17 -Wall -O3 -g -fsanitize=address
 # CXXFLAGS = -std=c++17 -Wall -O3 -march=native -DNDEBUG
 CXXFLAGS = -std=c++17 -Wall -O3 -march=native
-INC      = -I../external -I$(HTSINC) -I$(HTSLIB)
+INC      = -I./external -I$(HTSINC) -I$(HTSLIB)
 LDFLAGS  =  -L$(HTSLIB) -Wl,-rpath,$(HTSLIB)
 LIBS     = -lhts -lz -lm -lbz2 -llzma -lcurl -lpthread
 # OBJS     = $(patsubst src/%.cpp, src/%.o, $(wildcard *.cpp))

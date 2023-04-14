@@ -40,7 +40,7 @@ inline auto make_input_per_chunk(const std::unique_ptr<BigAss> & genome,
 
 inline int run_impute_main(Options & opts)
 {
-    Logger cao(opts.out.string() + "log", !opts.noscreen);
+    Logger cao(opts.out.string() + ".log", !opts.noscreen);
     cao.print(opts.opts_in_effect);
     Timer tm;
     cao.warn(tm.date(), "-> running fastphase");
@@ -68,9 +68,9 @@ inline int run_impute_main(Options & opts)
         // for(auto && ll : res) ll.get();
         // update_bigass_inplace(genome);
     }
-    auto bw = make_bcfwriter(opts.out.string() + "all.vcf.gz", genome->chrs, genome->sampleids);
-    std::ofstream oinfo(opts.out.string() + "all.info");
-    std::ofstream opi(opts.out.string() + "all.pi");
+    auto bw = make_bcfwriter(opts.out.string() + ".vcf.gz", genome->chrs, genome->sampleids);
+    std::ofstream oinfo(opts.out.string() + ".info");
+    std::ofstream opi(opts.out.string() + ".pi");
     Eigen::IOFormat fmt(6, Eigen::DontAlignCols, "\t", "\n");
     if(opts.single_chunk)
     {
@@ -140,10 +140,10 @@ inline int run_impute_main(Options & opts)
         }
     }
     constexpr auto OPTIONS = alpaca::options::fixed_length_encoding;
-    std::ofstream ofs(opts.out.string() + "pars.bin", std::ios::out | std::ios::binary);
+    std::ofstream ofs(opts.out.string() + ".pars.bin", std::ios::out | std::ios::binary);
     auto bytes_written = alpaca::serialize<OPTIONS, BigAss>(*genome, ofs);
     ofs.close();
-    assert(std::filesystem::file_size(opts.out.string() + "pars.bin") == bytes_written);
+    assert(std::filesystem::file_size(opts.out.string() + ".pars.bin") == bytes_written);
     cao.done(tm.date(), "imputation done and outputting.", bytes_written, " bytes written to file");
     return 0;
 }

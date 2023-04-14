@@ -45,7 +45,7 @@ inline int run_convert_main(Options & opts)
         const auto [bed, marker] = read_plink_bed(ifs_bed, ifs_bim, nsamples, opts.chunksize);
         res.emplace_back(poolit.enqueue(convert_geno2like, bed, marker, nsamples));
     }
-    string out{opts.out.string() + "gz"};
+    string out{opts.out.string() + ".gz"};
     gzFile gzfp = gzopen(out.c_str(), "wb");
     gzwrite(gzfp, hdr.c_str(), hdr.size());
     for(auto && ll : res)

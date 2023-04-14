@@ -33,7 +33,7 @@ inline int run_bootstrap(const std::unique_ptr<BigAss> & genome,
 
 inline int run_admix_main(Options & opts)
 {
-    Logger cao(opts.out.string() + "log", !opts.noscreen);
+    Logger cao(opts.out.string() + ".log", !opts.noscreen);
     cao.print(opts.opts_in_effect);
     Timer tm;
     cao.warn(tm.date(), "-> running admixture");
@@ -141,7 +141,7 @@ inline int run_admix_main(Options & opts)
         }
     }
     cao.done(tm.date(), "admixture done and outputting");
-    admixer.writeQ(opts.out.string() + "Q");
+    admixer.writeQ(opts.out.string() + ".Q");
     // if(admixer.debug) admixer.writeBin(out.string() + "qf.bin", genome);
     cao.done(tm.date(), "-> good job. have a nice day, bye!");
 
