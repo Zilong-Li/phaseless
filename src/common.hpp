@@ -17,6 +17,7 @@
 #include <map>
 #include <memory>
 #include <random>
+#include <unordered_map>
 #include <vector>
 
 using IntVec1D = std::vector<int>;
@@ -27,6 +28,7 @@ using DoubleVec1D = std::vector<double>;
 using DoubleVec2D = std::vector<DoubleVec1D>;
 using StringVec1D = std::vector<std::string>;
 using MapStringInt1D = std::map<std::string, IntVec1D>;
+using UMapStringInt = std::unordered_map<std::string, int>;
 
 using MyFloat = float; // use float if no accuracy drops
 using MyFloat1D = std::vector<MyFloat>;
@@ -55,7 +57,7 @@ struct Options
     double qtol{1e-6}, info{0};
     bool noaccel{0}, noscreen{0}, single_chunk{0};
     std::filesystem::path out, in_beagle, in_vcf, in_bin;
-    std::string region{""}, in_plink{""};
+    std::string samples{""}, region{""}, in_plink{""};
     std::string opts_in_effect{"Options in effect:\n   "};
 };
 

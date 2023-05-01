@@ -73,7 +73,7 @@ l <- read_haplike("parse.haplike.bin")
 
 
 ## check if sum(alpha*beta)==1
-n <- 3
+n <- 1
 isTRUE(all.equal(colSums(l$haplike[[n]], dims = 2),
   rep(1, dim(l$haplike[[n]])[3]),
   tolerance = 1e-4

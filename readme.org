@@ -53,9 +53,9 @@ With the binary file outputted by the above =impute= command, we can run admixtu
 phaseless admix -b impute.pars.bin -k 3 -n 4
 #+end_src
 ** Parameters
-Besides, we can investigate and manipulate the parameters from =fastPHASE= model using the binary file by =impute= command.
+Besides, we can investigate and manipulate the parameters from =fastPHASE= model using the binary file outputted by =impute= command.
 #+begin_src shell
-phaseless parse -b impute.pars.bin
+phaseless parse -b impute.pars.bin -c -1 -s samples.txt
 #+end_src
 
 ** Plotting

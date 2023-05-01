@@ -123,14 +123,17 @@ int main(int argc, char * argv[])
         .scan<'i', int>();
 
     argparse::ArgumentParser cmd_parse("parse", VERSION, argparse::default_arguments::help);
-    cmd_parse.add_description("manipulate pars.bin file from impute command");
+    cmd_parse.add_description("manipulate pars.bin file outputted by impute command");
     cmd_parse.add_argument("-b", "--bin")
         .help("binary format from impute command as input")
         .default_value(std::string{""});
-    cmd_parse.add_argument("-e", "--chunk")
-        .help("which chunk to extract, 0-based")
+    cmd_parse.add_argument("-c", "--chunk")
+        .help("which chunk to extract (0-based), negative means all chunks")
         .default_value(0)
         .scan<'i', int>();
+    cmd_parse.add_argument("-s", "--samples")
+        .help("extract samples in the file, one sample id per line")
+        .default_value(std::string{""});
     cmd_parse.add_argument("-o", "--out")
         .help("output prefix")
         .default_value(std::string{"parse"});
@@ -190,6 +193,7 @@ int main(int argc, char * argv[])
         {
             opts.in_bin.assign(cmd_parse.get("--bin"));
             opts.out.assign(cmd_parse.get("--out"));
+            opts.samples = cmd_parse.get("--samples");
             opts.ichunk = cmd_parse.get<int>("--chunk");
             if(opts.in_bin.empty())
             {
