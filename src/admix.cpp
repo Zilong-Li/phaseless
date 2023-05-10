@@ -62,7 +62,8 @@ inline int run_admix_main(Options & opts)
     {
         MyArr2D F0, Q0, F1, Q1;
         const int istep{4};
-        double alpha, diff, stepMax{4}, alphaMax{1280};
+        double alpha, qdiff, ldiff, stepMax{4}, alphaMax{1280};
+        double prevlike{std::numeric_limits<double>::lowest()};
         for(int it = 0; it < opts.nadmix / 3; it++)
         {
             // first accel iteration
@@ -79,7 +80,7 @@ inline int run_admix_main(Options & opts)
             admixer.initIteration();
             F1 = admixer.F;
             Q1 = admixer.Q;
-            diff = (Q1 - Q0).square().sum();
+            qdiff = (Q1 - Q0).square().sum();
             tm.clock();
             for(int i = 0; i < genome->nsamples; i++)
                 llike.emplace_back(
@@ -88,12 +89,20 @@ inline int run_admix_main(Options & opts)
             for(auto && ll : llike) loglike += ll.get();
             llike.clear(); // clear future and renew
             admixer.updateIteration();
-            cao.print(tm.date(), "SqS3 iteration", it * 3 + 1, ", diff(Q) =", std::scientific, diff,
+            ldiff = loglike - prevlike;
+            prevlike = loglike;
+            cao.print(tm.date(), "SqS3 iteration", it * 3 + 1, ", diff(Q) =", std::scientific, qdiff,
                       ", likelihoods =", std::fixed, loglike, ",", tm.reltime(), " sec");
-            if(diff < opts.qtol)
+            if(qdiff < opts.qtol)
             {
-                cao.print(tm.date(), "hit stopping criteria, diff(Q) =", std::scientific, diff, " <",
+                cao.print(tm.date(), "hit stopping criteria, diff(Q) =", std::scientific, qdiff, " <",
                           opts.qtol);
+                break;
+            }
+            if(ldiff < opts.ltol)
+            {
+                cao.print(tm.date(), "hit stopping criteria, diff(loglikelihood) =", std::scientific, ldiff, " <",
+                          opts.ltol);
                 break;
             }
             // accel iteration with steplen
@@ -120,7 +129,8 @@ inline int run_admix_main(Options & opts)
     else
     {
         MyArr2D Q0;
-        double diff, loglike;
+        double qdiff, ldiff, loglike;
+        double prevlike{std::numeric_limits<double>::lowest()};
         for(int it = 0; it < opts.nadmix; it++)
         {
             tm.clock();
@@ -134,10 +144,13 @@ inline int run_admix_main(Options & opts)
             for(auto && ll : llike) loglike += ll.get();
             llike.clear(); // clear future and renew
             admixer.updateIteration();
-            diff = (admixer.Q - Q0).square().sum();
-            cao.print(tm.date(), "normal iteration", it, ", diff(Q) =", std::scientific, diff,
+            ldiff = loglike - prevlike;
+            prevlike = loglike;
+            qdiff = (admixer.Q - Q0).square().sum();
+            cao.print(tm.date(), "normal iteration", it, ", diff(Q) =", std::scientific, qdiff,
                       ", likelihoods =", std::fixed, loglike, ",", tm.reltime(), " sec");
-            if(diff < opts.qtol) break;
+            if(qdiff < opts.qtol) break;
+            if(ldiff < opts.ltol) break;
         }
     }
     cao.done(tm.date(), "admixture done and outputting");

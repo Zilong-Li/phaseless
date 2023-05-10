@@ -97,6 +97,10 @@ int main(int argc, char * argv[])
         .help("tolerance of stopping criteria for diff(Q)")
         .default_value(1e-6)
         .scan<'g', double>();
+    cmd_admix.add_argument("-l", "--ltol")
+        .help("tolerance of stopping criteria for diff(loglikelihood)")
+        .default_value(1e-1)
+        .scan<'g', double>();
     cmd_admix.add_argument("-s","--seed")
         .help("seed for reproducing results")
         .default_value(999)
@@ -180,6 +184,7 @@ int main(int argc, char * argv[])
             opts.nthreads = cmd_admix.get<int>("--threads");
             opts.nadmix = cmd_admix.get<int>("--iterations");
             opts.qtol = cmd_admix.get<double>("--qtol");
+            opts.ltol = cmd_admix.get<double>("--ltol");
             opts.noaccel = cmd_admix.get<bool>("--no-accel");
             opts.noscreen = cmd_admix.get<bool>("--no-print");
             if(opts.in_bin.empty())
