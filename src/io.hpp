@@ -6,7 +6,7 @@
 #include <cmath>
 #include <zlib.h>
 
-inline auto make_bcfwriter(std::string vcfout, const StringVec1D & chrs, const StringVec1D & sampleids)
+inline auto make_bcfwriter(std::string vcfout, const String1D & chrs, const String1D & sampleids)
 {
     vcfpp::BcfWriter bw(vcfout, "VCF4.1");
     // add contig
@@ -26,7 +26,7 @@ inline auto make_bcfwriter(std::string vcfout, const StringVec1D & chrs, const S
 inline void write_bigass_to_bcf(vcfpp::BcfWriter & bw,
                                 const MyFloat * GP,
                                 std::string chr,
-                                const IntVec1D & markers)
+                                const Int1D & markers)
 {
     int M = markers.size();
     int N = bw.header.nSamples();
@@ -34,8 +34,8 @@ inline void write_bigass_to_bcf(vcfpp::BcfWriter & bw,
     var.setCHR(chr.c_str());
     double thetaHat, info, eaf, eij, fij, a0, a1;
     int i, m;
-    FloatVec1D gp(N * 3), ds(N);
-    IntVec1D gt(N * 2);
+    Float1D gp(N * 3), ds(N);
+    Int1D gt(N * 2);
     for(m = 0; m < M; m++)
     {
         for(eij = 0, fij = 0, i = 0; i < N; i++)
@@ -74,12 +74,12 @@ inline void write_bigass_to_bcf(vcfpp::BcfWriter & bw,
     }
 }
 
-inline IntVec1D filter_sites_per_chunk(const MyFloat * GP, double tol, int N, int M)
+inline Int1D filter_sites_per_chunk(const MyFloat * GP, double tol, int N, int M)
 {
-    FloatVec1D gp(N * 3);
+    Float1D gp(N * 3);
     double thetaHat, info, eaf, eij, fij, a0, a1;
     int i, m;
-    IntVec1D idx2rm;
+    Int1D idx2rm;
     for(m = 0; m < M; m++)
     {
         for(eij = 0, fij = 0, i = 0; i < N; i++)
@@ -110,17 +110,17 @@ inline IntVec1D filter_sites_per_chunk(const MyFloat * GP, double tol, int N, in
 /*
 ** @GP maps Eigen matrix layout, (3 x nsnps) x nsamples
 */
-inline IntVec1D write_bcf_genotype_probability(const MyFloat * GP,
+inline Int1D write_bcf_genotype_probability(const MyFloat * GP,
                                                std::string chr,
-                                               const IntVec1D & markers,
-                                               const StringVec1D & sampleids,
+                                               const Int1D & markers,
+                                               const String1D & sampleids,
                                                std::string vcfout,
                                                double infotol = 0)
 {
     int N = sampleids.size();
     int M = markers.size();
-    FloatVec1D gp(N * 3), ds(N);
-    IntVec1D gt(N * 2);
+    Float1D gp(N * 3), ds(N);
+    Int1D gt(N * 2);
     vcfpp::BcfWriter bw(vcfout, "VCF4.1");
     bw.header.addContig(chr);
     // add GT,GP,DS tag into the header
@@ -141,7 +141,7 @@ inline IntVec1D write_bcf_genotype_probability(const MyFloat * GP,
     vcfpp::BcfRecord var(bw.header); // construct a variant record from the header
     double thetaHat, info, eaf, eij, fij, a0, a1;
     int i, m;
-    IntVec1D idx2rm;
+    Int1D idx2rm;
     for(m = 0; m < M; m++)
     {
         var.setPOS(markers[m]);
@@ -183,7 +183,7 @@ inline void read_bcf_genotype_likelihoods(const std::string & vcffile,
                                           const std::string & samples,
                                           const std::string & region,
                                           MyFloat1D & GL,
-                                          IntVec1D & markers,
+                                          Int1D & markers,
                                           int & nsamples,
                                           int & nsnps,
                                           bool snp_major = true)
@@ -192,8 +192,8 @@ inline void read_bcf_genotype_likelihoods(const std::string & vcffile,
     vcfpp::BcfRecord var(vcf.header);
     nsamples = vcf.nsamples;
     nsnps = 0;
-    IntVec1D PL;
-    IntVec2D PL2;
+    Int1D PL;
+    Int2D PL2;
     GL.clear();
     while(vcf.getNextVariant(var))
     {
@@ -250,7 +250,7 @@ inline int zlgets(gzFile gz, char ** buf, uint64_t * size)
 */
 inline void read_beagle_genotype_likelihoods(const std::string & beagle,
                                              MyFloat1D & GL,
-                                             StringVec1D & sampleids,
+                                             String1D & sampleids,
                                              MapStringInt1D & chrs,
                                              int & nsamples,
                                              int & nsnps,
@@ -262,7 +262,7 @@ inline void read_beagle_genotype_likelihoods(const std::string & beagle,
     uint64_t bufsize = (uint64_t)128 * 1024 * 1024;
     int i, j;
     const char * delims = "\t \n";
-    FloatVec2D GL2; // return 2D either sample-major or snp-major
+    Float2D GL2; // return 2D either sample-major or snp-major
 
     // PARSE BEAGLE FILE
     fp = gzopen(beagle.c_str(), "r");
@@ -275,7 +275,7 @@ inline void read_beagle_genotype_likelihoods(const std::string & beagle,
         if(nCol++ % 3 == 0) sampleids.push_back(std::string(tok));
     if(nCol % 3) throw std::runtime_error("Number of columns should be a multiple of 3.\n");
     nsamples = nCol / 3 - 1;
-    FloatVec1D gli(nsamples * 3); // current line
+    Float1D gli(nsamples * 3); // current line
     // now fill in GL and get nsnps
     nsnps = 0;
     GL.clear();
@@ -347,7 +347,7 @@ inline void chunk_beagle_genotype_likelihoods(const std::unique_ptr<BigAss> & ge
     MyFloat1D gli(genome->nsamples * 3); // current line
     genome->nsnps = 0;
     buffer = original;
-    IntVec1D markers;
+    Int1D markers;
     genome->nchunks = 0;
     bool samechr;
     int i, j, im, isnp{0};
@@ -484,7 +484,7 @@ inline void update_bigass_inplace(const std::unique_ptr<BigAss> & genome)
             {
                 genome->pos[ic - 1].insert(genome->pos[ic - 1].end(), genome->pos[ic].begin(),
                                            genome->pos[ic].begin() + ndiff);
-                IntVec1D(genome->pos[ic].begin() + ndiff, genome->pos[ic].end()).swap(genome->pos[ic]);
+                Int1D(genome->pos[ic].begin() + ndiff, genome->pos[ic].end()).swap(genome->pos[ic]);
             }
             else
                 break;

@@ -20,14 +20,14 @@
 #include <unordered_map>
 #include <vector>
 
-using IntVec1D = std::vector<int>;
-using IntVec2D = std::vector<IntVec1D>;
-using FloatVec1D = std::vector<float>;
-using FloatVec2D = std::vector<FloatVec1D>;
-using DoubleVec1D = std::vector<double>;
-using DoubleVec2D = std::vector<DoubleVec1D>;
-using StringVec1D = std::vector<std::string>;
-using MapStringInt1D = std::map<std::string, IntVec1D>;
+using Int1D = std::vector<int>;
+using Int2D = std::vector<Int1D>;
+using Float1D = std::vector<float>;
+using Float2D = std::vector<Float1D>;
+using Double1D = std::vector<double>;
+using Double2D = std::vector<Double1D>;
+using String1D = std::vector<std::string>;
+using MapStringInt1D = std::map<std::string, Int1D>;
 using UMapStringInt = std::unordered_map<std::string, int>;
 
 using MyFloat = float; // use float if no accuracy drops
@@ -66,13 +66,13 @@ struct BigAss
 {
     int chunksize, nsamples, nsnps, nchunks, C; // number of clusters
     MyFloat2D PI, F, transRate; // M x C, 3 x M, fastphase pars
-    IntVec1D ends; // chunk index where each chromo ends
-    StringVec1D sampleids, chrs;
-    IntVec2D pos; // store position of markers of each chunk
+    Int1D ends; // chunk index where each chromo ends
+    String1D sampleids, chrs;
+    Int2D pos; // store position of markers of each chunk
     MyFloat2D gls; // store gl(M, 3) of each chunk
 };
 
-inline auto calc_distRate(const IntVec1D & markers, int C, int Ne = 20000, double expRate = 0.5)
+inline auto calc_distRate(const Int1D & markers, int C, int Ne = 20000, double expRate = 0.5)
 {
     MyArr1D distRate(markers.size());
     // int nGen = 4 * Ne / C;
@@ -83,7 +83,7 @@ inline auto calc_distRate(const IntVec1D & markers, int C, int Ne = 20000, doubl
 }
 
 // check initialize_sigmaCurrent_m in STITCH
-inline auto calc_transRate(const IntVec1D & markers, int C, int Ne = 20000, double expRate = 0.5)
+inline auto calc_transRate(const Int1D & markers, int C, int Ne = 20000, double expRate = 0.5)
 {
     MyArr1D distRate = calc_distRate(markers, C, Ne, expRate);
     MyArr2D transRate(3, markers.size());

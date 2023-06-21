@@ -15,7 +15,7 @@ class FastPhaseK2
     std::mutex mutex_it; // in case of race condition
 
   public:
-    FastPhaseK2(const IntVec1D & pos, int n, int c, int seed);
+    FastPhaseK2(const Int1D & pos, int n, int c, int seed);
     ~FastPhaseK2();
 
     // SHARED VARIBALES
@@ -34,7 +34,7 @@ class FastPhaseK2
     double runWithOneThread(int, const MyFloat1D &);
 };
 
-inline FastPhaseK2::FastPhaseK2(const IntVec1D & pos, int n, int c, int seed)
+inline FastPhaseK2::FastPhaseK2(const Int1D & pos, int n, int c, int seed)
 : M(pos.size()), N(n), C(c), C2(c * c)
 {
     auto rng = std::default_random_engine{};

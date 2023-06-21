@@ -8,7 +8,7 @@ TEST_CASE("test beagle parser for single contig", "[test-io]")
     int N, M;
     MyFloat1D genolikes;
     MapStringInt1D chrs_pos;
-    StringVec1D sampleids;
+    String1D sampleids;
     read_beagle_genotype_likelihoods("../data/bgl.gz", genolikes, sampleids, chrs_pos, N, M);
     REQUIRE(N == 60);
     REQUIRE(M == 1000);
@@ -22,7 +22,7 @@ TEST_CASE("test beagle parser for multiple contigs", "[test-io]")
     int N, M;
     MyFloat1D genolikes;
     MapStringInt1D chrs_pos;
-    StringVec1D sampleids;
+    String1D sampleids;
     read_beagle_genotype_likelihoods("../data/all.bgl.gz", genolikes, sampleids, chrs_pos, N, M);
     REQUIRE(N == 60);
     REQUIRE(M == 1000);

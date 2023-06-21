@@ -95,8 +95,7 @@ TEST_CASE("reconstruct alpha and beta from saved pars.bin", "[test-forward-backw
     vector<future<pars>> res;
     for(int ic = 0; ic < genome->nchunks; ic++)
     {
-        FastPhaseK2 faith(genome->nsamples, genome->pos[ic].size(), C, seed);
-        auto transRate = calc_transRate(genome->pos[ic], C);
+        FastPhaseK2 faith(genome->pos[ic], genome->nsamples, C, seed);
         double prevlike{std::numeric_limits<double>::lowest()}, loglike;
         for(int it = 0; it <= nimpute; it++)
         {
@@ -105,10 +104,10 @@ TEST_CASE("reconstruct alpha and beta from saved pars.bin", "[test-forward-backw
             {
                 if(it == nimpute)
                     res.emplace_back(poolit.enqueue(&FastPhaseK2::forwardAndBackwardsHighRam, &faith, i,
-                                                    std::ref(genome->gls[ic]), std::ref(transRate), true));
+                                                    std::ref(genome->gls[ic]), true));
                 else
                     res.emplace_back(poolit.enqueue(&FastPhaseK2::forwardAndBackwardsHighRam, &faith, i,
-                                                    std::ref(genome->gls[ic]), std::ref(transRate), false));
+                                                    std::ref(genome->gls[ic]), false));
             }
             loglike = 0;
             for(auto && ll : res)
@@ -130,7 +129,7 @@ TEST_CASE("reconstruct alpha and beta from saved pars.bin", "[test-forward-backw
             alpha.setZero(genome->C * genome->C, iM);
             beta.setZero(genome->C * genome->C, iM);
             Eigen::Map<const MyArr2D> gli(genome->gls[ic].data() + ind * iM * 3, iM, 3);
-            getClusterLikelihoods(alpha, beta, gli, transRate, faith.PI, faith.F);
+            getClusterLikelihoods(alpha, beta, gli, faith.J, faith.PI, faith.F);
             alpha *= beta;
             REQUIRE(((alpha.colwise().sum() - 1.0).abs() < 1e-5).all());
         }
@@ -146,8 +145,7 @@ TEST_CASE("compare optmized fbd to native fbd", "[test-forward-backward]")
     ThreadPool poolit(4);
     vector<future<pars>> res;
     int ic = 0;
-    FastPhaseK2 faith(genome->nsamples, genome->pos[ic].size(), C, seed);
-    auto transRate = calc_transRate(genome->pos[ic], C);
+    FastPhaseK2 faith(genome->pos[ic], genome->nsamples, C, seed);
     for(int it = 0; it <= nphase; it++)
     {
         faith.initIteration();
@@ -155,10 +153,10 @@ TEST_CASE("compare optmized fbd to native fbd", "[test-forward-backward]")
         {
             if(it == nphase)
                 res.emplace_back(poolit.enqueue(&FastPhaseK2::forwardAndBackwardsHighRam, &faith, i,
-                                                std::ref(genome->gls[ic]), std::ref(transRate), true));
+                                                std::ref(genome->gls[ic]), true));
             else
                 res.emplace_back(poolit.enqueue(&FastPhaseK2::forwardAndBackwardsHighRam, &faith, i,
-                                                std::ref(genome->gls[ic]), std::ref(transRate), false));
+                                                std::ref(genome->gls[ic]), false));
         }
         for(auto && ll : res)
         {
@@ -176,12 +174,12 @@ TEST_CASE("compare optmized fbd to native fbd", "[test-forward-backward]")
         alpha1.setZero(genome->C * genome->C, iM);
         beta1.setZero(genome->C * genome->C, iM);
         Eigen::Map<const MyArr2D> gli(genome->gls[ic].data() + ind * iM * 3, iM, 3);
-        getClusterLikelihoods(alpha1, beta1, gli, transRate, faith.PI, faith.F);
+        getClusterLikelihoods(alpha1, beta1, gli, faith.J, faith.PI, faith.F);
         alpha1 *= beta1;
         alpha1.rowwise() /= alpha1.colwise().sum();
         alpha2.setZero(genome->C * genome->C, iM);
         beta2.setZero(genome->C * genome->C, iM);
-        getClusterLikelihoods2(alpha2, beta2, gli, transRate, faith.PI, faith.F);
+        getClusterLikelihoods2(alpha2, beta2, gli, faith.J, faith.PI, faith.F);
         alpha2 *= beta2;
         alpha2.rowwise() /= alpha2.colwise().sum();
         auto delta = alpha1 - alpha2;

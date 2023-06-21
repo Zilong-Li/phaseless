@@ -16,14 +16,13 @@ auto make_input_per_chunk(filesystem::path outdir,
                           const int niters,
                           const int seed)
 {
-    FastPhaseK2 faith(genome->nsamples, genome->pos[ic].size(), genome->C, seed);
-    auto transRate = calc_transRate(genome->pos[ic], genome->C);
-    faith.runWithOneThread(niters, genome->gls[ic], transRate);
+    FastPhaseK2 faith(genome->pos[ic], genome->nsamples, genome->C, seed);
+    faith.runWithOneThread(niters, genome->gls[ic]);
     write_bcf_genotype_probability(faith.GP.data(), genome->chrs[ic], genome->pos[ic], genome->sampleids,
                                    outdir / string("chunk." + to_string(ic) + ".vcf.gz"));
     return std::tuple(MyFloat1D(faith.PI.data(), faith.PI.data() + faith.PI.size()),
                       MyFloat1D(faith.F.data(), faith.F.data() + faith.F.size()),
-                      MyFloat1D(transRate.data(), transRate.data() + transRate.size()));
+                      MyFloat1D(faith.J.data(), faith.J.data() + faith.J.size()));
 }
 
 TEST_CASE("phaseless naive vs dump", "[test-phaseless]")
@@ -38,8 +37,7 @@ TEST_CASE("phaseless naive vs dump", "[test-phaseless]")
     filesystem::create_directories(outdir);
     for(int ic = 0; ic < genome->nchunks; ic++)
     {
-        FastPhaseK2 faith(genome->nsamples, genome->pos[ic].size(), C, seed);
-        auto transRate = calc_transRate(genome->pos[ic], genome->C);
+        FastPhaseK2 faith(genome->pos[ic], genome->nsamples, C, seed);
         res.emplace_back(poolit.enqueue(make_input_per_chunk, outdir, std::ref(genome), ic, nphase, seed));
     }
     for(auto && ll : res)
@@ -81,8 +79,7 @@ TEST_CASE("phaseless normal iteration with make_input_per_chunk", "[test-phasele
     filesystem::create_directories(outdir);
     for(int ic = 0; ic < genome->nchunks; ic++)
     {
-        FastPhaseK2 faith(genome->nsamples, genome->pos[ic].size(), C, seed);
-        auto transRate = calc_transRate(genome->pos[ic], genome->C);
+        FastPhaseK2 faith(genome->pos[ic], genome->nsamples, C, seed);
         res.emplace_back(poolit.enqueue(make_input_per_chunk, outdir, std::ref(genome), ic, nphase, seed));
     }
     for(auto && ll : res)

@@ -28,7 +28,7 @@ inline int run_parse_main(Options & opts)
     {
         cao.warn("the chunk ", ic, " to be extracted is less than 0. all chunks will be extracted!");
     }
-    IntVec1D ids;
+    Int1D ids;
     if(!opts.samples.empty())
     {
         UMapStringInt ids_m;

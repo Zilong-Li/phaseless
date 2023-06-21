@@ -8,9 +8,9 @@ using namespace Eigen;
 
 double make_input_per_chunk(int niters, int ic, const std::unique_ptr<BigAss> & genome, int seed)
 {
-    FastPhaseK2 nofaith(genome->nsamples, genome->pos[ic].size(), genome->C, seed);
+    FastPhaseK2 nofaith(genome->pos[ic], genome->nsamples, genome->C, seed);
     auto transRate = calc_transRate(genome->pos[ic], genome->C);
-    return nofaith.runWithOneThread(niters, genome->gls[ic], transRate);
+    return nofaith.runWithOneThread(niters, genome->gls[ic]);
 }
 
 TEST_CASE("fastphasek2 forwardAndBackwardsLowRam", "[test-fastphasek2]")
@@ -18,11 +18,10 @@ TEST_CASE("fastphasek2 forwardAndBackwardsLowRam", "[test-fastphasek2]")
     int N, M, C{5}, seed{1}, niters{5};
     MyFloat1D genolikes;
     MapStringInt1D chrs_pos;
-    StringVec1D sampleids;
+    String1D sampleids;
     read_beagle_genotype_likelihoods("../data/bgl.gz", genolikes, sampleids, chrs_pos, N, M);
     auto ichr = chrs_pos.begin()->first;
-    auto transRate = calc_transRate(chrs_pos.begin()->second, C);
-    FastPhaseK2 nofaith(N, M, C, seed);
+    FastPhaseK2 nofaith(chrs_pos.begin()->second, N, C, seed);
     ThreadPool poolit(4);
     vector<future<double>> llike;
     double prevlike{std::numeric_limits<double>::lowest()}, loglike;
@@ -33,10 +32,10 @@ TEST_CASE("fastphasek2 forwardAndBackwardsLowRam", "[test-fastphasek2]")
         {
             if(it == niters)
                 llike.emplace_back(poolit.enqueue(&FastPhaseK2::forwardAndBackwardsLowRam, &nofaith, i,
-                                                  std::ref(genolikes), std::ref(transRate), true));
+                                                  std::ref(genolikes), true));
             else
                 llike.emplace_back(poolit.enqueue(&FastPhaseK2::forwardAndBackwardsLowRam, &nofaith, i,
-                                                  std::ref(genolikes), std::ref(transRate), false));
+                                                  std::ref(genolikes), false));
         }
         loglike = 0;
         for(auto && ll : llike) loglike += ll.get();
@@ -52,11 +51,10 @@ TEST_CASE("fastphasek2 forwardAndBackwardsHighRam", "[test-fastphasek2]")
     int N, M, C{5}, seed{1}, niters{5};
     MyFloat1D genolikes;
     MapStringInt1D chrs_pos;
-    StringVec1D sampleids;
+    String1D sampleids;
     read_beagle_genotype_likelihoods("../data/bgl.gz", genolikes, sampleids, chrs_pos, N, M);
     auto ichr = chrs_pos.begin()->first;
-    auto transRate = calc_transRate(chrs_pos.begin()->second, C);
-    FastPhaseK2 nofaith(N, M, C, seed);
+    FastPhaseK2 nofaith(chrs_pos.begin()->second, N, C, seed);
     ThreadPool poolit(4);
     using pars = std::tuple<double, MyArr2D, MyArr2D>;
     vector<future<pars>> llike;
@@ -68,10 +66,10 @@ TEST_CASE("fastphasek2 forwardAndBackwardsHighRam", "[test-fastphasek2]")
         {
             if(it == niters)
                 llike.emplace_back(poolit.enqueue(&FastPhaseK2::forwardAndBackwardsHighRam, &nofaith, i,
-                                                  std::ref(genolikes), std::ref(transRate), true));
+                                                  std::ref(genolikes), true));
             else
                 llike.emplace_back(poolit.enqueue(&FastPhaseK2::forwardAndBackwardsHighRam, &nofaith, i,
-                                                  std::ref(genolikes), std::ref(transRate), false));
+                                                  std::ref(genolikes), false));
         }
         loglike = 0;
         for(auto && ll : llike)
@@ -96,9 +94,9 @@ TEST_CASE("fastphasek2 runWithOneThread", "[test-fastphasek2]")
     chunk_beagle_genotype_likelihoods(genome, "../data/all.bgl.gz");
     for(int ic = 0; ic < genome->nchunks; ic++)
     {
-        FastPhaseK2 nofaith(genome->nsamples, genome->pos[ic].size(), C, seed);
+        FastPhaseK2 nofaith(genome->pos[ic], genome->nsamples, C, seed);
         auto transRate = calc_transRate(genome->pos[ic], genome->C);
-        cout << "diff: " << nofaith.runWithOneThread(niters, genome->gls[ic], transRate) << endl;
+        cout << "diff: " << nofaith.runWithOneThread(niters, genome->gls[ic]) << endl;
     }
 }
 
@@ -123,7 +121,7 @@ TEST_CASE("fastphasek4", "[test-fastphasek4]")
     int N, M, C{5}, seed{1}, niters{5};
     MyFloat1D genolikes;
     MapStringInt1D chrs_pos;
-    StringVec1D sampleids;
+    String1D sampleids;
     read_beagle_genotype_likelihoods("../data/bgl.gz", genolikes, sampleids, chrs_pos, N, M);
     auto ichr = chrs_pos.begin()->first;
     auto distRate = calc_distRate(chrs_pos[ichr], C);
