@@ -16,12 +16,11 @@ inline auto make_input_per_chunk(const std::unique_ptr<BigAss> & genome,
                                  const int niters,
                                  const int seed)
 {
-    FastPhaseK2 faith(genome->nsamples, genome->pos[ic].size(), genome->C, seed);
-    auto transRate = calc_transRate(genome->pos[ic], genome->C);
-    faith.runWithOneThread(niters, genome->gls[ic], transRate);
+    FastPhaseK2 faith(genome->pos[ic], genome->nsamples, genome->C, seed);
+    faith.runWithOneThread(niters, genome->gls[ic]);
     auto Info = calc_cluster_info(faith.N, faith.GZP1, faith.GZP2);
-    return std::tuple(MyFloat1D(faith.GP.data(), faith.GP.data() + faith.GP.size()), Info, transRate,
-                      faith.PI, faith.F);
+    return std::tuple(MyFloat1D(faith.GP.data(), faith.GP.data() + faith.GP.size()), Info, faith.J, faith.PI,
+                      faith.F);
 }
 
 // inline void filter_input_per_chunk(filesystem::path out,
@@ -56,18 +55,6 @@ inline int run_impute_main(Options & opts)
     cao.print(tm.date(), "parsing input -> C =", genome->C, ", N =", genome->nsamples, ", M =", genome->nsnps,
               ", nchunks =", genome->nchunks, ", seed =", opts.seed);
     cao.done(tm.date(), "elapsed time for parsing beagle file", std::fixed, tm.reltime(), " secs");
-    if(opts.info > 0)
-    {
-        // TODO implement this at some point
-        return 1;
-        // cao.warn(tm.date(), "--info", opts.info, " is applied, which will do two rounds imputation");
-        // vector<future<void>> res;
-        // for(int ic = 0; ic < genome->nchunks; ic++)
-        //     res.emplace_back(poolit.enqueue(filter_input_per_chunk, opts.out, std::ref(genome), ic,
-        //                                     opts.nimpute, opts.seed, opts.info));
-        // for(auto && ll : res) ll.get();
-        // update_bigass_inplace(genome);
-    }
     auto bw = make_bcfwriter(opts.out.string() + ".vcf.gz", genome->chrs, genome->sampleids);
     std::ofstream oinfo(opts.out.string() + ".info");
     std::ofstream opi(opts.out.string() + ".pi");
@@ -77,8 +64,7 @@ inline int run_impute_main(Options & opts)
         vector<future<pars1>> res;
         for(int ic = 0; ic < genome->nchunks; ic++)
         {
-            FastPhaseK2 faith(genome->nsamples, genome->pos[ic].size(), opts.C, opts.seed);
-            auto transRate = calc_transRate(genome->pos[ic], opts.C);
+            FastPhaseK2 faith(genome->pos[ic], genome->nsamples, opts.C, opts.seed);
             for(int it = 0; it <= opts.nimpute; it++)
             {
                 tm.clock();
@@ -87,12 +73,10 @@ inline int run_impute_main(Options & opts)
                 {
                     if(it == opts.nimpute)
                         res.emplace_back(poolit.enqueue(&FastPhaseK2::forwardAndBackwardsHighRam, &faith, i,
-                                                        std::ref(genome->gls[ic]), std::ref(transRate),
-                                                        true));
+                                                        std::ref(genome->gls[ic]), true));
                     else
                         res.emplace_back(poolit.enqueue(&FastPhaseK2::forwardAndBackwardsHighRam, &faith, i,
-                                                        std::ref(genome->gls[ic]), std::ref(transRate),
-                                                        false));
+                                                        std::ref(genome->gls[ic]), false));
                 }
                 double loglike = 0;
                 for(auto && ll : res)
@@ -109,7 +93,7 @@ inline int run_impute_main(Options & opts)
             }
             tm.clock();
             write_bigass_to_bcf(bw, faith.GP.data(), genome->chrs[ic], genome->pos[ic]);
-            genome->transRate.emplace_back(MyFloat1D(transRate.data(), transRate.data() + transRate.size()));
+            genome->transRate.emplace_back(MyFloat1D(faith.J.data(), faith.J.data() + faith.J.size()));
             genome->PI.emplace_back(MyFloat1D(faith.PI.data(), faith.PI.data() + faith.PI.size()));
             genome->F.emplace_back(MyFloat1D(faith.F.data(), faith.F.data() + faith.F.size()));
             auto ClusterInfo = calc_cluster_info(faith.N, faith.GZP1, faith.GZP2);

@@ -15,34 +15,37 @@ class FastPhaseK2
     std::mutex mutex_it; // in case of race condition
 
   public:
-    FastPhaseK2(int n, int m, int c, int seed);
+    FastPhaseK2(const IntVec1D & pos, int n, int c, int seed);
     ~FastPhaseK2();
 
     // SHARED VARIBALES
-    const int N, M, C, C2; // C2 = C x C
-    MyArr2D GP; // genotype probabilies for all individuals, N x (M x 3)
-    MyArr2D PI; // C x M
-    MyArr2D F; // M x C
-    MyArr2D Ek, Ekg; // MxC, MxCx2
+    const int M, N, C, C2; // C2 = C x C
+    MyArr2D GP; // N x (M x 3), genotype probabilies for all individuals
+    MyArr2D PI; // C x M, cluster frequency
+    MyArr2D F; // M x C, cluster-specific allele frequence
+    MyArr2D J; // 3 x M, jumping / recombination rate
+    MyArr2D Ek, Ekg; // M x C, M x C x 2
     MyArr2D GZP1, GZP2; // M x C
 
     void initIteration(double tol = 1e-6);
     void updateIteration();
-    auto forwardAndBackwardsHighRam(int, const MyFloat1D &, const MyArr2D &, bool);
-    double forwardAndBackwardsLowRam(int, const MyFloat1D &, const MyArr2D &, bool);
-    double runWithOneThread(int, const MyFloat1D &, const MyArr2D &);
+    auto forwardAndBackwardsHighRam(int, const MyFloat1D &, bool);
+    double forwardAndBackwardsLowRam(int, const MyFloat1D &, bool);
+    double runWithOneThread(int, const MyFloat1D &);
 };
 
-inline FastPhaseK2::FastPhaseK2(int n, int m, int c, int seed) : N(n), M(m), C(c), C2(c * c), GP(M * 3, N)
+inline FastPhaseK2::FastPhaseK2(const IntVec1D & pos, int n, int c, int seed)
+: M(pos.size()), N(n), C(c), C2(c * c)
 {
     auto rng = std::default_random_engine{};
     rng.seed(seed);
     F = RandomUniform<MyArr2D, std::default_random_engine>(M, C, rng, 0.001, 0.999);
     PI = MyArr2D::Ones(C, M);
     PI.rowwise() /= PI.colwise().sum(); // normalize it per site
-    GP.setZero();
+    GP.setZero(M * 3, N);
     GZP1.setZero(M, C);
     GZP2.setZero(M, C);
+    J = calc_transRate(pos, C);
 }
 
 inline FastPhaseK2::~FastPhaseK2() {}
@@ -75,7 +78,7 @@ inline void FastPhaseK2::updateIteration()
 ** @param pos       SNP position
 ** @return likelihood difference between last two iters
 */
-inline double FastPhaseK2::runWithOneThread(int niters, const MyFloat1D & GL, const MyArr2D & transRate)
+inline double FastPhaseK2::runWithOneThread(int niters, const MyFloat1D & GL)
 {
     double loglike, diff, prevlike;
     for(int it = 0; it <= niters; it++)
@@ -85,9 +88,9 @@ inline double FastPhaseK2::runWithOneThread(int niters, const MyFloat1D & GL, co
         for(int i = 0; i < N; i++)
         {
             if(it == niters)
-                loglike += forwardAndBackwardsLowRam(i, GL, transRate, true);
+                loglike += forwardAndBackwardsLowRam(i, GL, true);
             else
-                loglike += forwardAndBackwardsLowRam(i, GL, transRate, false);
+                loglike += forwardAndBackwardsLowRam(i, GL, false);
         }
         diff = it ? loglike - prevlike : 0;
         prevlike = loglike;
@@ -102,16 +105,12 @@ inline double FastPhaseK2::runWithOneThread(int niters, const MyFloat1D & GL, co
 ** @param transRate (x^2, x(1-x), (1-x)^2),M x 3
 ** @return individual total likelihood
 */
-inline double FastPhaseK2::forwardAndBackwardsLowRam(int ind,
-                                                     const MyFloat1D & GL,
-                                                     const MyArr2D & transRate,
-                                                     bool call_geno)
+inline double FastPhaseK2::forwardAndBackwardsLowRam(int ind, const MyFloat1D & GL, bool call_geno)
 {
     Eigen::Map<const MyArr2D> gli(GL.data() + ind * M * 3, M, 3);
     MyArr2D LikeForwardInd(C2, M); // likelihood of forward recursion for ind i, not log
     MyArr2D LikeBackwardInd(C2, M); // likelihood of backward recursion for ind i, not log
-    double indLogLikeForwardAll =
-        getClusterLikelihoods(LikeForwardInd, LikeBackwardInd, gli, transRate, PI, F, true);
+    double indLogLikeForwardAll = getClusterLikelihoods(LikeForwardInd, LikeBackwardInd, gli, J, PI, F, true);
     MyArr1D ind_post_z_col(M); // col of indPostProbsZ
     MyArr2D ind_post_z_g(M, 4); // cols of indPostProbsZandG
     LikeForwardInd *= LikeBackwardInd;
@@ -177,16 +176,12 @@ inline double FastPhaseK2::forwardAndBackwardsLowRam(int ind,
 ** @param transRate (x^2, x(1-x), (1-x)^2),M x 3
 ** @return individual total likelihood
 */
-inline auto FastPhaseK2::forwardAndBackwardsHighRam(int ind,
-                                                    const MyFloat1D & GL,
-                                                    const MyArr2D & transRate,
-                                                    bool call_geno)
+inline auto FastPhaseK2::forwardAndBackwardsHighRam(int ind, const MyFloat1D & GL, bool call_geno)
 {
     Eigen::Map<const MyArr2D> gli(GL.data() + ind * M * 3, M, 3);
     MyArr2D LikeForwardInd(C2, M); // likelihood of forward recursion for ind i, not log
     MyArr2D LikeBackwardInd(C2, M); // likelihood of backward recursion for ind i, not log
-    double indLogLikeForwardAll =
-        getClusterLikelihoods(LikeForwardInd, LikeBackwardInd, gli, transRate, PI, F, true);
+    double indLogLikeForwardAll = getClusterLikelihoods(LikeForwardInd, LikeBackwardInd, gli, J, PI, F, true);
     MyArr1D ind_post_z_col(M); // col of indPostProbsZ
     MyArr2D ind_post_z_g(M, 4); // cols of indPostProbsZandG
     LikeForwardInd *= LikeBackwardInd;

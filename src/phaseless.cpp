@@ -56,10 +56,6 @@ int main(int argc, char * argv[])
         .help("treat input as big single chunk")
         .default_value(false)
         .implicit_value(true);
-    cmd_impute.add_argument("--info")
-        .help("filter and re-impute sites with low info")
-        .default_value(0.0)
-        .scan<'g', double>();
     cmd_impute.add_argument("--seed")
         .help("seed for reproducing results")
         .default_value(999)
@@ -164,7 +160,6 @@ int main(int argc, char * argv[])
             opts.nimpute = cmd_impute.get<int>("--iterations");
             opts.seed = cmd_impute.get<int>("--seed");
             opts.chunksize = cmd_impute.get<int>("--chunksize");
-            opts.info = cmd_impute.get<double>("--info");
             opts.single_chunk = cmd_impute.get<bool>("--single-chunk");
             opts.noscreen = cmd_impute.get<bool>("--no-print");
             if(opts.single_chunk) opts.chunksize = INT_MAX;
