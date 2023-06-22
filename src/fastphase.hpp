@@ -34,8 +34,7 @@ class FastPhaseK2
     double runWithOneThread(int, const MyFloat1D &);
 };
 
-inline FastPhaseK2::FastPhaseK2(const Int1D & pos, int n, int c, int seed)
-: M(pos.size()), N(n), C(c), C2(c * c)
+inline FastPhaseK2::FastPhaseK2(const Int1D & pos, int n, int c, int seed) : M(pos.size()), N(n), C(c), C2(c * c)
 {
     auto rng = std::default_random_engine{};
     rng.seed(seed);
@@ -368,16 +367,14 @@ inline double FastPhaseK4::forwardAndBackwards(int ind,
     protect_me = 0;
     for(s = M - 2; s >= 0; s--)
     {
-        auto likeBackwardTmp =
-            Eigen::exp(emitDip.row(s + 1).transpose() + logLikeBackwardInd.col(s + 1) - protect_me);
+        auto likeBackwardTmp = Eigen::exp(emitDip.row(s + 1).transpose() + logLikeBackwardInd.col(s + 1) - protect_me);
         for(z1 = 0; z1 < C; z1++)
         {
             for(z2 = 0; z2 < C; z2++)
             {
                 z12 = z1 * C + z2;
                 logLikeBackwardInd(z12, s) =
-                    protect_me
-                    + log((likeBackwardTmp * transDip(s + 1, Eigen::seqN(z12, C2, C2)).transpose()).sum());
+                    protect_me + log((likeBackwardTmp * transDip(s + 1, Eigen::seqN(z12, C2, C2)).transpose()).sum());
             }
         }
         // protect_me = logLikeBackwardInd.row(s).maxCoeff();

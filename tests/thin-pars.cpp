@@ -65,8 +65,7 @@ int main(int argc, char * argv[])
               ", nchunks =", genome->nchunks, ", chunksize =", genome->chunksize);
     int nchunks_ = genome->nchunks * frac;
     int step = genome->nchunks / nchunks_;
-    genome->chrs.erase(pick_chunk_by_step(genome->chrs.begin(), genome->chrs.end(), step),
-                       genome->chrs.end());
+    genome->chrs.erase(pick_chunk_by_step(genome->chrs.begin(), genome->chrs.end(), step), genome->chrs.end());
     genome->pos.erase(pick_chunk_by_step(genome->pos.begin(), genome->pos.end(), step), genome->pos.end());
     genome->gls.erase(pick_chunk_by_step(genome->gls.begin(), genome->gls.end(), step), genome->gls.end());
     genome->PI.erase(pick_chunk_by_step(genome->PI.begin(), genome->PI.end(), step), genome->PI.end());

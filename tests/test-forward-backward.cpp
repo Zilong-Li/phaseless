@@ -24,8 +24,7 @@ inline auto getClusterLikelihoods2(MyArr2D & LikeForwardInd,
     // ======== forward recursion ===========
     int z1, z2, z12;
     int s{0};
-    LikeForwardInd.col(s) =
-        emitDip.col(s) * (PI.col(s).matrix() * PI.col(s).transpose().matrix()).reshaped().array();
+    LikeForwardInd.col(s) = emitDip.col(s) * (PI.col(s).matrix() * PI.col(s).transpose().matrix()).reshaped().array();
     cs(s) = 1 / LikeForwardInd.col(s).sum();
     LikeForwardInd.col(s) *= cs(s); // normalize it
     for(s = 1; s < M; s++)
@@ -38,10 +37,9 @@ inline auto getClusterLikelihoods2(MyArr2D & LikeForwardInd,
             for(z2 = 0; z2 < C; z2++)
             {
                 z12 = z1 * C + z2;
-                LikeForwardInd(z12, s) =
-                    emitDip(z12, s)
-                    * (LikeForwardInd(z12, s - 1) * transRate(0, s) + PI(z1, s) * sumTmp1(z2)
-                       + PI(z2, s) * sumTmp2(z1) + PI(z1, s) * PI(z2, s) * constTmp);
+                LikeForwardInd(z12, s) = emitDip(z12, s)
+                                         * (LikeForwardInd(z12, s - 1) * transRate(0, s) + PI(z1, s) * sumTmp1(z2)
+                                            + PI(z2, s) * sumTmp2(z1) + PI(z1, s) * PI(z2, s) * constTmp);
             }
         }
         cs(s) = 1 / LikeForwardInd.col(s).sum();
@@ -75,8 +73,7 @@ inline auto getClusterLikelihoods2(MyArr2D & LikeForwardInd,
                 z12 = z1 * C + z2;
                 // apply scaling
                 LikeBackwardInd(z12, s) =
-                    (beta_mult_emit(z12) * transRate(0, s + 1) + sumTmp1(z1) + sumTmp2(z2) + constTmp)
-                    * cs(s);
+                    (beta_mult_emit(z12) * transRate(0, s + 1) + sumTmp1(z1) + sumTmp2(z2) + constTmp) * cs(s);
             }
         }
     }

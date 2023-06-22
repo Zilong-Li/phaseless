@@ -13,8 +13,7 @@ inline auto make_beagle_header(std::string fam)
     while(getline(ifs, line))
     {
         std::stringstream ss(line);
-        std::vector<std::string> token(std::istream_iterator<std::string>{ss},
-                                       std::istream_iterator<std::string>{});
+        std::vector<std::string> token(std::istream_iterator<std::string>{ss}, std::istream_iterator<std::string>{});
         hdr += "\t" + token[1] + "\t" + token[1] + "\t" + token[1];
     }
     hdr += "\n";

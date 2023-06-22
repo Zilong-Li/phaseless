@@ -31,11 +31,11 @@ TEST_CASE("fastphasek2 forwardAndBackwardsLowRam", "[test-fastphasek2]")
         for(int i = 0; i < N; i++)
         {
             if(it == niters)
-                llike.emplace_back(poolit.enqueue(&FastPhaseK2::forwardAndBackwardsLowRam, &nofaith, i,
-                                                  std::ref(genolikes), true));
+                llike.emplace_back(
+                    poolit.enqueue(&FastPhaseK2::forwardAndBackwardsLowRam, &nofaith, i, std::ref(genolikes), true));
             else
-                llike.emplace_back(poolit.enqueue(&FastPhaseK2::forwardAndBackwardsLowRam, &nofaith, i,
-                                                  std::ref(genolikes), false));
+                llike.emplace_back(
+                    poolit.enqueue(&FastPhaseK2::forwardAndBackwardsLowRam, &nofaith, i, std::ref(genolikes), false));
         }
         loglike = 0;
         for(auto && ll : llike) loglike += ll.get();
@@ -65,11 +65,11 @@ TEST_CASE("fastphasek2 forwardAndBackwardsHighRam", "[test-fastphasek2]")
         for(int i = 0; i < N; i++)
         {
             if(it == niters)
-                llike.emplace_back(poolit.enqueue(&FastPhaseK2::forwardAndBackwardsHighRam, &nofaith, i,
-                                                  std::ref(genolikes), true));
+                llike.emplace_back(
+                    poolit.enqueue(&FastPhaseK2::forwardAndBackwardsHighRam, &nofaith, i, std::ref(genolikes), true));
             else
-                llike.emplace_back(poolit.enqueue(&FastPhaseK2::forwardAndBackwardsHighRam, &nofaith, i,
-                                                  std::ref(genolikes), false));
+                llike.emplace_back(
+                    poolit.enqueue(&FastPhaseK2::forwardAndBackwardsHighRam, &nofaith, i, std::ref(genolikes), false));
         }
         loglike = 0;
         for(auto && ll : llike)
@@ -140,13 +140,11 @@ TEST_CASE("fastphasek4", "[test-fastphasek4]")
         for(int i = 0; i < N; i++)
         {
             if(it == niters)
-                llike.emplace_back(poolit.enqueue(&FastPhaseK4::forwardAndBackwards, &nofaith, i,
-                                                  std::ref(genolikes), std::ref(postProbsZ),
-                                                  std::ref(postProbsZandG), true));
+                llike.emplace_back(poolit.enqueue(&FastPhaseK4::forwardAndBackwards, &nofaith, i, std::ref(genolikes),
+                                                  std::ref(postProbsZ), std::ref(postProbsZandG), true));
             else
-                llike.emplace_back(poolit.enqueue(&FastPhaseK4::forwardAndBackwards, &nofaith, i,
-                                                  std::ref(genolikes), std::ref(postProbsZ),
-                                                  std::ref(postProbsZandG), false));
+                llike.emplace_back(poolit.enqueue(&FastPhaseK4::forwardAndBackwards, &nofaith, i, std::ref(genolikes),
+                                                  std::ref(postProbsZ), std::ref(postProbsZandG), false));
         }
         loglike = 0;
         for(auto && ll : llike) loglike += ll.get();

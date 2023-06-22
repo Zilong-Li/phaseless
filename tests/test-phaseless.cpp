@@ -97,8 +97,7 @@ TEST_CASE("phaseless normal iteration with make_input_per_chunk", "[test-phasele
     {
         admixer.initIteration();
         for(int i = 0; i < genome->nsamples; i++)
-            llike.emplace_back(
-                poolit.enqueue(&Admixture::runNativeWithBigAss, &admixer, i, std::ref(genome)));
+            llike.emplace_back(poolit.enqueue(&Admixture::runNativeWithBigAss, &admixer, i, std::ref(genome)));
         loglike = 0;
         for(auto && ll : llike) loglike += ll.get();
         llike.clear(); // clear future and renew

@@ -45,8 +45,7 @@ inline MatrixType RandomUniform(const Eigen::Index numRows,
                                 typename MatrixType::Scalar a,
                                 typename MatrixType::Scalar b)
 {
-    std::uniform_real_distribution<typename MatrixType::Scalar> uniform_real_distribution{
-        a, b}; // or using 0.05, 0.95
+    std::uniform_real_distribution<typename MatrixType::Scalar> uniform_real_distribution{a, b}; // or using 0.05, 0.95
     const auto uniform{[&](typename MatrixType::Scalar) { return uniform_real_distribution(engine); }};
     return MatrixType::NullaryExpr(numRows, numCols, uniform);
 };
@@ -111,8 +110,7 @@ inline auto emissionCurIterInd(const MyArr2D & gli, const MyArr2D & F, bool use_
             {
                 for(g2 = 0; g2 <= 1; g2++)
                 {
-                    emitDip.col(k1 * C + k2) += gli.col(g1 + g2)
-                                                * (g1 * F.col(k1) + (1 - g1) * (1 - F.col(k1)))
+                    emitDip.col(k1 * C + k2) += gli.col(g1 + g2) * (g1 * F.col(k1) + (1 - g1) * (1 - F.col(k1)))
                                                 * (g2 * F.col(k2) + (1 - g2) * (1 - F.col(k2)));
                 }
             }
@@ -147,8 +145,7 @@ inline auto getClusterLikelihoods(MyArr2D & LikeForwardInd,
     // ======== forward recursion ===========
     int z1, z2, z12;
     int s{0};
-    LikeForwardInd.col(s) =
-        emitDip.col(s) * (PI.col(s).matrix() * PI.col(s).transpose().matrix()).reshaped().array();
+    LikeForwardInd.col(s) = emitDip.col(s) * (PI.col(s).matrix() * PI.col(s).transpose().matrix()).reshaped().array();
     cs(s) = 1 / LikeForwardInd.col(s).sum();
     LikeForwardInd.col(s) *= cs(s); // normalize it
     for(s = 1; s < M; s++)
@@ -160,10 +157,9 @@ inline auto getClusterLikelihoods(MyArr2D & LikeForwardInd,
             for(z2 = 0; z2 < C; z2++)
             {
                 z12 = z1 * C + z2;
-                LikeForwardInd(z12, s) =
-                    emitDip(z12, s)
-                    * (LikeForwardInd(z12, s - 1) * transRate(0, s) + PI(z1, s) * sumTmp1(z2)
-                       + PI(z2, s) * sumTmp1(z1) + PI(z1, s) * PI(z2, s) * constTmp);
+                LikeForwardInd(z12, s) = emitDip(z12, s)
+                                         * (LikeForwardInd(z12, s - 1) * transRate(0, s) + PI(z1, s) * sumTmp1(z2)
+                                            + PI(z2, s) * sumTmp1(z1) + PI(z1, s) * PI(z2, s) * constTmp);
             }
         }
         cs(s) = 1 / LikeForwardInd.col(s).sum();
@@ -193,8 +189,7 @@ inline auto getClusterLikelihoods(MyArr2D & LikeForwardInd,
                 z12 = z1 * C + z2;
                 // apply scaling
                 LikeBackwardInd(z12, s) =
-                    (beta_mult_emit(z12) * transRate(0, s + 1) + sumTmp1(z1) + sumTmp1(z2) + constTmp)
-                    * cs(s);
+                    (beta_mult_emit(z12) * transRate(0, s + 1) + sumTmp1(z1) + sumTmp1(z2) + constTmp) * cs(s);
             }
         }
     }
@@ -288,8 +283,8 @@ inline auto getClusterLikelihoods(int ind,
             {
                 k12 = k1 * C + k2;
                 sumTmp1(k1) += beta_mult_emit(k12) * PI[(s + 1) * C + k2] * transRate_[(s + 1) * 3 + 1];
-                constTmp += beta_mult_emit(k12) * PI[(s + 1) * C + k1] * PI[(s + 1) * C + k2]
-                            * transRate_[(s + 1) * 3 + 2];
+                constTmp +=
+                    beta_mult_emit(k12) * PI[(s + 1) * C + k1] * PI[(s + 1) * C + k2] * transRate_[(s + 1) * 3 + 2];
             }
         }
         for(k1 = 0; k1 < C; k1++)
@@ -298,8 +293,7 @@ inline auto getClusterLikelihoods(int ind,
             {
                 k12 = k1 * C + k2;
                 LikeBackwardInd(k12, s) =
-                    (beta_mult_emit(k12) * transRate_[(s + 1) * 3 + 0] + sumTmp1(k1) + sumTmp1(k2) + constTmp)
-                    * cs(s);
+                    (beta_mult_emit(k12) * transRate_[(s + 1) * 3 + 0] + sumTmp1(k1) + sumTmp1(k2) + constTmp) * cs(s);
             }
         }
     }

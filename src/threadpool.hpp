@@ -60,8 +60,7 @@ template<class F, class... A>
 decltype(auto) ThreadPool::enqueue(F && callable, A &&... arguments)
 {
     using ReturnType = std::invoke_result_t<F, A...>;
-    std::packaged_task<ReturnType()> task(
-        std::bind(std::forward<F>(callable), std::forward<A>(arguments)...));
+    std::packaged_task<ReturnType()> task(std::bind(std::forward<F>(callable), std::forward<A>(arguments)...));
     std::future<ReturnType> taskGetFuture = task.get_future();
     {
         std::unique_lock<std::mutex> lock(mutex_queue); // tasks_queue not threading-safe. locking here

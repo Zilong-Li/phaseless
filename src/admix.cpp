@@ -7,11 +7,7 @@
 
 using namespace std;
 
-inline int run_bootstrap(const std::unique_ptr<BigAss> & genome,
-                         ThreadPool & poolit,
-                         Logger & cao,
-                         int K,
-                         int nseeds)
+inline int run_bootstrap(const std::unique_ptr<BigAss> & genome, ThreadPool & poolit, Logger & cao, int K, int nseeds)
 {
     std::vector<std::future<double>> res;
     std::vector<double> llikes;
@@ -46,8 +42,7 @@ inline int run_admix_main(Options & opts)
     std::error_code ec;
     std::ifstream ifs(opts.in_bin, std::ios::in | std::ios::binary);
     constexpr auto OPTIONS = alpaca::options::fixed_length_encoding;
-    std::unique_ptr<BigAss> genome =
-        std::make_unique<BigAss>(alpaca::deserialize<OPTIONS, BigAss>(ifs, filesize, ec));
+    std::unique_ptr<BigAss> genome = std::make_unique<BigAss>(alpaca::deserialize<OPTIONS, BigAss>(ifs, filesize, ec));
     ifs.close();
     assert((bool)ec == false);
     cao.done(tm.date(), filesize, " bytes deserialized from file. skip imputation, ec", ec);
@@ -71,8 +66,7 @@ inline int run_admix_main(Options & opts)
             F0 = admixer.F;
             Q0 = admixer.Q;
             for(int i = 0; i < genome->nsamples; i++)
-                llike.emplace_back(
-                    poolit.enqueue(&Admixture::runOptimalWithBigAss, &admixer, i, std::ref(genome)));
+                llike.emplace_back(poolit.enqueue(&Admixture::runOptimalWithBigAss, &admixer, i, std::ref(genome)));
             for(auto && ll : llike) ll.get();
             llike.clear(); // clear future and renew
             admixer.updateIteration();
@@ -83,8 +77,7 @@ inline int run_admix_main(Options & opts)
             qdiff = (Q1 - Q0).square().sum();
             tm.clock();
             for(int i = 0; i < genome->nsamples; i++)
-                llike.emplace_back(
-                    poolit.enqueue(&Admixture::runOptimalWithBigAss, &admixer, i, std::ref(genome)));
+                llike.emplace_back(poolit.enqueue(&Admixture::runOptimalWithBigAss, &admixer, i, std::ref(genome)));
             double loglike = 0;
             for(auto && ll : llike) loglike += ll.get();
             llike.clear(); // clear future and renew
@@ -95,8 +88,7 @@ inline int run_admix_main(Options & opts)
                       ", likelihoods =", std::fixed, loglike, ",", tm.reltime(), " sec");
             if(qdiff < opts.qtol)
             {
-                cao.print(tm.date(), "hit stopping criteria, diff(Q) =", std::scientific, qdiff, " <",
-                          opts.qtol);
+                cao.print(tm.date(), "hit stopping criteria, diff(Q) =", std::scientific, qdiff, " <", opts.qtol);
                 break;
             }
             if(ldiff < opts.ltol)
@@ -119,8 +111,7 @@ inline int run_admix_main(Options & opts)
             admixer.Q = Q0 + 2 * alpha * (Q1 - Q0) + alpha * alpha * (admixer.Q - 2 * Q1 + Q0);
             admixer.initIteration();
             for(int i = 0; i < genome->nsamples; i++)
-                llike.emplace_back(
-                    poolit.enqueue(&Admixture::runOptimalWithBigAss, &admixer, i, std::ref(genome)));
+                llike.emplace_back(poolit.enqueue(&Admixture::runOptimalWithBigAss, &admixer, i, std::ref(genome)));
             for(auto && ll : llike) ll.get();
             llike.clear(); // clear future and renew
             admixer.updateIteration();
@@ -137,8 +128,7 @@ inline int run_admix_main(Options & opts)
             admixer.initIteration();
             Q0 = admixer.Q;
             for(int i = 0; i < genome->nsamples; i++)
-                llike.emplace_back(
-                    poolit.enqueue(&Admixture::runOptimalWithBigAss, &admixer, i, std::ref(genome)));
+                llike.emplace_back(poolit.enqueue(&Admixture::runOptimalWithBigAss, &admixer, i, std::ref(genome)));
 
             loglike = 0;
             for(auto && ll : llike) loglike += ll.get();
