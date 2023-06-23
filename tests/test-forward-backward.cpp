@@ -126,7 +126,7 @@ TEST_CASE("reconstruct alpha and beta from saved pars.bin", "[test-forward-backw
             alpha.setZero(genome->C * genome->C, iM);
             beta.setZero(genome->C * genome->C, iM);
             Eigen::Map<const MyArr2D> gli(genome->gls[ic].data() + ind * iM * 3, iM, 3);
-            getClusterLikelihoods(alpha, beta, gli, faith.J, faith.PI, faith.F);
+            getClusterLikelihoods(alpha, beta, gli, faith.R, faith.PI, faith.F);
             alpha *= beta;
             REQUIRE(((alpha.colwise().sum() - 1.0).abs() < 1e-5).all());
         }
@@ -171,12 +171,12 @@ TEST_CASE("compare optmized fbd to native fbd", "[test-forward-backward]")
         alpha1.setZero(genome->C * genome->C, iM);
         beta1.setZero(genome->C * genome->C, iM);
         Eigen::Map<const MyArr2D> gli(genome->gls[ic].data() + ind * iM * 3, iM, 3);
-        getClusterLikelihoods(alpha1, beta1, gli, faith.J, faith.PI, faith.F);
+        getClusterLikelihoods(alpha1, beta1, gli, faith.R, faith.PI, faith.F);
         alpha1 *= beta1;
         alpha1.rowwise() /= alpha1.colwise().sum();
         alpha2.setZero(genome->C * genome->C, iM);
         beta2.setZero(genome->C * genome->C, iM);
-        getClusterLikelihoods2(alpha2, beta2, gli, faith.J, faith.PI, faith.F);
+        getClusterLikelihoods2(alpha2, beta2, gli, faith.R, faith.PI, faith.F);
         alpha2 *= beta2;
         alpha2.rowwise() /= alpha2.colwise().sum();
         auto delta = alpha1 - alpha2;

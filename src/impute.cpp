@@ -16,7 +16,7 @@ inline auto make_input_per_chunk(const std::unique_ptr<BigAss> & genome, const i
     FastPhaseK2 faith(genome->pos[ic], genome->nsamples, genome->C, seed);
     faith.runWithOneThread(niters, genome->gls[ic]);
     auto Info = calc_cluster_info(faith.N, faith.GZP1, faith.GZP2);
-    return std::tuple(MyFloat1D(faith.GP.data(), faith.GP.data() + faith.GP.size()), Info, faith.J, faith.PI, faith.F);
+    return std::tuple(MyFloat1D(faith.GP.data(), faith.GP.data() + faith.GP.size()), Info, faith.R, faith.PI, faith.F);
 }
 
 // inline void filter_input_per_chunk(filesystem::path out,
@@ -89,7 +89,7 @@ inline int run_impute_main(Options & opts)
             }
             tm.clock();
             write_bigass_to_bcf(bw, faith.GP.data(), genome->chrs[ic], genome->pos[ic]);
-            genome->transRate.emplace_back(MyFloat1D(faith.J.data(), faith.J.data() + faith.J.size()));
+            genome->transRate.emplace_back(MyFloat1D(faith.R.data(), faith.R.data() + faith.R.size()));
             genome->PI.emplace_back(MyFloat1D(faith.PI.data(), faith.PI.data() + faith.PI.size()));
             genome->F.emplace_back(MyFloat1D(faith.F.data(), faith.F.data() + faith.F.size()));
             auto ClusterInfo = calc_cluster_info(faith.N, faith.GZP1, faith.GZP2);

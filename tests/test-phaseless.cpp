@@ -22,7 +22,7 @@ auto make_input_per_chunk(filesystem::path outdir,
                                    outdir / string("chunk." + to_string(ic) + ".vcf.gz"));
     return std::tuple(MyFloat1D(faith.PI.data(), faith.PI.data() + faith.PI.size()),
                       MyFloat1D(faith.F.data(), faith.F.data() + faith.F.size()),
-                      MyFloat1D(faith.J.data(), faith.J.data() + faith.J.size()));
+                      MyFloat1D(faith.R.data(), faith.R.data() + faith.R.size()));
 }
 
 TEST_CASE("phaseless naive vs dump", "[test-phaseless]")

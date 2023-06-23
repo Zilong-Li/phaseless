@@ -23,7 +23,7 @@ class FastPhaseK2
     MyArr2D GP; // N x (M x 3), genotype probabilies for all individuals
     MyArr2D PI; // C x M, cluster frequency
     MyArr2D F; // M x C, cluster-specific allele frequence
-    MyArr2D J; // 3 x M, jumping / recombination rate
+    MyArr2D R; // 3 x M, jumping / recombination rate
     MyArr2D Ek, Ekg; // M x C, M x C x 2
     MyArr2D GZP1, GZP2; // M x C
 
@@ -44,7 +44,7 @@ inline FastPhaseK2::FastPhaseK2(const Int1D & pos, int n, int c, int seed) : M(p
     GP.setZero(M * 3, N);
     GZP1.setZero(M, C);
     GZP2.setZero(M, C);
-    J = calc_transRate(pos, C);
+    R = calc_transRate(pos, C);
 }
 
 inline FastPhaseK2::~FastPhaseK2() {}
@@ -109,7 +109,7 @@ inline double FastPhaseK2::forwardAndBackwardsLowRam(int ind, const MyFloat1D & 
     Eigen::Map<const MyArr2D> gli(GL.data() + ind * M * 3, M, 3);
     MyArr2D LikeForwardInd(C2, M); // likelihood of forward recursion for ind i, not log
     MyArr2D LikeBackwardInd(C2, M); // likelihood of backward recursion for ind i, not log
-    double indLogLikeForwardAll = getClusterLikelihoods(LikeForwardInd, LikeBackwardInd, gli, J, PI, F, true);
+    double indLogLikeForwardAll = getClusterLikelihoods(LikeForwardInd, LikeBackwardInd, gli, R, PI, F, true);
     MyArr1D ind_post_z_col(M); // col of indPostProbsZ
     MyArr2D ind_post_z_g(M, 4); // cols of indPostProbsZandG
     LikeForwardInd *= LikeBackwardInd;
@@ -180,7 +180,7 @@ inline auto FastPhaseK2::forwardAndBackwardsHighRam(int ind, const MyFloat1D & G
     Eigen::Map<const MyArr2D> gli(GL.data() + ind * M * 3, M, 3);
     MyArr2D LikeForwardInd(C2, M); // likelihood of forward recursion for ind i, not log
     MyArr2D LikeBackwardInd(C2, M); // likelihood of backward recursion for ind i, not log
-    double indLogLikeForwardAll = getClusterLikelihoods(LikeForwardInd, LikeBackwardInd, gli, J, PI, F, true);
+    double indLogLikeForwardAll = getClusterLikelihoods(LikeForwardInd, LikeBackwardInd, gli, R, PI, F, true);
     MyArr1D ind_post_z_col(M); // col of indPostProbsZ
     MyArr2D ind_post_z_g(M, 4); // cols of indPostProbsZandG
     LikeForwardInd *= LikeBackwardInd;
