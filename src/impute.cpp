@@ -8,15 +8,19 @@
 using namespace std;
 using namespace vcfpp;
 
-using pars1 = std::tuple<double, MyArr2D, MyArr2D>;
+using pars1 = std::tuple<double, MyArr2D, MyArr2D, MyArr2D, MyArr1D>;
 using pars2 = std::tuple<MyFloat1D, MyArr2D, MyArr2D, MyArr2D, MyArr2D>;
 
-inline auto make_input_per_chunk(const std::unique_ptr<BigAss> & genome, const int ic, const int niters, const int seed)
+inline auto make_input_per_chunk(const std::unique_ptr<BigAss> & genome,
+                                 const int ic,
+                                 const int niters,
+                                 const int seed)
 {
     FastPhaseK2 faith(genome->pos[ic], genome->nsamples, genome->C, seed);
     faith.runWithOneThread(niters, genome->gls[ic]);
     auto Info = calc_cluster_info(faith.N, faith.GZP1, faith.GZP2);
-    return std::tuple(MyFloat1D(faith.GP.data(), faith.GP.data() + faith.GP.size()), Info, faith.R, faith.PI, faith.F);
+    return std::tuple(MyFloat1D(faith.GP.data(), faith.GP.data() + faith.GP.size()), Info, faith.R, faith.PI,
+                      faith.F);
 }
 
 // inline void filter_input_per_chunk(filesystem::path out,
@@ -77,14 +81,16 @@ inline int run_impute_main(Options & opts)
                 double loglike = 0;
                 for(auto && ll : res)
                 {
-                    const auto [l, iEk, iEkg] = ll.get();
+                    const auto [l, zj, zg1, zg2, gamma1] = ll.get();
                     loglike += l;
-                    faith.Ezj += iEk;
-                    faith.Ezg += iEkg;
+                    faith.Ezj += zj;
+                    faith.Ezg1 += zg1;
+                    faith.Ezg2 += zg2;
+                    faith.pi += gamma1;
                 }
                 res.clear(); // clear future and renew
-                cao.print(tm.date(), "run single chunk", ic, ", iteration", it, ", likelihoods =", loglike, ",",
-                          tm.reltime(), " sec");
+                cao.print(tm.date(), "run single chunk", ic, ", iteration", it, ", likelihoods =", loglike,
+                          ",", tm.reltime(), " sec");
                 faith.updateIteration();
             }
             tm.clock();
@@ -104,7 +110,8 @@ inline int run_impute_main(Options & opts)
             cao.warn(tm.date(), "nchunks < nthreads. only", genome->nchunks, " threads will be working");
         vector<future<pars2>> res;
         for(int ic = 0; ic < genome->nchunks; ic++)
-            res.emplace_back(poolit.enqueue(make_input_per_chunk, std::ref(genome), ic, opts.nimpute, opts.seed));
+            res.emplace_back(
+                poolit.enqueue(make_input_per_chunk, std::ref(genome), ic, opts.nimpute, opts.seed));
         int ic = 0;
         for(auto && ll : res)
         {

@@ -30,7 +30,7 @@ using String1D = std::vector<std::string>;
 using MapStringInt1D = std::map<std::string, Int1D>;
 using UMapStringInt = std::unordered_map<std::string, int>;
 
-using MyFloat = double; // use float if no accuracy drops
+using MyFloat = float; // use float if no accuracy drops
 using MyFloat1D = std::vector<MyFloat>;
 using MyFloat2D = std::vector<MyFloat1D>;
 using MyMat2D = Eigen::Matrix<MyFloat, Eigen::Dynamic, Eigen::Dynamic, Eigen::ColMajor>;
@@ -45,7 +45,8 @@ inline MatrixType RandomUniform(const Eigen::Index numRows,
                                 typename MatrixType::Scalar a,
                                 typename MatrixType::Scalar b)
 {
-    std::uniform_real_distribution<typename MatrixType::Scalar> uniform_real_distribution{a, b}; // or using 0.05, 0.95
+    std::uniform_real_distribution<typename MatrixType::Scalar> uniform_real_distribution{
+        a, b}; // or using 0.05, 0.95
     const auto uniform{[&](typename MatrixType::Scalar) { return uniform_real_distribution(engine); }};
     return MatrixType::NullaryExpr(numRows, numCols, uniform);
 };
@@ -93,9 +94,11 @@ inline auto calc_transRate(const Int1D & markers, int C, int Ne = 20000, double 
 }
 
 /*
-** @param gli  genotype likelihoods of current individual i, nsnps x 3
+** @param gli  genotype likelihoods of current individual i, (M, 3)
+** @param F    cluster-specific allele frequence (M, C)
+** @return emission probability (M, C2)
 */
-inline auto emissionCurIterInd(const MyArr2D & gli, const MyArr2D & F, bool use_log)
+inline auto get_emission_by_gl(const MyArr2D & gli, const MyArr2D & F)
 {
     int k1, k2, g1, g2;
     const int M = F.rows();
@@ -110,77 +113,80 @@ inline auto emissionCurIterInd(const MyArr2D & gli, const MyArr2D & F, bool use_
             {
                 for(g2 = 0; g2 <= 1; g2++)
                 {
-                    emitDip.col(k1 * C + k2) += gli.col(g1 + g2) * (g1 * F.col(k1) + (1 - g1) * (1 - F.col(k1)))
+                    emitDip.col(k1 * C + k2) += gli.col(g1 + g2)
+                                                * (g1 * F.col(k1) + (1 - g1) * (1 - F.col(k1)))
                                                 * (g2 * F.col(k2) + (1 - g2) * (1 - F.col(k2)));
                 }
             }
         }
     }
-    if(use_log)
-    {
-        emitDip = emitDip.log();
-    }
-    else
-    {
-        // emitDip = emitDip.colwise() / emitDip.rowwise().maxCoeff(); // normalize it
-        const double minEmission = 1e-10;
-        emitDip = (emitDip < minEmission).select(minEmission, emitDip);
-    }
+    // emitDip = emitDip.colwise() / emitDip.rowwise().maxCoeff(); // normalize it
+    const double minEmission = 1e-10;
+    emitDip = (emitDip < minEmission).select(minEmission, emitDip);
     return emitDip;
 }
 
-inline auto getClusterLikelihoods(MyArr2D & LikeForwardInd,
-                                  MyArr2D & LikeBackwardInd,
-                                  const MyArr2D & gli,
-                                  const MyArr2D & transRate,
-                                  const MyArr2D & PI,
-                                  const MyArr2D & F,
-                                  const bool gamma = true)
+/*
+** @param alpha    forward probability, (C2,M)
+** @param beta     backwards probability (C2,M)
+** @param E        emission probability with individual genotype likelihood,(C2,M)
+** @param R        transition probability (3,M)
+** @param F        transition probability (C,M)
+** @param PI       transition probability (C,M)
+** @return individual log likelihood
+*/
+inline double forward_backwards_diploid(MyArr2D & alpha,
+                                        MyArr2D & beta,
+                                        const MyArr2D & E,
+                                        const MyArr2D & R,
+                                        const MyArr2D & F,
+                                        const MyArr2D & PI)
 {
-    const int M = LikeForwardInd.cols();
+    const int M = alpha.cols();
     const int C = F.cols();
-    MyArr2D emitDip = emissionCurIterInd(gli, F, false).transpose();
     MyArr1D sumTmp1(C), cs(M); // store sum over internal loop
     double constTmp;
     // ======== forward recursion ===========
     int z1, z2, z12;
     int s{0};
-    LikeForwardInd.col(s) = emitDip.col(s) * (PI.col(s).matrix() * PI.col(s).transpose().matrix()).reshaped().array();
-    cs(s) = 1 / LikeForwardInd.col(s).sum();
-    LikeForwardInd.col(s) *= cs(s); // normalize it
-    // alpha_s = emit * (alpha_(s-1) * R + pi(z1) * tmp1(z2) + pi(z2) * tmp2(z1) + P(switch into z1) * P(switch into z2) * constTmp)
+    alpha.col(s) = E.col(s) * (PI.col(s).matrix() * PI.col(s).transpose().matrix()).reshaped().array();
+    cs(s) = 1 / alpha.col(s).sum();
+    alpha.col(s) *= cs(s); // normalize it
+    // alpha_s = emit * (alpha_(s-1) * R + pi(z1) * tmp1(z2) + pi(z2) * tmp2(z1) + P(switch into z1) *
+    // P(switch into z2) * constTmp)
     for(s = 1; s < M; s++)
     {
-        sumTmp1 = LikeForwardInd.col(s - 1).reshaped(C, C).rowwise().sum() * transRate(1, s);
-        constTmp = LikeForwardInd.col(s - 1).sum() * transRate(2, s);
+        sumTmp1 = alpha.col(s - 1).reshaped(C, C).rowwise().sum() * R(1, s);
+        constTmp = alpha.col(s - 1).sum() * R(2, s);
         for(z1 = 0; z1 < C; z1++)
         {
             for(z2 = 0; z2 < C; z2++)
             {
                 z12 = z1 * C + z2;
-                LikeForwardInd(z12, s) = emitDip(z12, s)
-                                         * (LikeForwardInd(z12, s - 1) * transRate(0, s) + PI(z1, s) * sumTmp1(z2)
-                                            + PI(z2, s) * sumTmp1(z1) + PI(z1, s) * PI(z2, s) * constTmp);
+                alpha(z12, s) = E(z12, s)
+                                * (alpha(z12, s - 1) * R(0, s) + PI(z1, s) * sumTmp1(z2)
+                                   + PI(z2, s) * sumTmp1(z1) + PI(z1, s) * PI(z2, s) * constTmp);
             }
         }
-        cs(s) = 1 / LikeForwardInd.col(s).sum();
-        LikeForwardInd.col(s) *= cs(s); // normalize it
+        cs(s) = 1 / alpha.col(s).sum();
+        alpha.col(s) *= cs(s); // normalize it
     }
+    alpha.rowwise() /= cs.transpose(); // de-scale alpha
 
     // ======== backward recursion ===========
     s = M - 1; // set last site
-    LikeBackwardInd.col(s).setConstant(cs(s)); // not log scale
+    beta.col(s).setConstant(cs(s)); // not log scale
     for(s = M - 2; s >= 0; s--)
     {
-        auto beta_mult_emit = emitDip.col(s + 1) * LikeBackwardInd.col(s + 1);
+        auto beta_mult_emit = E.col(s + 1) * beta.col(s + 1);
         sumTmp1.setZero();
         for(constTmp = 0, z1 = 0; z1 < C; z1++)
         {
             for(z2 = 0; z2 < C; z2++)
             {
                 z12 = z1 * C + z2;
-                sumTmp1(z1) += beta_mult_emit(z12) * PI(z2, s + 1) * transRate(1, s + 1);
-                constTmp += beta_mult_emit(z12) * PI(z1, s + 1) * PI(z2, s + 1) * transRate(2, s + 1);
+                sumTmp1(z1) += beta_mult_emit(z12) * PI(z2, s + 1) * R(1, s + 1);
+                constTmp += beta_mult_emit(z12) * PI(z1, s + 1) * PI(z2, s + 1) * R(2, s + 1);
             }
         }
         for(z1 = 0; z1 < C; z1++)
@@ -189,28 +195,26 @@ inline auto getClusterLikelihoods(MyArr2D & LikeForwardInd,
             {
                 z12 = z1 * C + z2;
                 // apply scaling
-                LikeBackwardInd(z12, s) =
-                    (beta_mult_emit(z12) * transRate(0, s + 1) + sumTmp1(z1) + sumTmp1(z2) + constTmp) * cs(s);
+                beta(z12, s) =
+                    (beta_mult_emit(z12) * R(0, s + 1) + sumTmp1(z1) + sumTmp1(z2) + constTmp) * cs(s);
             }
         }
     }
 
-    if(gamma) LikeForwardInd.rowwise() /= cs.transpose();
-    double indLogLikeForwardAll = log((1 / cs).sum()); // log likelhoods of the individual
-    return indLogLikeForwardAll;
+    return log((1 / cs).sum()); // log likelhoods of the individual
 }
 
 inline auto getClusterLikelihoods(int ind,
-                                  MyArr2D & LikeForwardInd,
-                                  MyArr2D & LikeBackwardInd,
+                                  MyArr2D & alpha,
+                                  MyArr2D & beta,
                                   const MyFloat1D & GL,
                                   const MyFloat1D & transRate_,
                                   const MyFloat1D & PI,
                                   const MyFloat1D & F,
                                   bool gamma = true)
 {
-    const int C2 = LikeForwardInd.rows();
-    const int M = LikeForwardInd.cols();
+    const int C2 = alpha.rows();
+    const int M = alpha.cols();
     int C = F.size() / M;
     int g1, g2, k1, k2, k12;
     int igs = ind * M * 3;
@@ -235,16 +239,16 @@ inline auto getClusterLikelihoods(int ind,
                                        * (g2 * F[k2 * M + s] + (1 - g2) * (1 - F[k2 * M + s]));
                 }
             }
-            LikeForwardInd(k12, s) = emitDip(k12, s) * PI[s * C + k1] * PI[s * C + k2];
-            cs(s) += LikeForwardInd(k12, s);
+            alpha(k12, s) = emitDip(k12, s) * PI[s * C + k1] * PI[s * C + k2];
+            cs(s) += alpha(k12, s);
         }
     }
     cs(s) = 1 / cs(s);
-    LikeForwardInd.col(s) *= cs(s); // normalize it
+    alpha.col(s) *= cs(s); // normalize it
     for(s = 1; s < M; s++)
     {
-        sumTmp1 = LikeForwardInd.col(s - 1).reshaped(C, C).rowwise().sum() * transRate_[s * 3 + 1];
-        constTmp = LikeForwardInd.col(s - 1).sum() * transRate_[s * 3 + 2];
+        sumTmp1 = alpha.col(s - 1).reshaped(C, C).rowwise().sum() * transRate_[s * 3 + 1];
+        constTmp = alpha.col(s - 1).sum() * transRate_[s * 3 + 2];
         for(k1 = 0; k1 < C; k1++)
         {
             for(k2 = 0; k2 < C; k2++)
@@ -260,23 +264,23 @@ inline auto getClusterLikelihoods(int ind,
                                            * (g2 * F[k2 * M + s] + (1 - g2) * (1 - F[k2 * M + s]));
                     }
                 }
-                LikeForwardInd(k12, s) =
+                alpha(k12, s) =
                     emitDip(k12, s)
-                    * (LikeForwardInd(k12, s - 1) * transRate_[s * 3 + 0] + PI[s * C + k1] * sumTmp1(k2)
+                    * (alpha(k12, s - 1) * transRate_[s * 3 + 0] + PI[s * C + k1] * sumTmp1(k2)
                        + PI[s * C + k2] * sumTmp1(k1) + PI[s * C + k1] * PI[s * C + k2] * constTmp);
-                cs(s) += LikeForwardInd(k12, s);
+                cs(s) += alpha(k12, s);
             }
         }
         cs(s) = 1 / cs(s);
-        LikeForwardInd.col(s) *= cs(s); // normalize it
+        alpha.col(s) *= cs(s); // normalize it
     }
     // double indLike = LikeForwardInd.col(M - 1).sum(); // just 1
     // ======== backward recursion ===========
     s = M - 1;
-    LikeBackwardInd.col(s).setConstant(cs(s)); // not log scale
+    beta.col(s).setConstant(cs(s)); // not log scale
     for(s = M - 2; s >= 0; s--)
     {
-        auto beta_mult_emit = emitDip.col(s + 1) * LikeBackwardInd.col(s + 1);
+        auto beta_mult_emit = emitDip.col(s + 1) * beta.col(s + 1);
         sumTmp1.setZero();
         for(constTmp = 0, k1 = 0; k1 < C; k1++)
         {
@@ -284,8 +288,8 @@ inline auto getClusterLikelihoods(int ind,
             {
                 k12 = k1 * C + k2;
                 sumTmp1(k1) += beta_mult_emit(k12) * PI[(s + 1) * C + k2] * transRate_[(s + 1) * 3 + 1];
-                constTmp +=
-                    beta_mult_emit(k12) * PI[(s + 1) * C + k1] * PI[(s + 1) * C + k2] * transRate_[(s + 1) * 3 + 2];
+                constTmp += beta_mult_emit(k12) * PI[(s + 1) * C + k1] * PI[(s + 1) * C + k2]
+                            * transRate_[(s + 1) * 3 + 2];
             }
         }
         for(k1 = 0; k1 < C; k1++)
@@ -293,13 +297,14 @@ inline auto getClusterLikelihoods(int ind,
             for(k2 = 0; k2 < C; k2++)
             {
                 k12 = k1 * C + k2;
-                LikeBackwardInd(k12, s) =
-                    (beta_mult_emit(k12) * transRate_[(s + 1) * 3 + 0] + sumTmp1(k1) + sumTmp1(k2) + constTmp) * cs(s);
+                beta(k12, s) =
+                    (beta_mult_emit(k12) * transRate_[(s + 1) * 3 + 0] + sumTmp1(k1) + sumTmp1(k2) + constTmp)
+                    * cs(s);
             }
         }
     }
     // for(s = 0; s < M; s++) LikeForwardInd.col(s) /= cs(s);
-    if(gamma) LikeForwardInd.rowwise() /= cs.transpose();
+    if(gamma) alpha.rowwise() /= cs.transpose();
 }
 
 inline auto calc_cluster_info(const int N, const MyArr2D & GZP1, const MyArr2D & GZP2)
