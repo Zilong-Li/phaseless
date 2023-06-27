@@ -6,7 +6,7 @@
 using namespace std;
 using namespace Eigen;
 
-using pars = std::tuple<double, MyArr2D, MyArr2D>;
+using pars1 = std::tuple<double, MyArr2D, MyArr2D, MyArr2D, MyArr1D>;
 
 inline auto getClusterLikelihoods2(MyArr2D & LikeForwardInd,
                                    MyArr2D & LikeBackwardInd,
@@ -18,13 +18,14 @@ inline auto getClusterLikelihoods2(MyArr2D & LikeForwardInd,
 {
     const int M = LikeForwardInd.cols();
     const int C = F.cols();
-    MyArr2D emitDip = emissionCurIterInd(gli, F, false).transpose();
+    MyArr2D emitDip = get_emission_by_gl(gli, F).transpose();
     MyArr1D sumTmp1(C), sumTmp2(C), cs(M); // store sum over internal loop
     double constTmp;
     // ======== forward recursion ===========
     int z1, z2, z12;
     int s{0};
-    LikeForwardInd.col(s) = emitDip.col(s) * (PI.col(s).matrix() * PI.col(s).transpose().matrix()).reshaped().array();
+    LikeForwardInd.col(s) =
+        emitDip.col(s) * (PI.col(s).matrix() * PI.col(s).transpose().matrix()).reshaped().array();
     cs(s) = 1 / LikeForwardInd.col(s).sum();
     LikeForwardInd.col(s) *= cs(s); // normalize it
     for(s = 1; s < M; s++)
@@ -37,9 +38,10 @@ inline auto getClusterLikelihoods2(MyArr2D & LikeForwardInd,
             for(z2 = 0; z2 < C; z2++)
             {
                 z12 = z1 * C + z2;
-                LikeForwardInd(z12, s) = emitDip(z12, s)
-                                         * (LikeForwardInd(z12, s - 1) * transRate(0, s) + PI(z1, s) * sumTmp1(z2)
-                                            + PI(z2, s) * sumTmp2(z1) + PI(z1, s) * PI(z2, s) * constTmp);
+                LikeForwardInd(z12, s) =
+                    emitDip(z12, s)
+                    * (LikeForwardInd(z12, s - 1) * transRate(0, s) + PI(z1, s) * sumTmp1(z2)
+                       + PI(z2, s) * sumTmp2(z1) + PI(z1, s) * PI(z2, s) * constTmp);
             }
         }
         cs(s) = 1 / LikeForwardInd.col(s).sum();
@@ -73,7 +75,8 @@ inline auto getClusterLikelihoods2(MyArr2D & LikeForwardInd,
                 z12 = z1 * C + z2;
                 // apply scaling
                 LikeBackwardInd(z12, s) =
-                    (beta_mult_emit(z12) * transRate(0, s + 1) + sumTmp1(z1) + sumTmp2(z2) + constTmp) * cs(s);
+                    (beta_mult_emit(z12) * transRate(0, s + 1) + sumTmp1(z1) + sumTmp2(z2) + constTmp)
+                    * cs(s);
             }
         }
     }
@@ -89,7 +92,7 @@ TEST_CASE("reconstruct alpha and beta from saved pars.bin", "[test-forward-backw
     genome->chunksize = chunksize, genome->C = C;
     chunk_beagle_genotype_likelihoods(genome, "../data/bgl.gz");
     ThreadPool poolit(1);
-    vector<future<pars>> res;
+    vector<future<pars1>> res;
     for(int ic = 0; ic < genome->nchunks; ic++)
     {
         FastPhaseK2 faith(genome->pos[ic], genome->nsamples, C, seed);
@@ -109,10 +112,11 @@ TEST_CASE("reconstruct alpha and beta from saved pars.bin", "[test-forward-backw
             loglike = 0;
             for(auto && ll : res)
             {
-                const auto [l, iEk, iEkg] = ll.get();
-                loglike += l;
-                faith.Ek += iEk;
-                faith.Ekg += iEkg;
+                const auto [l, zj, zg1, zg2, gamma1] = ll.get();
+                faith.Ezj += zj;
+                faith.Ezg1 += zg1;
+                faith.Ezg2 += zg2;
+                faith.pi += gamma1;
             }
             res.clear(); // clear future and renew
             faith.updateIteration();
@@ -126,7 +130,8 @@ TEST_CASE("reconstruct alpha and beta from saved pars.bin", "[test-forward-backw
             alpha.setZero(genome->C * genome->C, iM);
             beta.setZero(genome->C * genome->C, iM);
             Eigen::Map<const MyArr2D> gli(genome->gls[ic].data() + ind * iM * 3, iM, 3);
-            getClusterLikelihoods(alpha, beta, gli, faith.R, faith.PI, faith.F);
+            MyArr2D emit = get_emission_by_gl(gli, faith.F).transpose(); // C2 x M
+            forward_backwards_diploid(alpha, beta, emit, faith.R, faith.F, faith.PI);
             alpha *= beta;
             REQUIRE(((alpha.colwise().sum() - 1.0).abs() < 1e-5).all());
         }
@@ -140,7 +145,7 @@ TEST_CASE("compare optmized fbd to native fbd", "[test-forward-backward]")
     genome->chunksize = chunksize, genome->C = C;
     chunk_beagle_genotype_likelihoods(genome, "../data/bgl.gz");
     ThreadPool poolit(4);
-    vector<future<pars>> res;
+    vector<future<pars1>> res;
     int ic = 0;
     FastPhaseK2 faith(genome->pos[ic], genome->nsamples, C, seed);
     for(int it = 0; it <= nphase; it++)
@@ -157,9 +162,11 @@ TEST_CASE("compare optmized fbd to native fbd", "[test-forward-backward]")
         }
         for(auto && ll : res)
         {
-            const auto [l, iEk, iEkg] = ll.get();
-            faith.Ek += iEk;
-            faith.Ekg += iEkg;
+            const auto [l, zj, zg1, zg2, gamma1] = ll.get();
+            faith.Ezj += zj;
+            faith.Ezg1 += zg1;
+            faith.Ezg2 += zg2;
+            faith.pi += gamma1;
         }
         res.clear(); // clear future and renew
         faith.updateIteration();
@@ -171,7 +178,8 @@ TEST_CASE("compare optmized fbd to native fbd", "[test-forward-backward]")
         alpha1.setZero(genome->C * genome->C, iM);
         beta1.setZero(genome->C * genome->C, iM);
         Eigen::Map<const MyArr2D> gli(genome->gls[ic].data() + ind * iM * 3, iM, 3);
-        getClusterLikelihoods(alpha1, beta1, gli, faith.R, faith.PI, faith.F);
+        MyArr2D emit = get_emission_by_gl(gli, faith.F).transpose(); // C2 x M
+        forward_backwards_diploid(alpha1, beta1, emit, faith.R, faith.F, faith.PI);
         alpha1 *= beta1;
         alpha1.rowwise() /= alpha1.colwise().sum();
         alpha2.setZero(genome->C * genome->C, iM);
