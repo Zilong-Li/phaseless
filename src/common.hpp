@@ -30,7 +30,7 @@ using String1D = std::vector<std::string>;
 using MapStringInt1D = std::map<std::string, Int1D>;
 using UMapStringInt = std::unordered_map<std::string, int>;
 
-using MyFloat = float; // use float if no accuracy drops
+using MyFloat = double; // use float if no accuracy drops
 using MyFloat1D = std::vector<MyFloat>;
 using MyFloat2D = std::vector<MyFloat1D>;
 using MyMat2D = Eigen::Matrix<MyFloat, Eigen::Dynamic, Eigen::Dynamic, Eigen::ColMajor>;
@@ -76,7 +76,7 @@ inline auto calc_distRate(const Int1D & markers, int C, int Ne = 20000, double e
     MyArr1D distRate(markers.size());
     // int nGen = 4 * Ne / C;
     // distRate(i) = (markers[i] - markers[i - 1]) * nGen * expRate / 1e8;
-    distRate(0) = exp(-1e20);
+    distRate(0) = exp(-1e20); // make it large enough. act as sentinel. so dim aligns with M
     for(size_t i = 1; i < markers.size(); i++) distRate(i) = exp(-(markers[i] - markers[i - 1]) / 1e5);
     return distRate;
 }
@@ -148,6 +148,7 @@ inline auto getClusterLikelihoods(MyArr2D & LikeForwardInd,
     LikeForwardInd.col(s) = emitDip.col(s) * (PI.col(s).matrix() * PI.col(s).transpose().matrix()).reshaped().array();
     cs(s) = 1 / LikeForwardInd.col(s).sum();
     LikeForwardInd.col(s) *= cs(s); // normalize it
+    // alpha_s = emit * (alpha_(s-1) * R + pi(z1) * tmp1(z2) + pi(z2) * tmp2(z1) + P(switch into z1) * P(switch into z2) * constTmp)
     for(s = 1; s < M; s++)
     {
         sumTmp1 = LikeForwardInd.col(s - 1).reshaped(C, C).rowwise().sum() * transRate(1, s);

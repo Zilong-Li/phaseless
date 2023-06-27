@@ -79,8 +79,8 @@ inline int run_impute_main(Options & opts)
                 {
                     const auto [l, iEk, iEkg] = ll.get();
                     loglike += l;
-                    faith.Ek += iEk;
-                    faith.Ekg += iEkg;
+                    faith.Ezj += iEk;
+                    faith.Ezg += iEkg;
                 }
                 res.clear(); // clear future and renew
                 cao.print(tm.date(), "run single chunk", ic, ", iteration", it, ", likelihoods =", loglike, ",",

@@ -21,10 +21,12 @@ class FastPhaseK2
     // SHARED VARIBALES
     const int M, N, C, C2; // C2 = C x C
     MyArr2D GP; // N x (M x 3), genotype probabilies for all individuals
+    MyArr1D pi; // C, PI in first SNP
     MyArr2D PI; // C x M, cluster frequency
     MyArr2D F; // M x C, cluster-specific allele frequence
     MyArr2D R; // 3 x M, jumping / recombination rate
-    MyArr2D Ek, Ekg; // M x C, M x C x 2
+    MyArr2D Ezj; // C x M, E(Z=z,J=1|X,par), expectation of switch into state k
+    MyArr2D Ezg1, Ezg2; // C x M
     MyArr2D GZP1, GZP2; // M x C
 
     void initIteration(double tol = 1e-6);
@@ -34,7 +36,8 @@ class FastPhaseK2
     double runWithOneThread(int, const MyFloat1D &);
 };
 
-inline FastPhaseK2::FastPhaseK2(const Int1D & pos, int n, int c, int seed) : M(pos.size()), N(n), C(c), C2(c * c)
+inline FastPhaseK2::FastPhaseK2(const Int1D & pos, int n, int c, int seed)
+: M(pos.size()), N(n), C(c), C2(c * c)
 {
     auto rng = std::default_random_engine{};
     rng.seed(seed);
@@ -51,6 +54,7 @@ inline FastPhaseK2::~FastPhaseK2() {}
 
 inline void FastPhaseK2::initIteration(double tol)
 {
+    std::cerr << R << std::endl;
     // map PI to domain with normalization
     if(PI.isNaN().any()) throw std::runtime_error("NaN in PI\n");
     PI = (PI < tol).select(tol, PI); // lower bound
@@ -60,15 +64,26 @@ inline void FastPhaseK2::initIteration(double tol)
     if(F.isNaN().any()) throw std::runtime_error("NaN in F\n");
     F = (F < tol).select(tol, F); // lower bound
     F = (F > 1 - tol).select(1 - tol, F); // upper bound
-    Ek.setZero(M, C);
-    Ekg.setZero(M, C * 2);
+    // initial temp variables
+    pi.setZero(C); // reset pi at first SNP
+    Ezj.setZero(C, M); // reset post(Z,j)
+    Ezg1.setZero(C, M); // reset pos(Z,g)
+    Ezg2.setZero(C, M); // reset pos(Z,g)
 }
 
 inline void FastPhaseK2::updateIteration()
 {
-    PI = Ek.transpose() / (2 * N);
-    F = Ekg(Eigen::all, Eigen::seq(1, Eigen::last, 2))
-        / (Ekg(Eigen::all, Eigen::seq(1, Eigen::last, 2)) + Ekg(Eigen::all, Eigen::seq(0, Eigen::last, 2)));
+    // update R = e^-r = 1 - Ezj / N
+    auto er = Ezj.colwise().sum() / N;
+    R.row(0) = (1 - er).square();
+    R.row(1) = (1 - er) * er;
+    R.row(2) = er.square();
+    // update F
+    F = (Ezg2 / (Ezg1 + Ezg2)).transpose();
+    // update PI(C, M)
+    PI = Ezj.colwise() / Ezj.rowwise().sum(); // make sure the first col of Ezj is 0s
+    // updat PI in first SNP,
+    PI.col(0) = pi / pi.sum();
 }
 
 /*
@@ -101,74 +116,70 @@ inline double FastPhaseK2::runWithOneThread(int niters, const MyFloat1D & GL)
 /*
 ** @param ind       current individual i
 ** @param GL        genotype likelihood of all individuals in snp major form
-** @param transRate (x^2, x(1-x), (1-x)^2),M x 3
 ** @return individual total likelihood
 */
 inline double FastPhaseK2::forwardAndBackwardsLowRam(int ind, const MyFloat1D & GL, bool call_geno)
 {
     Eigen::Map<const MyArr2D> gli(GL.data() + ind * M * 3, M, 3);
-    MyArr2D LikeForwardInd(C2, M); // likelihood of forward recursion for ind i, not log
-    MyArr2D LikeBackwardInd(C2, M); // likelihood of backward recursion for ind i, not log
-    double indLogLikeForwardAll = getClusterLikelihoods(LikeForwardInd, LikeBackwardInd, gli, R, PI, F, true);
-    MyArr1D ind_post_z_col(M); // col of indPostProbsZ
-    MyArr2D ind_post_z_g(M, 4); // cols of indPostProbsZandG
-    LikeForwardInd *= LikeBackwardInd;
-    LikeForwardInd.rowwise() /= LikeForwardInd.colwise().sum(); // normlize it so that colwise.sum()==1
-    int g1, g2, g3, g12, z1, z2, z12;
+    MyArr2D alpha(C2, M), beta(C2, M);
+    double indLogLikeForwardAll = getClusterLikelihoods(alpha, beta, gli, R, PI, F, true);
+    auto ind_gamma_one = alpha.col(0) * beta.col(0); //  gamma in first snp
+    std::cerr << ind_gamma_one.sum() << std::endl;
+    MyArr2D emitDip = emissionCurIterInd(gli, F, false).transpose(); // C2 x M
+    MyArr1D ind_post_zj(C);
+    MyArr1D ind_post_zg1(C);
+    MyArr1D ind_post_zg2(C);
+    int z1, z2, s = 0;
+    // now get expectation of post(Z,J)
+    auto gamma_div_emit = ind_gamma_one / emitDip.col(s); // C2
     for(z1 = 0; z1 < C; z1++)
     {
-        for(z2 = 0; z2 < C; z2++)
+
+        ind_post_zg1(z1) = (gamma_div_emit(Eigen::seqN(z1, C, C)) * (1 - F(s, z1))
+                            * (gli(s, 0) * (1 - F(s, z1)) + gli(s, 1) * F(s, z1)))
+                               .sum();
+        ind_post_zg2(z1) = (gamma_div_emit(Eigen::seqN(z1, C, C)) * (F(s, z1))
+                            * (gli(s, 1) * (1 - F(s, z1)) + gli(s, 2) * F(s, z1)))
+                               .sum();
+    }
+    {
+        std::lock_guard<std::mutex> lock(mutex_it);
+        Ezg1.col(s) += ind_post_zg1;
+        Ezg2.col(s) += ind_post_zg2;
+    }
+    for(s = 1; s < M; s++)
+    {
+        MyArr1D beta_mult_emit = emitDip.col(s) * beta.col(s); // C2
+        auto gamma_div_emit = alpha.col(s) * beta.col(s) / emitDip.col(s); // C2
+        MyArr1D alphatmp(C);
+        for(z1 = 0; z1 < C; z1++)
         {
-            z12 = z1 * C + z2;
-            ind_post_z_col = LikeForwardInd.row(z12).transpose();
-            for(g1 = 0; g1 < 2; g1++)
-            {
-                for(g2 = 0; g2 < 2; g2++)
-                {
-                    g12 = g1 * 2 + g2;
-                    ind_post_z_g.col(g12) = gli.col(g1 + g2) * (g1 * F.col(z1) + (1 - g1) * (1 - F.col(z1)))
-                                            * (g2 * F.col(z2) + (1 - g2) * (1 - F.col(z2)));
-                }
-            }
-            ind_post_z_g.colwise() *= ind_post_z_col / ind_post_z_g.rowwise().sum();
-            if(call_geno)
-            {
-                for(g1 = 0; g1 < 2; g1++)
-                {
-                    for(g2 = 0; g2 < 2; g2++)
-                    {
-                        g12 = g1 * 2 + g2;
-                        g3 = g1 + g2;
-                        GP(Eigen::seqN(g3, M, 3), ind) += ind_post_z_g.col(g12);
-                    }
-                }
-            }
-            { // sum over all samples, for update PI and F
-                std::lock_guard<std::mutex> lock(mutex_it);
-                Ek.col(z1) += ind_post_z_col;
-                Ek.col(z2) += ind_post_z_col;
-                for(g1 = 0; g1 < 2; g1++)
-                {
-                    for(g2 = 0; g2 < 2; g2++)
-                    {
-                        g12 = g1 * 2 + g2;
-                        Ekg.col(z1 * 2 + g1) += ind_post_z_g.col(g12);
-                        Ekg.col(z2 * 2 + g2) += ind_post_z_g.col(g12);
-                    }
-                }
-                if(call_geno)
-                {
-                    GZP1.col(z1) += ind_post_z_g.col(1) + ind_post_z_g.col(2);
-                    GZP1.col(z2) += ind_post_z_g.col(1) + ind_post_z_g.col(2);
-                    GZP2.col(z1) += ind_post_z_g.col(3);
-                    GZP2.col(z2) += ind_post_z_g.col(3);
-                }
-            }
+            ind_post_zg1(z1) = (gamma_div_emit(Eigen::seqN(z1, C, C)) * (1 - F(s, z1))
+                                * (gli(s, 0) * (1 - F(s, z1)) + gli(s, 1) * F(s, z1)))
+                                   .sum();
+            ind_post_zg2(z1) = (gamma_div_emit(Eigen::seqN(z1, C, C)) * (F(s, z1))
+                                * (gli(s, 1) * (1 - F(s, z1)) + gli(s, 2) * F(s, z1)))
+                                   .sum();
+            alphatmp(z1) = alpha(Eigen::seqN(z1, C, C), s - 1).sum() * R(1, s);
         }
+        alphatmp += PI.col(s) * R(2, s);
+        for(z1 = 0; z1 < C; z1++)
+            ind_post_zj(z1) = PI(z1, s) * (alphatmp * beta_mult_emit(Eigen::seqN(z1, C, C))).sum();
+        { // sum over all samples, for update PI and F
+            std::lock_guard<std::mutex> lock(mutex_it);
+            Ezj.col(s) += ind_post_zj;
+            Ezg1.col(s) += ind_post_zg1;
+            Ezg2.col(s) += ind_post_zg2;
+        }
+    }
+    { // sum over all samples, for update R
+        std::lock_guard<std::mutex> lock(mutex_it);
+        for(z1 = 0; z1 < C; z1++) pi(z1) += ind_gamma_one(Eigen::seqN(z1, C, C)).sum();
     }
 
     return indLogLikeForwardAll;
 }
+
 /*
 ** @param ind       current individual i
 ** @param GL        genotype likelihood of all individuals in snp major form
@@ -367,14 +378,16 @@ inline double FastPhaseK4::forwardAndBackwards(int ind,
     protect_me = 0;
     for(s = M - 2; s >= 0; s--)
     {
-        auto likeBackwardTmp = Eigen::exp(emitDip.row(s + 1).transpose() + logLikeBackwardInd.col(s + 1) - protect_me);
+        auto likeBackwardTmp =
+            Eigen::exp(emitDip.row(s + 1).transpose() + logLikeBackwardInd.col(s + 1) - protect_me);
         for(z1 = 0; z1 < C; z1++)
         {
             for(z2 = 0; z2 < C; z2++)
             {
                 z12 = z1 * C + z2;
                 logLikeBackwardInd(z12, s) =
-                    protect_me + log((likeBackwardTmp * transDip(s + 1, Eigen::seqN(z12, C2, C2)).transpose()).sum());
+                    protect_me
+                    + log((likeBackwardTmp * transDip(s + 1, Eigen::seqN(z12, C2, C2)).transpose()).sum());
             }
         }
         // protect_me = logLikeBackwardInd.row(s).maxCoeff();
