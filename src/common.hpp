@@ -77,7 +77,7 @@ inline auto calc_distRate(const Int1D & markers, int C, int Ne = 20000, double e
     MyArr1D distRate(markers.size());
     // int nGen = 4 * Ne / C;
     // distRate(i) = (markers[i] - markers[i - 1]) * nGen * expRate / 1e8;
-    distRate(0) = exp(-1e20); // make it large enough. act as sentinel. so dim aligns with M
+    distRate(0) = 1; //  act as sentinel. so dim aligns with M
     for(size_t i = 1; i < markers.size(); i++) distRate(i) = exp(-(markers[i] - markers[i - 1]) / 1e5);
     return distRate;
 }
@@ -121,7 +121,7 @@ inline auto get_emission_by_gl(const MyArr2D & gli, const MyArr2D & F)
         }
     }
     // emitDip = emitDip.colwise() / emitDip.rowwise().maxCoeff(); // normalize it
-    const double minEmission = 1e-10;
+    const double minEmission = 1e-4;
     emitDip = (emitDip < minEmission).select(minEmission, emitDip);
     return emitDip;
 }
@@ -135,12 +135,12 @@ inline auto get_emission_by_gl(const MyArr2D & gli, const MyArr2D & F)
 ** @param PI       transition probability (C,M)
 ** @return individual log likelihood
 */
-inline double forward_backwards_diploid(MyArr2D & alpha,
-                                        MyArr2D & beta,
-                                        const MyArr2D & E,
-                                        const MyArr2D & R,
-                                        const MyArr2D & F,
-                                        const MyArr2D & PI)
+inline auto forward_backwards_diploid(MyArr2D & alpha,
+                                      MyArr2D & beta,
+                                      const MyArr2D & E,
+                                      const MyArr2D & R,
+                                      const MyArr2D & F,
+                                      const MyArr2D & PI)
 {
     const int M = alpha.cols();
     const int C = F.cols();
@@ -157,7 +157,8 @@ inline double forward_backwards_diploid(MyArr2D & alpha,
     for(s = 1; s < M; s++)
     {
         sumTmp1 = alpha.col(s - 1).reshaped(C, C).rowwise().sum() * R(1, s);
-        constTmp = alpha.col(s - 1).sum() * R(2, s);
+        // constTmp = alpha.col(s - 1).sum() * R(2, s);
+        constTmp = R(2, s); // since alpha.col(s - 1).sum() = 1
         for(z1 = 0; z1 < C; z1++)
         {
             for(z2 = 0; z2 < C; z2++)
@@ -171,7 +172,6 @@ inline double forward_backwards_diploid(MyArr2D & alpha,
         cs(s) = 1 / alpha.col(s).sum();
         alpha.col(s) *= cs(s); // normalize it
     }
-    alpha.rowwise() /= cs.transpose(); // de-scale alpha
 
     // ======== backward recursion ===========
     s = M - 1; // set last site
@@ -200,8 +200,7 @@ inline double forward_backwards_diploid(MyArr2D & alpha,
             }
         }
     }
-
-    return log((1 / cs).sum()); // log likelhoods of the individual
+    return cs;
 }
 
 inline auto getClusterLikelihoods(int ind,

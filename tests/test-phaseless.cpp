@@ -20,6 +20,7 @@ auto make_input_per_chunk(filesystem::path outdir,
     faith.runWithOneThread(niters, genome->gls[ic]);
     write_bcf_genotype_probability(faith.GP.data(), genome->chrs[ic], genome->pos[ic], genome->sampleids,
                                    outdir / string("chunk." + to_string(ic) + ".vcf.gz"));
+    std::cerr << faith.R << "\n";
     return std::tuple(MyFloat1D(faith.PI.data(), faith.PI.data() + faith.PI.size()),
                       MyFloat1D(faith.F.data(), faith.F.data() + faith.F.size()),
                       MyFloat1D(faith.R.data(), faith.R.data() + faith.R.size()));
