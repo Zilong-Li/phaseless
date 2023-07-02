@@ -98,7 +98,7 @@ inline auto calc_transRate(const Int1D & markers, int C, int Ne = 20000, double 
 ** @param F    cluster-specific allele frequence (M, C)
 ** @return emission probability (M, C2)
 */
-inline auto get_emission_by_gl(const MyArr2D & gli, const MyArr2D & F)
+inline auto get_emission_by_gl(const MyArr2D & gli, const MyArr2D & F, double minEmission = 1e-4)
 {
     int k1, k2, g1, g2;
     const int M = F.rows();
@@ -121,7 +121,6 @@ inline auto get_emission_by_gl(const MyArr2D & gli, const MyArr2D & F)
         }
     }
     // emitDip = emitDip.colwise() / emitDip.rowwise().maxCoeff(); // normalize it
-    const double minEmission = 1e-4;
     emitDip = (emitDip < minEmission).select(minEmission, emitDip);
     return emitDip;
 }

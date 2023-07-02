@@ -24,7 +24,7 @@ plot_haplike <- function(haplike, nsamples, npop, snps) {
   iN <- nsamples / npop # should be integer
   iM <- length(snps)
   idx <- 1:iM
-  layout(matrix(1:2, nrow = 1), widths = c(12, 1))
+  ## layout(matrix(1:2, nrow = 1), widths = c(12, 1))
   par(mar = c(0, 0, 1, 0))
   plot(0, 0,
     col = "transparent", axes = F, main = "Most Likely Haplotype Cluster Pairs",
@@ -53,9 +53,9 @@ plot_haplike <- function(haplike, nsamples, npop, snps) {
     y <- x + w
     j <- j + 1
   }
-  par(mar = c(0, 0, 0, 0))
-  plot(0, 0, col = "transparent", axes = F, xlab = "", ylab = "")
-  legend("left", legend = paste0("H=", c(1:C)), fill = 1:C)
+  ## par(mar = c(0, 0, 0, 0))
+  ## plot(0, 0, col = "transparent", axes = F, xlab = "", ylab = "")
+  ## legend("left", legend = paste0("H=", c(1:C)), fill = 1:C)
 }
 
 
@@ -71,6 +71,7 @@ palette(colors)
 
 l <- read_haplike("parse.haplike.bin")
 
+sum(l$haplike[[1]][,,2])
 
 ## check if sum(alpha*beta)==1
 n <- 1
@@ -79,24 +80,28 @@ isTRUE(all.equal(colSums(l$haplike[[n]], dims = 2),
   tolerance = 1e-4
 ))
 
-colSums(l$haplike[[n]], dims = 2)
+## colSums(l$haplike[[n]], dims = 2)
 
 png("haplike.png", unit = "in", res = 300, width = 12, height = 6)
+
 npop <- 3
 snps <- 1:1000
 nsamples <- 60
 plot_haplike(l$haplike, nsamples, npop, snps)
+
 dev.off()
 
-pi <- as.matrix(read.table("impute.all.pi", h = F, sep = "\t"))
+pi <- as.matrix(read.table("impute.pi", h = F, sep = "\t"))
 
 png("hapfreq.png", unit = "in", res = 300, width = 12, height = 6)
+
 par(mar = c(2, 0, 4, 0))
 res <- pi[1:200+800,]
 barplot(t(as.matrix(res)),
   beside = F, col = colors, border = NA, space = 0,
   main = "Haplotype Cluster Frequncy", axes = F
 )
+
 dev.off()
 
 

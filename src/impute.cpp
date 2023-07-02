@@ -91,7 +91,7 @@ inline int run_impute_main(Options & opts)
                 res.clear(); // clear future and renew
                 cao.print(tm.date(), "run single chunk", ic, ", iteration", it, ", likelihoods =", loglike,
                           ",", tm.reltime(), " sec");
-                faith.updateIteration();
+                if(it != opts.nimpute) faith.updateIteration();
             }
             tm.clock();
             write_bigass_to_bcf(bw, faith.GP.data(), genome->chrs[ic], genome->pos[ic]);
@@ -115,13 +115,13 @@ inline int run_impute_main(Options & opts)
         int ic = 0;
         for(auto && ll : res)
         {
-            const auto [GP, ClusterInfo, transRate, PI, F] = ll.get();
+            const auto [GP, ClusterInfo, faithR, faithPI, faithF] = ll.get();
             write_bigass_to_bcf(bw, GP.data(), genome->chrs[ic], genome->pos[ic]);
-            genome->transRate.emplace_back(MyFloat1D(transRate.data(), transRate.data() + transRate.size()));
-            genome->PI.emplace_back(MyFloat1D(PI.data(), PI.data() + PI.size()));
-            genome->F.emplace_back(MyFloat1D(F.data(), F.data() + F.size()));
+            genome->transRate.emplace_back(MyFloat1D(faithR.data(), faithR.data() + faithR.size()));
+            genome->PI.emplace_back(MyFloat1D(faithPI.data(), faithPI.data() + faithPI.size()));
+            genome->F.emplace_back(MyFloat1D(faithF.data(), faithF.data() + faithF.size()));
             oinfo << ClusterInfo.format(fmt) << "\n";
-            opi << PI.transpose().format(fmt) << "\n";
+            opi << faithPI.transpose().format(fmt) << "\n";
             cao.print(tm.date(), "chunk", ic++, " imputation done and outputting");
         }
     }

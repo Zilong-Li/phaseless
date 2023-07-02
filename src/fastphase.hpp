@@ -9,6 +9,7 @@
 #include "common.hpp"
 #include <cmath>
 #include <mutex>
+#include <vector>
 
 class FastPhaseK2
 {
@@ -22,6 +23,9 @@ class FastPhaseK2
     // BOUNDING
     const double alphaMatThreshold = 1e-4; // Ezj
     const double emissionThreshold = 1e-4;
+
+    // FLAGS
+    bool debug = 1;
 
     // SHARED VARIBALES
     const int M, N, C, C2; // C2 = C x C
@@ -46,7 +50,8 @@ inline FastPhaseK2::FastPhaseK2(const Int1D & pos, int n, int c, int seed)
 {
     auto rng = std::default_random_engine{};
     rng.seed(seed);
-    F = RandomUniform<MyArr2D, std::default_random_engine>(M, C, rng, 0.001, 0.999);
+    F = RandomUniform<MyArr2D, std::default_random_engine>(M, C, rng, emissionThreshold,
+                                                           1 - emissionThreshold);
     PI = MyArr2D::Ones(C, M);
     PI.rowwise() /= PI.colwise().sum(); // normalize it per site
     GP.setZero(M * 3, N);
@@ -59,12 +64,7 @@ inline FastPhaseK2::~FastPhaseK2() {}
 
 inline void FastPhaseK2::initIteration()
 {
-    std::cerr << R << std::endl;
-    // map PI to domain with normalization
-    // if(PI.isNaN().any()) throw std::runtime_error("NaN in PI\n");
-    // PI = (PI < tol).select(tol, PI); // lower bound
-    // PI = (PI > 1 - tol).select(1 - tol, PI); // upper bound
-    // PI.rowwise() /= PI.colwise().sum(); // normalize it per site
+    // std::cerr << R << std::endl;
     // initial temp variables
     pi.setZero(C); // reset pi at first SNP
     Ezj.setZero(C, M); // reset post(Z,j)
@@ -78,11 +78,11 @@ inline void FastPhaseK2::updateIteration()
     // x1 <- exp(-nGen * minRate * dl/100/1000000) # lower
     // x2 <- exp(-nGen * maxRate * dl/100/1000000) # upper
     // update R, e^-r = 1 - Ezj / N
-    MyArr1D er = 1 - Ezj.colwise().sum() / N;
-    const double miner = 0.9;
-    const double maxer = 1.0;
-    er = (er < miner).select(miner, er);
-    er = (er > maxer).select(maxer, er);
+    MyArr1D er = Ezj.colwise().sum() / (2 * N);
+    // const double miner = 0.9;
+    // const double maxer = 1.0;
+    // er = (er < miner).select(miner, er);
+    // er = (er > maxer).select(maxer, er);
     R.row(0) = er.square();
     R.row(1) = (1 - er) * er;
     R.row(2) = (1 - er).square();
@@ -96,19 +96,35 @@ inline void FastPhaseK2::updateIteration()
     // first we normalize / protect Ezj so that each col sum to 1
     // what if Ezj.colwise().sum() = 0 ? of course, the first col is nan
     Ezj.rowwise() /= Ezj.colwise().sum();
-    Ezj = (Ezj < alphaMatThreshold).select(alphaMatThreshold, Ezj);
-    Ezj = (Ezj > 1 - alphaMatThreshold).select(1 - alphaMatThreshold, Ezj);
+    if(Ezj.isNaN().any() || (Ezj < alphaMatThreshold).any())
+    {
+        // std::cerr << "reset values below threshold\n";
+        Ezj = (Ezj < alphaMatThreshold).select(0, Ezj); // reset to 0 first
+        for(int i = 1; i < M; i++)
+        {
+            // for columns with an entry below 0
+            // each 0 entry becomes threshold
+            // then rest re-scaled so whole thing has sum 1
+            if(auto c = (Ezj.col(i) == 0).count() > 0)
+            {
+                double xsum = 1 - c * alphaMatThreshold;
+                double csum = Ezj.col(i).sum();
+                Ezj.col(i) = (Ezj.col(i) > 0).select(Ezj.col(i) * xsum / csum, alphaMatThreshold);
+            }
+        }
+    }
     Ezj.col(0) = pi / pi.sum(); // now update the first SNP
     if(Ezj.isNaN().any())
     {
         std::cerr << Ezj << "\n";
         throw std::runtime_error("NaN in PI\n");
     }
-    PI = Ezj; // because the first col of Ezj is 0s, PI.col(0) is nan
-    // if(!((1 - PI.colwise().sum()).abs() < 1e-5).all())
-    // {
-    //     std::cerr << PI.colwise().sum() << "\n";
-    // }
+    PI = Ezj;
+    if(debug && !((1 - PI.colwise().sum()).abs() < 1e-3).all())
+    {
+        std::cerr << PI.colwise().sum() << "\n";
+        throw std::runtime_error("colsum of PI is not 1.0!\n");
+    }
 }
 
 /*
@@ -133,7 +149,7 @@ inline double FastPhaseK2::runWithOneThread(int niters, const MyFloat1D & GL)
         }
         diff = it ? loglike - prevlike : 0;
         prevlike = loglike;
-        updateIteration();
+        if(it != niters) updateIteration();
     }
     return diff;
 }
@@ -150,12 +166,17 @@ inline double FastPhaseK2::forwardAndBackwardsLowRam(int ind, const MyFloat1D & 
     MyArr2D alpha(C2, M), beta(C2, M);
     const MyArr2D emit = get_emission_by_gl(gli, F).transpose(); // C2 x M
     const MyArr1D cs = forward_backwards_diploid(alpha, beta, emit, R, F, PI);
+    if(debug && !((1 - ((alpha * beta).colwise().sum() / cs.transpose())).abs() < 1e-6).all())
+    {
+        std::cerr << (alpha * beta).colwise().sum() / cs.transpose() << "\n";
+        throw std::runtime_error("gamma sum is not 1.0!\n");
+    }
     const MyArr1D ind_gamma_one = alpha.col(0) * beta.col(0) / cs(0); //  gamma in first snp
     const MyArr1D gamma1_sum = ind_gamma_one.reshaped(C, C).colwise().sum();
     MyArr1D ind_post_zj(C);
     MyArr1D ind_post_zg1(C);
     MyArr1D ind_post_zg2(C);
-    int g1, g2, g12, z1, s = 0;
+    int z1, s = 0;
     // now get expectation of post(Z,J)
     const MyArr1D gamma_div_emit = (alpha.col(s) * beta.col(s) / cs(s)) / emit.col(s); // C2
     for(z1 = 0; z1 < C; z1++)
@@ -194,12 +215,13 @@ inline double FastPhaseK2::forwardAndBackwardsLowRam(int ind, const MyFloat1D & 
             ind_post_zj(z1) = PI(z1, s) * (alphatmp * beta_mult_emit(Eigen::seqN(z1, C, C))).sum();
         { // sum over all samples for updates
             std::lock_guard<std::mutex> lock(mutex_it);
-            Ezj.col(s) += ind_post_zj;
+            Ezj.col(s) += ind_post_zj * 2;
             Ezg1.col(s) += ind_post_zg1;
             Ezg2.col(s) += ind_post_zg2;
         }
     }
 
+    // return (1 / cs).log().sum();
     return log((1 / cs).sum());
 }
 
@@ -216,14 +238,15 @@ inline auto FastPhaseK2::forwardAndBackwardsHighRam(int ind, const MyFloat1D & G
     MyArr2D beta(C2, M); // likelihood of backward recursion for ind i, not log
     MyArr2D emit = get_emission_by_gl(gli, F).transpose(); // C2 x M
     auto cs = forward_backwards_diploid(alpha, beta, emit, R, F, PI);
-    MyArr1D ind_gamma_one = alpha.col(0) * beta.col(0); //  gamma in first snp
+    MyArr1D ind_gamma_one = alpha.col(0) * beta.col(0) / cs(0); //  gamma in first snp
     MyArr1D gamma1 = ind_gamma_one.reshaped(C, C).colwise().sum();
     MyArr2D ind_post_zj(C, M);
-    MyArr2D ind_post_zg1(C, M);
-    MyArr2D ind_post_zg2(C, M);
+    MyArr2D ind_post_zg1 = MyArr2D::Zero(C, M);
+    MyArr2D ind_post_zg2 = MyArr2D::Zero(C, M);
+    MyArr1D tmp_zg(4);
     int z1, s = 0;
     // now get expectation of post(Z,J)
-    auto gamma_div_emit = ind_gamma_one / emit.col(s); // C2
+    const MyArr1D gamma_div_emit = (alpha.col(s) * beta.col(s) / cs(s)) / emit.col(s); // C2
     for(z1 = 0; z1 < C; z1++)
     {
 
@@ -237,24 +260,24 @@ inline auto FastPhaseK2::forwardAndBackwardsHighRam(int ind, const MyFloat1D & G
     for(s = 1; s < M; s++)
     {
         MyArr1D beta_mult_emit = emit.col(s) * beta.col(s); // C2
-        auto gamma_div_emit = alpha.col(s) * beta.col(s) / emit.col(s); // C2
+        MyArr1D gamma_div_emit = (alpha.col(s) * beta.col(s) / cs(s)) / emit.col(s); // C2
         MyArr1D alphatmp(C);
         for(z1 = 0; z1 < C; z1++)
         {
+            alphatmp(z1) = alpha(Eigen::seqN(z1, C, C), s - 1).sum() * R(1, s);
             ind_post_zg1(z1, s) = (gamma_div_emit(Eigen::seqN(z1, C, C)) * (1 - F(s, z1))
                                    * (gli(s, 0) * (1 - F.row(s)) + gli(s, 1) * F.row(s)).transpose())
                                       .sum();
             ind_post_zg2(z1, s) = (gamma_div_emit(Eigen::seqN(z1, C, C)) * (F(s, z1))
                                    * (gli(s, 1) * (1 - F.row(s)) + gli(s, 2) * F.row(s)).transpose())
                                       .sum();
-            alphatmp(z1) = alpha(Eigen::seqN(z1, C, C), s - 1).sum() * R(1, s);
         }
-        alphatmp += PI.col(s) * R(2, s);
+        alphatmp += PI.col(s) * R(2, s) * 1.0;
         for(z1 = 0; z1 < C; z1++)
             ind_post_zj(z1, s) = PI(z1, s) * (alphatmp * beta_mult_emit(Eigen::seqN(z1, C, C))).sum();
     }
-    double indLogLike = log((1 / cs).sum());
 
+    double indLogLike = (1 / cs).log().sum();
     return std::tuple(indLogLike, ind_post_zj, ind_post_zg1, ind_post_zg2, gamma1);
 }
 

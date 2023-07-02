@@ -13,13 +13,15 @@ inline int run_parse_main(Options & opts)
     std::error_code ec;
     std::ifstream ifs(opts.in_bin, std::ios::in | std::ios::binary);
     constexpr auto OPTIONS = alpaca::options::fixed_length_encoding;
-    std::unique_ptr<BigAss> genome = std::make_unique<BigAss>(alpaca::deserialize<OPTIONS, BigAss>(ifs, filesize, ec));
+    std::unique_ptr<BigAss> genome =
+        std::make_unique<BigAss>(alpaca::deserialize<OPTIONS, BigAss>(ifs, filesize, ec));
     ifs.close();
     assert((bool)ec == false);
     int ic = opts.ichunk;
     if(ic >= genome->nchunks)
     {
-        cao.error("the chunk ", ic, " (0-based) to be extracted is not less than total chunks", genome->nchunks);
+        cao.error("the chunk ", ic, " (0-based) to be extracted is not less than total chunks",
+                  genome->nchunks);
         return 1;
     }
     else if(ic < 0)
@@ -57,8 +59,8 @@ inline int run_parse_main(Options & opts)
                 const int iM = genome->pos[ic].size();
                 alpha.setZero(genome->C * genome->C, iM);
                 beta.setZero(genome->C * genome->C, iM);
-                getClusterLikelihoods(ind, alpha, beta, genome->gls[ic], genome->transRate[ic], genome->PI[ic],
-                                      genome->F[ic]);
+                getClusterLikelihoods(ind, alpha, beta, genome->gls[ic], genome->transRate[ic],
+                                      genome->PI[ic], genome->F[ic]);
                 alpha *= beta;
                 ofs.write((char *)alpha.data(), genome->C * genome->C * iM * 4);
             }
@@ -75,6 +77,8 @@ inline int run_parse_main(Options & opts)
             getClusterLikelihoods(ind, alpha, beta, genome->gls[ic], genome->transRate[ic], genome->PI[ic],
                                   genome->F[ic]);
             alpha *= beta;
+            if(!((1 - alpha.colwise().sum()).abs() < 1e-4).all())
+                throw std::runtime_error("gamma sum is not 1.0!\n");
             ofs.write((char *)alpha.data(), genome->C * genome->C * iM * 4);
         }
     }
