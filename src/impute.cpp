@@ -39,22 +39,22 @@ inline auto make_input_per_chunk(const std::unique_ptr<BigAss> & genome,
 
 inline int run_impute_main(Options & opts)
 {
-    Logger cao(opts.out.string() + ".log", !opts.noscreen);
+    cao.cao.open(opts.out.string() + ".log");
+    cao.is_screen = !opts.noscreen;
     cao.print(opts.opts_in_effect);
-    Timer tm;
-    cao.warn(tm.date(), "-> running fastphase");
+    cao.warn(tim.date(), "-> running fastphase");
     int allthreads = std::thread::hardware_concurrency();
     opts.nthreads = opts.nthreads < allthreads ? opts.nthreads : allthreads;
-    cao.print(tm.date(), allthreads, " concurrent threads are available. use", opts.nthreads, " threads");
+    cao.print(tim.date(), allthreads, " concurrent threads are available. use", opts.nthreads, " threads");
     ThreadPool poolit(opts.nthreads);
 
     std::unique_ptr<BigAss> genome = std::make_unique<BigAss>();
     genome->chunksize = opts.chunksize, genome->C = opts.C;
-    tm.clock();
+    tim.clock();
     chunk_beagle_genotype_likelihoods(genome, opts.in_beagle);
-    cao.print(tm.date(), "parsing input -> C =", genome->C, ", N =", genome->nsamples, ", M =", genome->nsnps,
-              ", nchunks =", genome->nchunks, ", seed =", opts.seed);
-    cao.done(tm.date(), "elapsed time for parsing beagle file", std::fixed, tm.reltime(), " secs");
+    cao.print(tim.date(), "parsing input -> C =", genome->C, ", N =", genome->nsamples,
+              ", M =", genome->nsnps, ", nchunks =", genome->nchunks, ", seed =", opts.seed);
+    cao.done(tim.date(), "elapsed time for parsing beagle file", std::fixed, tim.reltime(), " secs");
     auto bw = make_bcfwriter(opts.out.string() + ".vcf.gz", genome->chrs, genome->sampleids);
     std::ofstream oinfo(opts.out.string() + ".info");
     std::ofstream opi(opts.out.string() + ".pi");
@@ -67,7 +67,7 @@ inline int run_impute_main(Options & opts)
             FastPhaseK2 faith(genome->pos[ic], genome->nsamples, opts.C, opts.seed);
             for(int it = 0; it <= opts.nimpute; it++)
             {
-                tm.clock();
+                tim.clock();
                 faith.initIteration();
                 for(int i = 0; i < genome->nsamples; i++)
                 {
@@ -89,11 +89,11 @@ inline int run_impute_main(Options & opts)
                     faith.pi += gamma1;
                 }
                 res.clear(); // clear future and renew
-                cao.print(tm.date(), "run single chunk", ic, ", iteration", it, ", likelihoods =", loglike,
-                          ",", tm.reltime(), " sec");
+                cao.print(tim.date(), "run single chunk", ic, ", iteration", it, ", likelihoods =", loglike,
+                          ",", tim.reltime(), " sec");
                 if(it != opts.nimpute) faith.updateIteration();
             }
-            tm.clock();
+            tim.clock();
             write_bigass_to_bcf(bw, faith.GP.data(), genome->chrs[ic], genome->pos[ic]);
             genome->transRate.emplace_back(MyFloat1D(faith.R.data(), faith.R.data() + faith.R.size()));
             genome->PI.emplace_back(MyFloat1D(faith.PI.data(), faith.PI.data() + faith.PI.size()));
@@ -101,13 +101,13 @@ inline int run_impute_main(Options & opts)
             auto ClusterInfo = calc_cluster_info(faith.N, faith.GZP1, faith.GZP2);
             oinfo << ClusterInfo.format(fmt) << "\n";
             opi << faith.PI.transpose().format(fmt) << "\n";
-            cao.done(tm.date(), "chunk", ic, " done. outputting elapsed", tm.reltime(), " secs");
+            cao.done(tim.date(), "chunk", ic, " done. outputting elapsed", tim.reltime(), " secs");
         }
     }
     else
     {
         if(genome->nchunks < opts.nthreads)
-            cao.warn(tm.date(), "nchunks < nthreads. only", genome->nchunks, " threads will be working");
+            cao.warn(tim.date(), "nchunks < nthreads. only", genome->nchunks, " threads will be working");
         vector<future<pars2>> res;
         for(int ic = 0; ic < genome->nchunks; ic++)
             res.emplace_back(
@@ -122,7 +122,7 @@ inline int run_impute_main(Options & opts)
             genome->F.emplace_back(MyFloat1D(faithF.data(), faithF.data() + faithF.size()));
             oinfo << ClusterInfo.format(fmt) << "\n";
             opi << faithPI.transpose().format(fmt) << "\n";
-            cao.print(tm.date(), "chunk", ic++, " imputation done and outputting");
+            cao.print(tim.date(), "chunk", ic++, " imputation done and outputting");
         }
     }
     constexpr auto OPTIONS = alpaca::options::fixed_length_encoding;
@@ -130,6 +130,6 @@ inline int run_impute_main(Options & opts)
     auto bytes_written = alpaca::serialize<OPTIONS, BigAss>(*genome, ofs);
     ofs.close();
     assert(std::filesystem::file_size(opts.out.string() + ".pars.bin") == bytes_written);
-    cao.done(tm.date(), "imputation done and outputting.", bytes_written, " bytes written to file");
+    cao.done(tim.date(), "imputation done and outputting.", bytes_written, " bytes written to file");
     return 0;
 }

@@ -7,6 +7,8 @@
 #ifndef COMMON_H_
 #define COMMON_H_
 
+#include "log.hpp"
+#include "timer.hpp"
 #include <Eigen/Dense>
 #include <climits>
 #include <clocale>
@@ -20,6 +22,15 @@
 #include <unordered_map>
 #include <vector>
 
+// MAKE SOME TOOLS FULLY ACCESSIBLE THROUGHOUT THE SOFTWARE
+#ifdef _DECLARE_TOOLBOX_HERE
+Logger cao; // logger
+Timer tim; // Timer
+#else
+extern Timer tim;
+extern Logger cao;
+#endif
+
 using Int1D = std::vector<int>;
 using Int2D = std::vector<Int1D>;
 using Float1D = std::vector<float>;
@@ -30,7 +41,13 @@ using String1D = std::vector<std::string>;
 using MapStringInt1D = std::map<std::string, Int1D>;
 using UMapStringInt = std::unordered_map<std::string, int>;
 
-using MyFloat = float; // use float if no accuracy drops
+// Eigen Mat, Arr
+using Mat2D = Eigen::Matrix<double, Eigen::Dynamic, Eigen::Dynamic, Eigen::ColMajor>;
+using Mat1D = Eigen::Matrix<double, Eigen::Dynamic, 1, Eigen::ColMajor>;
+using Arr2D = Eigen::Array<double, Eigen::Dynamic, Eigen::Dynamic, Eigen::ColMajor>;
+using Arr1D = Eigen::Array<double, Eigen::Dynamic, 1, Eigen::ColMajor>;
+
+using MyFloat = double; // use float if no accuracy drops
 using MyFloat1D = std::vector<MyFloat>;
 using MyFloat2D = std::vector<MyFloat1D>;
 using MyMat2D = Eigen::Matrix<MyFloat, Eigen::Dynamic, Eigen::Dynamic, Eigen::ColMajor>;

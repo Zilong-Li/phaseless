@@ -3,6 +3,8 @@
  * @author      Zilong Li
  * Copyright (C) 2023. The use of this code is governed by the LICENSE file.
  ******************************************************************************/
+#define _DECLARE_TOOLBOX_HERE
+
 #include "admix.cpp"
 #include "convert.cpp"
 #include "impute.cpp"

@@ -7,7 +7,8 @@
 
 inline int run_parse_main(Options & opts)
 {
-    Logger cao(opts.out.string() + ".log", !opts.noscreen);
+    cao.cao.open(opts.out.string() + ".log");
+    cao.is_screen = !opts.noscreen;
     cao.print(opts.opts_in_effect);
     auto filesize = std::filesystem::file_size(opts.in_bin);
     std::error_code ec;

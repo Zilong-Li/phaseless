@@ -7,7 +7,11 @@
 
 using namespace std;
 
-inline int run_bootstrap(const std::unique_ptr<BigAss> & genome, ThreadPool & poolit, Logger & cao, int K, int nseeds)
+inline int run_bootstrap(const std::unique_ptr<BigAss> & genome,
+                         ThreadPool & poolit,
+                         Logger & cao,
+                         int K,
+                         int nseeds)
 {
     std::vector<std::future<double>> res;
     std::vector<double> llikes;
@@ -29,28 +33,29 @@ inline int run_bootstrap(const std::unique_ptr<BigAss> & genome, ThreadPool & po
 
 inline int run_admix_main(Options & opts)
 {
-    Logger cao(opts.out.string() + ".log", !opts.noscreen);
+    cao.cao.open(opts.out.string() + ".log");
+    cao.is_screen = !opts.noscreen;
     cao.print(opts.opts_in_effect);
-    Timer tm;
-    cao.warn(tm.date(), "-> running admixture");
+    cao.warn(tim.date(), "-> running admixture");
     int allthreads = std::thread::hardware_concurrency();
     opts.nthreads = opts.nthreads < allthreads ? opts.nthreads : allthreads;
-    cao.print(tm.date(), allthreads, " concurrent threads are available. use", opts.nthreads, " threads");
+    cao.print(tim.date(), allthreads, " concurrent threads are available. use", opts.nthreads, " threads");
     ThreadPool poolit(opts.nthreads);
     // Deserialize from file
     auto filesize = std::filesystem::file_size(opts.in_bin);
     std::error_code ec;
     std::ifstream ifs(opts.in_bin, std::ios::in | std::ios::binary);
     constexpr auto OPTIONS = alpaca::options::fixed_length_encoding;
-    std::unique_ptr<BigAss> genome = std::make_unique<BigAss>(alpaca::deserialize<OPTIONS, BigAss>(ifs, filesize, ec));
+    std::unique_ptr<BigAss> genome =
+        std::make_unique<BigAss>(alpaca::deserialize<OPTIONS, BigAss>(ifs, filesize, ec));
     ifs.close();
     assert((bool)ec == false);
-    cao.done(tm.date(), filesize, " bytes deserialized from file. skip imputation, ec", ec);
-    cao.print(tm.date(), "parsing input -> C =", genome->C, ", N =", genome->nsamples, ", M =", genome->nsnps,
-              ", nchunks =", genome->nchunks);
+    cao.done(tim.date(), filesize, " bytes deserialized from file. skip imputation, ec", ec);
+    cao.print(tim.date(), "parsing input -> C =", genome->C, ", N =", genome->nsamples,
+              ", M =", genome->nsnps, ", nchunks =", genome->nchunks);
     assert(opts.K < genome->C);
 
-    cao.warn(tm.date(), "-> running admixture with seed =", opts.seed);
+    cao.warn(tim.date(), "-> running admixture with seed =", opts.seed);
     Admixture admixer(genome->nsamples, genome->nsnps, genome->C, opts.K, opts.seed);
     vector<future<double>> llike;
     if(!opts.noaccel)
@@ -66,7 +71,8 @@ inline int run_admix_main(Options & opts)
             F0 = admixer.F;
             Q0 = admixer.Q;
             for(int i = 0; i < genome->nsamples; i++)
-                llike.emplace_back(poolit.enqueue(&Admixture::runOptimalWithBigAss, &admixer, i, std::ref(genome)));
+                llike.emplace_back(
+                    poolit.enqueue(&Admixture::runOptimalWithBigAss, &admixer, i, std::ref(genome)));
             for(auto && ll : llike) ll.get();
             llike.clear(); // clear future and renew
             admixer.updateIteration();
@@ -75,26 +81,28 @@ inline int run_admix_main(Options & opts)
             F1 = admixer.F;
             Q1 = admixer.Q;
             qdiff = (Q1 - Q0).square().sum();
-            tm.clock();
+            tim.clock();
             for(int i = 0; i < genome->nsamples; i++)
-                llike.emplace_back(poolit.enqueue(&Admixture::runOptimalWithBigAss, &admixer, i, std::ref(genome)));
+                llike.emplace_back(
+                    poolit.enqueue(&Admixture::runOptimalWithBigAss, &admixer, i, std::ref(genome)));
             double loglike = 0;
             for(auto && ll : llike) loglike += ll.get();
             llike.clear(); // clear future and renew
             admixer.updateIteration();
             ldiff = loglike - prevlike;
             prevlike = loglike;
-            cao.print(tm.date(), "SqS3 iteration", it * 3 + 1, ", diff(Q) =", std::scientific, qdiff,
-                      ", likelihoods =", std::fixed, loglike, ",", tm.reltime(), " sec");
+            cao.print(tim.date(), "SqS3 iteration", it * 3 + 1, ", diff(Q) =", std::scientific, qdiff,
+                      ", likelihoods =", std::fixed, loglike, ",", tim.reltime(), " sec");
             if(qdiff < opts.qtol)
             {
-                cao.print(tm.date(), "hit stopping criteria, diff(Q) =", std::scientific, qdiff, " <", opts.qtol);
+                cao.print(tim.date(), "hit stopping criteria, diff(Q) =", std::scientific, qdiff, " <",
+                          opts.qtol);
                 break;
             }
             if(ldiff < opts.ltol)
             {
-                cao.print(tm.date(), "hit stopping criteria, diff(loglikelihood) =", std::scientific, ldiff, " <",
-                          opts.ltol);
+                cao.print(tim.date(), "hit stopping criteria, diff(loglikelihood) =", std::scientific, ldiff,
+                          " <", opts.ltol);
                 break;
             }
             // accel iteration with steplen
@@ -111,7 +119,8 @@ inline int run_admix_main(Options & opts)
             admixer.Q = Q0 + 2 * alpha * (Q1 - Q0) + alpha * alpha * (admixer.Q - 2 * Q1 + Q0);
             admixer.initIteration();
             for(int i = 0; i < genome->nsamples; i++)
-                llike.emplace_back(poolit.enqueue(&Admixture::runOptimalWithBigAss, &admixer, i, std::ref(genome)));
+                llike.emplace_back(
+                    poolit.enqueue(&Admixture::runOptimalWithBigAss, &admixer, i, std::ref(genome)));
             for(auto && ll : llike) ll.get();
             llike.clear(); // clear future and renew
             admixer.updateIteration();
@@ -124,11 +133,12 @@ inline int run_admix_main(Options & opts)
         double prevlike{std::numeric_limits<double>::lowest()};
         for(int it = 0; it < opts.nadmix; it++)
         {
-            tm.clock();
+            tim.clock();
             admixer.initIteration();
             Q0 = admixer.Q;
             for(int i = 0; i < genome->nsamples; i++)
-                llike.emplace_back(poolit.enqueue(&Admixture::runOptimalWithBigAss, &admixer, i, std::ref(genome)));
+                llike.emplace_back(
+                    poolit.enqueue(&Admixture::runOptimalWithBigAss, &admixer, i, std::ref(genome)));
 
             loglike = 0;
             for(auto && ll : llike) loglike += ll.get();
@@ -137,16 +147,16 @@ inline int run_admix_main(Options & opts)
             ldiff = loglike - prevlike;
             prevlike = loglike;
             qdiff = (admixer.Q - Q0).square().sum();
-            cao.print(tm.date(), "normal iteration", it, ", diff(Q) =", std::scientific, qdiff,
-                      ", likelihoods =", std::fixed, loglike, ",", tm.reltime(), " sec");
+            cao.print(tim.date(), "normal iteration", it, ", diff(Q) =", std::scientific, qdiff,
+                      ", likelihoods =", std::fixed, loglike, ",", tim.reltime(), " sec");
             if(qdiff < opts.qtol) break;
             if(ldiff < opts.ltol) break;
         }
     }
-    cao.done(tm.date(), "admixture done and outputting");
+    cao.done(tim.date(), "admixture done and outputting");
     admixer.writeQ(opts.out.string() + ".Q");
     // if(admixer.debug) admixer.writeBin(out.string() + "qf.bin", genome);
-    cao.done(tm.date(), "-> good job. have a nice day, bye!");
+    cao.done(tim.date(), "-> good job. have a nice day, bye!");
 
     return 0;
 }

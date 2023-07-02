@@ -244,7 +244,8 @@ inline auto FastPhaseK2::forwardAndBackwardsHighRam(int ind, const MyFloat1D & G
     MyArr2D ind_post_zg1 = MyArr2D::Zero(C, M);
     MyArr2D ind_post_zg2 = MyArr2D::Zero(C, M);
     MyArr1D tmp_zg(4);
-    int z1, s = 0;
+
+    int z1, z2, s = 0;
     // now get expectation of post(Z,J)
     const MyArr1D gamma_div_emit = (alpha.col(s) * beta.col(s) / cs(s)) / emit.col(s); // C2
     for(z1 = 0; z1 < C; z1++)
@@ -256,6 +257,20 @@ inline auto FastPhaseK2::forwardAndBackwardsHighRam(int ind, const MyFloat1D & G
         ind_post_zg2(z1, s) = (gamma_div_emit(Eigen::seqN(z1, C, C)) * (F(s, z1))
                                * (gli(s, 1) * (1 - F.row(s)) + gli(s, 2) * F.row(s)).transpose())
                                   .sum();
+        if(call_geno)
+        {
+            for(z2 = 0; z2 < C; z2++)
+            {
+                int z12 = z1 * C + z2;
+                tmp_zg(0) = gli(s, 0) * (1 - F(s, z1)) * (1 - F(s, z2));
+                tmp_zg(1) = gli(s, 1) * (1 - F(s, z1)) * F(s, z2);
+                tmp_zg(2) = gli(s, 1) * F(s, z1) * (1 - F(s, z2));
+                tmp_zg(3) = gli(s, 2) * F(s, z1) * F(s, z2);
+                GP(3 * s + 0, ind) += gamma_div_emit(z12) * tmp_zg(0);
+                GP(3 * s + 1, ind) += gamma_div_emit(z12) * (tmp_zg(1) + tmp_zg(2));
+                GP(3 * s + 2, ind) += gamma_div_emit(z12) * tmp_zg(3);
+            }
+        }
     }
     for(s = 1; s < M; s++)
     {
@@ -271,11 +286,27 @@ inline auto FastPhaseK2::forwardAndBackwardsHighRam(int ind, const MyFloat1D & G
             ind_post_zg2(z1, s) = (gamma_div_emit(Eigen::seqN(z1, C, C)) * (F(s, z1))
                                    * (gli(s, 1) * (1 - F.row(s)) + gli(s, 2) * F.row(s)).transpose())
                                       .sum();
+            if(call_geno)
+            {
+                for(z2 = 0; z2 < C; z2++)
+                {
+                    int z12 = z1 * C + z2;
+                    tmp_zg(0) = gli(s, 0) * (1 - F(s, z1)) * (1 - F(s, z2));
+                    tmp_zg(1) = gli(s, 1) * (1 - F(s, z1)) * F(s, z2);
+                    tmp_zg(2) = gli(s, 1) * F(s, z1) * (1 - F(s, z2));
+                    tmp_zg(3) = gli(s, 2) * F(s, z1) * F(s, z2);
+                    GP(3 * s + 0, ind) += gamma_div_emit(z12) * tmp_zg(0);
+                    GP(3 * s + 1, ind) += gamma_div_emit(z12) * (tmp_zg(1) + tmp_zg(2));
+                    GP(3 * s + 2, ind) += gamma_div_emit(z12) * tmp_zg(3);
+                }
+            }
         }
         alphatmp += PI.col(s) * R(2, s) * 1.0;
         for(z1 = 0; z1 < C; z1++)
             ind_post_zj(z1, s) = PI(z1, s) * (alphatmp * beta_mult_emit(Eigen::seqN(z1, C, C))).sum();
     }
+
+    if(debug && call_geno) std::cerr << GP.col(ind).sum() << "\n";
 
     double indLogLike = (1 / cs).log().sum();
     return std::tuple(indLogLike, ind_post_zj, ind_post_zg1, ind_post_zg2, gamma1);

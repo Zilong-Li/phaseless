@@ -16,6 +16,8 @@ class Logger
     std::ofstream cao;
     bool is_screen;
 
+    Logger() {}
+
     Logger(std::string filename, bool screen = true)
     {
         is_screen = screen;
@@ -25,10 +27,7 @@ class Logger
         cao.flags(std::ios::fixed | std::ios::right);
     }
 
-    ~Logger()
-    {
-        cao.close();
-    }
+    ~Logger() {}
 
     template<class S>
     Logger & operator<<(const S & val)
