@@ -9,7 +9,7 @@ using namespace std;
 using namespace vcfpp;
 
 using pars1 = std::tuple<double, MyArr2D, MyArr2D, MyArr2D, MyArr1D>;
-using pars2 = std::tuple<MyFloat1D, MyArr2D, MyArr2D, MyArr2D, MyArr2D>;
+using pars2 = std::tuple<MyFloat1D, MyArr2D, MyArr2D, MyArr2D>;
 
 inline auto make_input_per_chunk(const std::unique_ptr<BigAss> & genome,
                                  const int ic,
@@ -18,8 +18,7 @@ inline auto make_input_per_chunk(const std::unique_ptr<BigAss> & genome,
 {
     FastPhaseK2 faith(genome->pos[ic], genome->nsamples, genome->C, seed);
     faith.runWithOneThread(niters, genome->gls[ic]);
-    auto Info = calc_cluster_info(faith.N, faith.GZP1, faith.GZP2);
-    return std::tuple(MyFloat1D(faith.GP.data(), faith.GP.data() + faith.GP.size()), Info, faith.R, faith.PI,
+    return std::tuple(MyFloat1D(faith.GP.data(), faith.GP.data() + faith.GP.size()), faith.R, faith.PI,
                       faith.F);
 }
 
@@ -56,7 +55,7 @@ inline int run_impute_main(Options & opts)
               ", M =", genome->nsnps, ", nchunks =", genome->nchunks, ", seed =", opts.seed);
     cao.done(tim.date(), "elapsed time for parsing beagle file", std::fixed, tim.reltime(), " secs");
     auto bw = make_bcfwriter(opts.out.string() + ".vcf.gz", genome->chrs, genome->sampleids);
-    std::ofstream oinfo(opts.out.string() + ".info");
+    std::ofstream orecomb(opts.out.string() + ".recomb");
     std::ofstream opi(opts.out.string() + ".pi");
     Eigen::IOFormat fmt(6, Eigen::DontAlignCols, "\t", "\n");
     if(opts.single_chunk)
@@ -98,8 +97,7 @@ inline int run_impute_main(Options & opts)
             genome->transRate.emplace_back(MyFloat1D(faith.R.data(), faith.R.data() + faith.R.size()));
             genome->PI.emplace_back(MyFloat1D(faith.PI.data(), faith.PI.data() + faith.PI.size()));
             genome->F.emplace_back(MyFloat1D(faith.F.data(), faith.F.data() + faith.F.size()));
-            auto ClusterInfo = calc_cluster_info(faith.N, faith.GZP1, faith.GZP2);
-            oinfo << ClusterInfo.format(fmt) << "\n";
+            orecomb << faith.R.format(fmt) << "\n";
             opi << faith.PI.transpose().format(fmt) << "\n";
             cao.done(tim.date(), "chunk", ic, " done. outputting elapsed", tim.reltime(), " secs");
         }
@@ -115,12 +113,12 @@ inline int run_impute_main(Options & opts)
         int ic = 0;
         for(auto && ll : res)
         {
-            const auto [GP, ClusterInfo, faithR, faithPI, faithF] = ll.get();
+            const auto [GP, faithR, faithPI, faithF] = ll.get();
             write_bigass_to_bcf(bw, GP.data(), genome->chrs[ic], genome->pos[ic]);
             genome->transRate.emplace_back(MyFloat1D(faithR.data(), faithR.data() + faithR.size()));
             genome->PI.emplace_back(MyFloat1D(faithPI.data(), faithPI.data() + faithPI.size()));
             genome->F.emplace_back(MyFloat1D(faithF.data(), faithF.data() + faithF.size()));
-            oinfo << ClusterInfo.format(fmt) << "\n";
+            orecomb << faithR.format(fmt) << "\n";
             opi << faithPI.transpose().format(fmt) << "\n";
             cao.print(tim.date(), "chunk", ic++, " imputation done and outputting");
         }

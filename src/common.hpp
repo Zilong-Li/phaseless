@@ -31,6 +31,7 @@ extern Timer tim;
 extern Logger cao;
 #endif
 
+// STD TYPES
 using Int1D = std::vector<int>;
 using Int2D = std::vector<Int1D>;
 using Float1D = std::vector<float>;
@@ -41,12 +42,13 @@ using String1D = std::vector<std::string>;
 using MapStringInt1D = std::map<std::string, Int1D>;
 using UMapStringInt = std::unordered_map<std::string, int>;
 
-// Eigen Mat, Arr
+// EIGEN TYPES
 using Mat2D = Eigen::Matrix<double, Eigen::Dynamic, Eigen::Dynamic, Eigen::ColMajor>;
 using Mat1D = Eigen::Matrix<double, Eigen::Dynamic, 1, Eigen::ColMajor>;
 using Arr2D = Eigen::Array<double, Eigen::Dynamic, Eigen::Dynamic, Eigen::ColMajor>;
 using Arr1D = Eigen::Array<double, Eigen::Dynamic, 1, Eigen::ColMajor>;
 
+// MY TYPES
 using MyFloat = double; // use float if no accuracy drops
 using MyFloat1D = std::vector<MyFloat>;
 using MyFloat2D = std::vector<MyFloat1D>;
@@ -166,7 +168,7 @@ inline auto forward_backwards_diploid(MyArr2D & alpha,
     int z1, z2, z12;
     int s{0};
     alpha.col(s) = E.col(s) * (PI.col(s).matrix() * PI.col(s).transpose().matrix()).reshaped().array();
-    cs(s) = 1 / alpha.col(s).sum();
+    cs(s) = 1.0 / alpha.col(s).sum();
     alpha.col(s) *= cs(s); // normalize it
     // alpha_s = emit * (alpha_(s-1) * R + pi(z1) * tmp1(z2) + pi(z2) * tmp2(z1) + P(switch into z1) *
     // P(switch into z2) * constTmp)
@@ -185,13 +187,13 @@ inline auto forward_backwards_diploid(MyArr2D & alpha,
                                    + PI(z2, s) * sumTmp1(z1) + PI(z1, s) * PI(z2, s) * constTmp);
             }
         }
-        cs(s) = 1 / alpha.col(s).sum();
+        cs(s) = 1.0 / alpha.col(s).sum();
         alpha.col(s) *= cs(s); // normalize it
     }
 
     // ======== backward recursion ===========
     s = M - 1; // set last site
-    beta.col(s).setConstant(cs(s)); // not log scale
+    beta.col(s).setConstant(1.0);
     for(s = M - 2; s >= 0; s--)
     {
         auto beta_mult_emit = E.col(s + 1) * beta.col(s + 1);
@@ -212,7 +214,7 @@ inline auto forward_backwards_diploid(MyArr2D & alpha,
                 z12 = z1 * C + z2;
                 // apply scaling
                 beta(z12, s) =
-                    (beta_mult_emit(z12) * R(0, s + 1) + sumTmp1(z1) + sumTmp1(z2) + constTmp) * cs(s);
+                    (beta_mult_emit(z12) * R(0, s + 1) + sumTmp1(z1) + sumTmp1(z2) + constTmp) * cs(s + 1);
             }
         }
     }
@@ -223,14 +225,13 @@ inline auto getClusterLikelihoods(int ind,
                                   MyArr2D & alpha,
                                   MyArr2D & beta,
                                   const MyFloat1D & GL,
-                                  const MyFloat1D & transRate_,
+                                  const MyFloat1D & R,
                                   const MyFloat1D & PI,
-                                  const MyFloat1D & F,
-                                  bool gamma = true)
+                                  const MyFloat1D & F)
 {
     const int C2 = alpha.rows();
     const int M = alpha.cols();
-    int C = F.size() / M;
+    const int C = F.size() / M;
     int g1, g2, k1, k2, k12;
     int igs = ind * M * 3;
     // ======== forward and backward recursion ===========
@@ -262,8 +263,8 @@ inline auto getClusterLikelihoods(int ind,
     alpha.col(s) *= cs(s); // normalize it
     for(s = 1; s < M; s++)
     {
-        sumTmp1 = alpha.col(s - 1).reshaped(C, C).rowwise().sum() * transRate_[s * 3 + 1];
-        constTmp = alpha.col(s - 1).sum() * transRate_[s * 3 + 2];
+        sumTmp1 = alpha.col(s - 1).reshaped(C, C).rowwise().sum() * R[s * 3 + 1];
+        constTmp = alpha.col(s - 1).sum() * R[s * 3 + 2];
         for(k1 = 0; k1 < C; k1++)
         {
             for(k2 = 0; k2 < C; k2++)
@@ -281,7 +282,7 @@ inline auto getClusterLikelihoods(int ind,
                 }
                 alpha(k12, s) =
                     emitDip(k12, s)
-                    * (alpha(k12, s - 1) * transRate_[s * 3 + 0] + PI[s * C + k1] * sumTmp1(k2)
+                    * (alpha(k12, s - 1) * R[s * 3 + 0] + PI[s * C + k1] * sumTmp1(k2)
                        + PI[s * C + k2] * sumTmp1(k1) + PI[s * C + k1] * PI[s * C + k2] * constTmp);
                 cs(s) += alpha(k12, s);
             }
@@ -292,7 +293,7 @@ inline auto getClusterLikelihoods(int ind,
     // double indLike = LikeForwardInd.col(M - 1).sum(); // just 1
     // ======== backward recursion ===========
     s = M - 1;
-    beta.col(s).setConstant(cs(s)); // not log scale
+    beta.col(s).setConstant(1.0);
     for(s = M - 2; s >= 0; s--)
     {
         auto beta_mult_emit = emitDip.col(s + 1) * beta.col(s + 1);
@@ -302,9 +303,9 @@ inline auto getClusterLikelihoods(int ind,
             for(k2 = 0; k2 < C; k2++)
             {
                 k12 = k1 * C + k2;
-                sumTmp1(k1) += beta_mult_emit(k12) * PI[(s + 1) * C + k2] * transRate_[(s + 1) * 3 + 1];
-                constTmp += beta_mult_emit(k12) * PI[(s + 1) * C + k1] * PI[(s + 1) * C + k2]
-                            * transRate_[(s + 1) * 3 + 2];
+                sumTmp1(k1) += beta_mult_emit(k12) * PI[(s + 1) * C + k2] * R[(s + 1) * 3 + 1];
+                constTmp +=
+                    beta_mult_emit(k12) * PI[(s + 1) * C + k1] * PI[(s + 1) * C + k2] * R[(s + 1) * 3 + 2];
             }
         }
         for(k1 = 0; k1 < C; k1++)
@@ -313,13 +314,12 @@ inline auto getClusterLikelihoods(int ind,
             {
                 k12 = k1 * C + k2;
                 beta(k12, s) =
-                    (beta_mult_emit(k12) * transRate_[(s + 1) * 3 + 0] + sumTmp1(k1) + sumTmp1(k2) + constTmp)
-                    * cs(s);
+                    (beta_mult_emit(k12) * R[(s + 1) * 3 + 0] + sumTmp1(k1) + sumTmp1(k2) + constTmp)
+                    * cs(s + 1);
             }
         }
     }
-    // for(s = 0; s < M; s++) LikeForwardInd.col(s) /= cs(s);
-    if(gamma) alpha.rowwise() /= cs.transpose();
+    return cs;
 }
 
 inline auto calc_cluster_info(const int N, const MyArr2D & GZP1, const MyArr2D & GZP2)

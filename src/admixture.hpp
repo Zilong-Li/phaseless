@@ -58,7 +58,7 @@ inline double Admixture::runOptimalWithBigAss(int ind, const std::unique_ptr<Big
         LikeForwardInd.setZero(C * C, iM);
         LikeBackwardInd.setZero(C * C, iM);
         getClusterLikelihoods(ind, LikeForwardInd, LikeBackwardInd, genome->gls[ic], genome->transRate[ic],
-                              genome->PI[ic], genome->F[ic], true); // return gamma
+                              genome->PI[ic], genome->F[ic]); // return gamma
         kapa.setZero(C * K, iM); // C x K x M layout
         Ekg.setZero(K, iM);
         for(s = 0; s < iM; s++, m++)
@@ -108,7 +108,7 @@ inline double Admixture::runNativeWithBigAss(int ind, const std::unique_ptr<BigA
         LikeForwardInd.setZero(C * C, iM); // likelihood of forward recursion for ind i, not log
         LikeBackwardInd.setZero(C * C, iM); // likelihood of backward recursion for ind i, not log
         getClusterLikelihoods(ind, LikeForwardInd, LikeBackwardInd, genome->gls[ic], genome->transRate[ic],
-                              genome->PI[ic], genome->F[ic], true);
+                              genome->PI[ic], genome->F[ic]);
         iEkc.setZero(C * K, iM);
         Ekg.setZero(K, iM);
         for(s = 0; s < iM; s++, m++)
