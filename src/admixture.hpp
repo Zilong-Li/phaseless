@@ -47,31 +47,33 @@ inline Admixture::~Admixture() {}
 inline double Admixture::runOptimalWithBigAss(int ind, const std::unique_ptr<BigAss> & genome)
 {
     MyArr2D kapa, Ekg;
-    MyArr2D LikeForwardInd, LikeBackwardInd;
+    MyArr2D alpha, beta;
     MyArr1D iQ = MyArr1D::Zero(K);
-    MyArr1D Hz(C);
+    MyArr1D Hz(C), gammaC(C);
     double norm = 0, llike = 0, tmp = 0;
     int c1, k1, s, c2, c12;
     for(int ic = 0, m = 0; ic < genome->nchunks; ic++)
     {
         int iM = genome->pos[ic].size();
-        LikeForwardInd.setZero(C * C, iM);
-        LikeBackwardInd.setZero(C * C, iM);
-        getClusterLikelihoods(ind, LikeForwardInd, LikeBackwardInd, genome->gls[ic], genome->transRate[ic],
-                              genome->PI[ic], genome->F[ic]); // return gamma
+        alpha.setZero(C * C, iM);
+        beta.setZero(C * C, iM);
+        getClusterLikelihoods(ind, alpha, beta, genome->gls[ic], genome->transRate[ic], genome->PI[ic],
+                              genome->F[ic]); // return gamma
         kapa.setZero(C * K, iM); // C x K x M layout
         Ekg.setZero(K, iM);
         for(s = 0; s < iM; s++, m++)
         {
             for(c1 = 0; c1 < C; c1++) Hz(c1) = (Q.col(ind) * F(Eigen::seqN(c1, K, C), m)).sum();
+            gammaC = (alpha.col(s) * beta.col(s)).reshaped(C, C).colwise().sum();
             for(norm = 0, c1 = 0; c1 < C; c1++)
             {
                 for(tmp = 0, c2 = 0; c2 < C; c2++)
                 {
                     c12 = c1 * C + c2;
-                    auto xz = LikeForwardInd(c12, s) * LikeBackwardInd(c12, s);
+                    auto xz = alpha(c12, s) * beta(c12, s);
                     auto zy = Hz(c1) * Hz(c2);
-                    tmp += xz * zy / (genome->PI[ic][s * C + c1] * genome->PI[ic][s * C + c2]);
+                    // tmp += xz * zy / (genome->PI[ic][s * C + c1] * genome->PI[ic][s * C + c2]);
+                    tmp += xz * zy / (gammaC(c1) * gammaC(c2));
                 }
                 norm += tmp;
                 kapa(Eigen::seqN(c1, K, C), s) = (Q.col(ind) * F(Eigen::seqN(c1, K, C), m)) * tmp / Hz(c1);
@@ -97,7 +99,8 @@ inline double Admixture::runOptimalWithBigAss(int ind, const std::unique_ptr<Big
 inline double Admixture::runNativeWithBigAss(int ind, const std::unique_ptr<BigAss> & genome)
 {
     MyArr2D w((C * C + C) / 2, K * K);
-    MyArr2D Ekg, iEkc, LikeForwardInd, LikeBackwardInd;
+    MyArr2D Ekg, iEkc, alpha, beta;
+    MyArr1D gammaC(C);
     double norm = 0, llike = 0;
     int c1, c2, c12, cc;
     int k1, k2, k12, s;
@@ -105,22 +108,21 @@ inline double Admixture::runNativeWithBigAss(int ind, const std::unique_ptr<BigA
     for(int ic = 0, m = 0; ic < genome->nchunks; ic++)
     {
         int iM = genome->pos[ic].size();
-        LikeForwardInd.setZero(C * C, iM); // likelihood of forward recursion for ind i, not log
-        LikeBackwardInd.setZero(C * C, iM); // likelihood of backward recursion for ind i, not log
-        getClusterLikelihoods(ind, LikeForwardInd, LikeBackwardInd, genome->gls[ic], genome->transRate[ic],
-                              genome->PI[ic], genome->F[ic]);
+        alpha.setZero(C * C, iM);
+        beta.setZero(C * C, iM);
+        getClusterLikelihoods(ind, alpha, beta, genome->gls[ic], genome->transRate[ic], genome->PI[ic],
+                              genome->F[ic]);
         iEkc.setZero(C * K, iM);
         Ekg.setZero(K, iM);
         for(s = 0; s < iM; s++, m++)
         {
+            gammaC = (alpha.col(s) * beta.col(s)).reshaped(C, C).colwise().sum();
             for(norm = 0, cc = 0, c1 = 0; c1 < C; c1++)
             {
                 for(c2 = c1; c2 < C; c2++)
                 {
                     c12 = c1 * C + c2;
-                    auto xz = LikeForwardInd(c12, s) * LikeBackwardInd(c12, s)
-                              / (genome->PI[ic][s * C + c1] * genome->PI[ic][s * C + c2]);
-
+                    auto xz = alpha(c12, s) * beta(c12, s) / (gammaC(c1) * gammaC(c2));
                     for(k1 = 0; k1 < K; k1++)
                     {
                         for(k2 = 0; k2 < K; k2++)

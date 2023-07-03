@@ -20,8 +20,10 @@ class FastPhaseK2
     ~FastPhaseK2();
 
     // BOUNDING
-    const double alphaMatThreshold = 1e-4; // Ezj
-    const double emissionThreshold = 1e-4;
+    double minRate{0.1}, maxRate{100};
+    double alphaMatThreshold = 1e-4; // Ezj
+    double alleleEmitThreshold = 1e-4;
+    double nGen, Ne;
 
     // FLAGS
     bool debug = true;
@@ -35,6 +37,7 @@ class FastPhaseK2
     MyArr2D R; // 3 x M, jumping / recombination rate
     MyArr2D Ezj; // C x M, E(Z=z,J=1|X,par), expectation of switch into state k
     MyArr2D Ezg1, Ezg2; // C x M
+    Int1D pos_dist; // physical position distance between two markers
 
     void initIteration();
     void updateIteration();
@@ -48,19 +51,22 @@ inline FastPhaseK2::FastPhaseK2(const Int1D & pos, int n, int c, int seed)
 {
     auto rng = std::default_random_engine{};
     rng.seed(seed);
-    F = RandomUniform<MyArr2D, std::default_random_engine>(M, C, rng, emissionThreshold,
-                                                           1 - emissionThreshold);
+    F = RandomUniform<MyArr2D, std::default_random_engine>(M, C, rng, alleleEmitThreshold,
+                                                           1 - alleleEmitThreshold);
     PI = MyArr2D::Ones(C, M);
     PI.rowwise() /= PI.colwise().sum(); // normalize it per site
+    Ne = 20000; // for human
+    nGen = 4 * Ne / C;
+    pos_dist = calc_position_distance(pos);
+    R = calc_transRate_diploid(pos_dist, nGen);
     GP.setZero(M * 3, N);
-    R = calc_transRate(pos, C);
 }
 
 inline FastPhaseK2::~FastPhaseK2() {}
 
 inline void FastPhaseK2::initIteration()
 {
-    std::cerr << R << std::endl;
+    if(debug) std::cerr << R << std::endl;
     // initial temp variables
     pi.setZero(C); // reset pi at first SNP
     Ezj.setZero(C, M); // reset post(Z,j)
@@ -70,15 +76,17 @@ inline void FastPhaseK2::initIteration()
 
 inline void FastPhaseK2::updateIteration()
 {
+    MyArr1D er = 1.0 - Ezj.colwise().sum() / N;
     // morgans per SNP assuming T=100, 0.5 cM/Mb
     // x1 <- exp(-nGen * minRate * dl/100/1000000) # lower
     // x2 <- exp(-nGen * maxRate * dl/100/1000000) # upper
-    // update R, e^-r = 1 - Ezj / N
-    MyArr1D er = 1.0 - Ezj.colwise().sum() / N;
-    const double miner = 0.9;
-    const double maxer = std::exp(-1.0e-9);
-    er = (er < miner).select(miner, er);
-    er = (er > maxer).select(maxer, er);
+    for(int i = 0; i < er.size(); i++)
+    {
+        double miner = std::exp(-nGen * maxRate * pos_dist[i] / 1e8);
+        double maxer = std::exp(-nGen * minRate * pos_dist[i] / 1e8);
+        er(i) = er(i) < miner ? miner : er(i);
+        er(i) = er(i) > maxer ? maxer : er(i);
+    }
     R.row(0) = er.square();
     R.row(1) = (1 - er) * er;
     R.row(2) = (1 - er).square();
@@ -87,17 +95,13 @@ inline void FastPhaseK2::updateIteration()
     F = (Ezg2 / (Ezg1 + Ezg2)).transpose();
     // map F to domain but no normalization
     if(F.isNaN().any()) throw std::runtime_error("NaN in F\n");
-    // F = (F < 1e-6).select(1e-6, F); // lower bound
-    // F = (F > 1 - 1e-6).select(1 - 1e-6, F); // upper bound
+    F = (F < alleleEmitThreshold).select(alleleEmitThreshold, F); // lower bound
+    F = (F > 1 - alleleEmitThreshold).select(1 - alleleEmitThreshold, F); // upper bound
 
     // update PI(C, M) except the first snp
     // first we normalize Ezj so that each col sum to 1
     Ezj.col(0) = pi / pi.sum(); // now update the first SNP
     Ezj.rowwise() /= Ezj.colwise().sum();
-    // what if Ezj.colwise().sum() = 0 ? of course, the first col is nan
-    // Ezj.col(0) = pi / pi.sum(); // now update the first SNP
-    // Ezj = (Ezj < alphaMatThreshold).select(alphaMatThreshold, Ezj); // reset to 0 first
-    // Ezj.rowwise() /= Ezj.colwise().sum();
 
     if(Ezj.isNaN().any() || (Ezj < alphaMatThreshold).any())
     {
@@ -116,7 +120,6 @@ inline void FastPhaseK2::updateIteration()
             }
         }
     }
-    // Ezj.col(0) = pi / pi.sum(); // now update the first SNP
 
     if(Ezj.isNaN().any())
     {

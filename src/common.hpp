@@ -49,7 +49,7 @@ using Arr2D = Eigen::Array<double, Eigen::Dynamic, Eigen::Dynamic, Eigen::ColMaj
 using Arr1D = Eigen::Array<double, Eigen::Dynamic, 1, Eigen::ColMajor>;
 
 // MY TYPES
-using MyFloat = double; // use float if no accuracy drops
+using MyFloat = float; // use float if no accuracy drops
 using MyFloat1D = std::vector<MyFloat>;
 using MyFloat2D = std::vector<MyFloat1D>;
 using MyMat2D = Eigen::Matrix<MyFloat, Eigen::Dynamic, Eigen::Dynamic, Eigen::ColMajor>;
@@ -91,21 +91,33 @@ struct BigAss
     MyFloat2D gls; // store gl(M, 3) of each chunk
 };
 
-inline auto calc_distRate(const Int1D & markers, int C, int Ne = 20000, double expRate = 0.5)
+inline auto calc_position_distance(const Int1D & markers)
+{
+    Int1D dl(markers.size());
+    dl[0] = 0;
+    for(size_t i = 1; i < markers.size(); i++) dl[i] = markers[i] - markers[i - 1];
+    return dl;
+}
+
+inline auto calc_distRate(const Int1D & markers, int C, double Ne = 20000, double expRate = 0.5)
 {
     MyArr1D distRate(markers.size());
-    // int nGen = 4 * Ne / C;
+    double nGen = 4 * Ne / C;
     // distRate(i) = (markers[i] - markers[i - 1]) * nGen * expRate / 1e8;
     distRate(0) = 1; //  act as sentinel. so dim aligns with M
-    for(size_t i = 1; i < markers.size(); i++) distRate(i) = exp(-(markers[i] - markers[i - 1]) / 1e5);
+    for(size_t i = 1; i < markers.size(); i++)
+        distRate(i) = std::exp(-(markers[i] - markers[i - 1]) * expRate * nGen / 1e5);
     return distRate;
 }
 
 // check initialize_sigmaCurrent_m in STITCH
-inline auto calc_transRate(const Int1D & markers, int C, int Ne = 20000, double expRate = 0.5)
+// double nGen = 4 * Ne / C;
+inline auto calc_transRate_diploid(const Int1D & dl, double nGen, double expRate = 0.5)
 {
-    MyArr1D distRate = calc_distRate(markers, C, Ne, expRate);
-    MyArr2D transRate(3, markers.size());
+    MyArr2D transRate(3, dl.size());
+    MyArr1D distRate(dl.size());
+    distRate(0) = 1; //  act as sentinel. so dim aligns with M
+    for(size_t i = 1; i < dl.size(); i++) distRate(i) = std::exp(-dl[i] * expRate * nGen / 100 / 1e6);
     transRate.row(0) = distRate.square();
     transRate.row(1) = distRate * (1 - distRate);
     transRate.row(2) = (1 - distRate).square();
@@ -117,7 +129,7 @@ inline auto calc_transRate(const Int1D & markers, int C, int Ne = 20000, double 
 ** @param F    cluster-specific allele frequence (M, C)
 ** @return emission probability (M, C2)
 */
-inline auto get_emission_by_gl(const MyArr2D & gli, const MyArr2D & F, double minEmission = 1e-4)
+inline auto get_emission_by_gl(const MyArr2D & gli, const MyArr2D & F, double minEmission = 1e-6)
 {
     int k1, k2, g1, g2;
     const int M = F.rows();
@@ -140,7 +152,7 @@ inline auto get_emission_by_gl(const MyArr2D & gli, const MyArr2D & F, double mi
         }
     }
     // emitDip = emitDip.colwise() / emitDip.rowwise().maxCoeff(); // normalize it
-    emitDip = (emitDip < minEmission).select(minEmission, emitDip);
+    // emitDip = (emitDip < minEmission).select(minEmission, emitDip);
     return emitDip;
 }
 
@@ -227,7 +239,8 @@ inline auto getClusterLikelihoods(int ind,
                                   const MyFloat1D & GL,
                                   const MyFloat1D & R,
                                   const MyFloat1D & PI,
-                                  const MyFloat1D & F)
+                                  const MyFloat1D & F,
+                                  const double minEmission = 1e-6)
 {
     const int C2 = alpha.rows();
     const int M = alpha.cols();
@@ -235,7 +248,7 @@ inline auto getClusterLikelihoods(int ind,
     int g1, g2, k1, k2, k12;
     int igs = ind * M * 3;
     // ======== forward and backward recursion ===========
-    MyArr2D emitDip(C2, M);
+    MyArr2D emit(C2, M);
     MyArr1D sumTmp1(C); // store sum over internal loop
     MyArr1D cs = MyArr1D::Zero(M);
     double constTmp;
@@ -245,17 +258,18 @@ inline auto getClusterLikelihoods(int ind,
         for(k2 = 0; k2 < C; k2++)
         {
             k12 = k1 * C + k2;
-            emitDip(k12, s) = 0;
+            emit(k12, s) = 0;
             for(g1 = 0; g1 <= 1; g1++)
             {
                 for(g2 = 0; g2 <= 1; g2++)
                 {
-                    emitDip(k12, s) += GL[igs + (g1 + g2) * M + s]
-                                       * (g1 * F[k1 * M + s] + (1 - g1) * (1 - F[k1 * M + s]))
-                                       * (g2 * F[k2 * M + s] + (1 - g2) * (1 - F[k2 * M + s]));
+                    emit(k12, s) += GL[igs + (g1 + g2) * M + s]
+                                    * (g1 * F[k1 * M + s] + (1 - g1) * (1 - F[k1 * M + s]))
+                                    * (g2 * F[k2 * M + s] + (1 - g2) * (1 - F[k2 * M + s]));
                 }
             }
-            alpha(k12, s) = emitDip(k12, s) * PI[s * C + k1] * PI[s * C + k2];
+            // emit(k12, s) = emit(k12, s) < minEmission ? minEmission : emit(k12, s);
+            alpha(k12, s) = emit(k12, s) * PI[s * C + k1] * PI[s * C + k2];
             cs(s) += alpha(k12, s);
         }
     }
@@ -270,18 +284,19 @@ inline auto getClusterLikelihoods(int ind,
             for(k2 = 0; k2 < C; k2++)
             {
                 k12 = k1 * C + k2;
-                emitDip(k12, s) = 0;
+                emit(k12, s) = 0;
                 for(g1 = 0; g1 <= 1; g1++)
                 {
                     for(g2 = 0; g2 <= 1; g2++)
                     {
-                        emitDip(k12, s) += GL[igs + (g1 + g2) * M + s]
-                                           * (g1 * F[k1 * M + s] + (1 - g1) * (1 - F[k1 * M + s]))
-                                           * (g2 * F[k2 * M + s] + (1 - g2) * (1 - F[k2 * M + s]));
+                        emit(k12, s) += GL[igs + (g1 + g2) * M + s]
+                                        * (g1 * F[k1 * M + s] + (1 - g1) * (1 - F[k1 * M + s]))
+                                        * (g2 * F[k2 * M + s] + (1 - g2) * (1 - F[k2 * M + s]));
                     }
                 }
+                // emit(k12, s) = emit(k12, s) < minEmission ? minEmission : emit(k12, s);
                 alpha(k12, s) =
-                    emitDip(k12, s)
+                    emit(k12, s)
                     * (alpha(k12, s - 1) * R[s * 3 + 0] + PI[s * C + k1] * sumTmp1(k2)
                        + PI[s * C + k2] * sumTmp1(k1) + PI[s * C + k1] * PI[s * C + k2] * constTmp);
                 cs(s) += alpha(k12, s);
@@ -296,7 +311,7 @@ inline auto getClusterLikelihoods(int ind,
     beta.col(s).setConstant(1.0);
     for(s = M - 2; s >= 0; s--)
     {
-        auto beta_mult_emit = emitDip.col(s + 1) * beta.col(s + 1);
+        auto beta_mult_emit = emit.col(s + 1) * beta.col(s + 1);
         sumTmp1.setZero();
         for(constTmp = 0, k1 = 0; k1 < C; k1++)
         {
