@@ -85,22 +85,33 @@ isTRUE(all.equal(colSums(l$haplike[[n]], dims = 2),
 png("haplike.png", unit = "in", res = 300, width = 12, height = 6)
 
 npop <- 3
-snps <- 1:1000
-nsamples <- 60
+snps <- l$M
+nsamples <- l$N
 plot_haplike(l$haplike, nsamples, npop, snps)
 
 dev.off()
 
-pi <- as.matrix(read.table("impute.pi", h = F, sep = "\t"))
 
 png("hapfreq.png", unit = "in", res = 300, width = 12, height = 6)
 
-par(mar = c(2, 0, 4, 0))
-res <- pi[1:200+800,]
+
+pi <- as.matrix(read.table("impute.pi", h = F, sep = "\t"))
+recomb <- read.table("impute.recomb")
+
+stopifnot(all.equal(dim(recomb)[2], nrow(pi)))
+nsnps <- nrow(pi)
+
+par(mfrow = c(2, 1), mar = c(1, 1, 1.5, 1), oma = c(0, 0, 0, 0))
+
+res <- pi[1:nsnps,]
 barplot(t(as.matrix(res)),
   beside = F, col = colors, border = NA, space = 0,
   main = "Haplotype Cluster Frequncy", axes = F
 )
+
+res <- sqrt(as.numeric(recomb[3,]))
+plot(1, col = "transparent", axes = F, xlim = c(1, nsnps), ylim = range(res),main = "Recombination rate (1-e^-r)", xlab = "SNP Index")
+lines(res, type="l", col="red")
 
 dev.off()
 
