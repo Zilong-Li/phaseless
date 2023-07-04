@@ -171,12 +171,12 @@ inline double Admixture::runNativeWithBigAss(int ind, const std::unique_ptr<BigA
 
 inline void Admixture::initIteration(double tol)
 {
-    if(Q.isNaN().any()) throw std::runtime_error("NaN in Q\n");
+    if(Q.isNaN().any()) cao.error("NaN in Q\n");
     Q = (Q < tol).select(tol, Q); // lower bound
     Q = (Q > 1 - tol).select(1 - tol, Q); // upper bound
     Q.rowwise() /= Q.colwise().sum(); // normalize Q per individual
 
-    if(F.isNaN().any()) throw std::runtime_error("NaN in F\n");
+    if(F.isNaN().any()) cao.error("NaN in F\n");
     F = (F < tol).select(tol, F); // lower bound
     F = (F > 1 - tol).select(1 - tol, F); // upper bound
     for(int k = 0; k < K; k++) // normalize F per snp per k
@@ -194,7 +194,7 @@ inline void Admixture::updateIteration()
 inline void Admixture::writeQ(std::string out)
 {
     std::ofstream ofs(out);
-    if(!ofs) throw std::runtime_error(out + ": " + strerror(errno));
+    if(!ofs) cao.error(out, strerror(errno));
     Q = (Q * 1e6).round() / 1e6;
     ofs << std::fixed << Q.transpose() << "\n";
     ofs.close();

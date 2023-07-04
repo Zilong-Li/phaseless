@@ -36,7 +36,7 @@ inline int run_parse_main(Options & opts)
         int i = 0;
         for(auto & id : genome->sampleids) ids_m[id] = i++;
         std::ifstream ifs(opts.samples);
-        if(!ifs.is_open()) throw std::runtime_error("can not open the file: " + opts.samples);
+        if(!ifs.is_open()) cao.error("can not open the file: ", opts.samples);
         std::string line;
         while(getline(ifs, line)) ids.push_back(ids_m[line]);
     }
@@ -78,8 +78,7 @@ inline int run_parse_main(Options & opts)
             getClusterLikelihoods(ind, alpha, beta, genome->gls[ic], genome->transRate[ic], genome->PI[ic],
                                   genome->F[ic]);
             alpha *= beta;
-            if(!((1 - alpha.colwise().sum()).abs() < 1e-4).all())
-                throw std::runtime_error("gamma sum is not 1.0!\n");
+            if(!((1 - alpha.colwise().sum()).abs() < 1e-4).all()) cao.error("gamma sum is not 1.0!\n");
             ofs.write((char *)alpha.data(), genome->C * genome->C * iM * 4);
         }
     }

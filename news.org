@@ -1,5 +1,7 @@
 #+title: News and Changes
 
+* v0.2.1
+- fix stupid cli
 * v0.2.0
 - add recombination rate in fastphase
 - use collapsed gamma in cluster likelihoods for admixture

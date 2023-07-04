@@ -94,6 +94,7 @@ class Logger
             (..., printSpace(std::cout, args));
             std::cout << "\033[0m" << std::endl;
         }
+        exit(EXIT_FAILURE);
     }
 
     template<typename... Args>

@@ -98,7 +98,7 @@ inline void FastPhaseK2::updateIteration()
     if(F.isNaN().any())
     {
         if(debug) cao.warn("NaN in F in FastPhaseK2 model. will fill it with AF");
-        if(AF.size() == 0) throw std::runtime_error("AF is not assigned!\n");
+        if(AF.size() == 0) cao.error("AF is not assigned!\n");
         for(int i = 0; i < M; i++) F.row(i) = F.row(i).isNaN().select(AF(i), F.row(i));
     }
     // map F to domain but no normalization
@@ -128,16 +128,9 @@ inline void FastPhaseK2::updateIteration()
     }
     PI = Ezj;
 
-    if(Ezj.isNaN().any())
-    {
-        std::cerr << Ezj << "\n";
-        throw std::runtime_error("NaN in PI from FastPhaseK2\n");
-    }
+    if(Ezj.isNaN().any()) cao.error(Ezj, "NaN in PI from FastPhaseK2\n");
     if(debug && !((1 - PI.colwise().sum()).abs() < 1e-3).all())
-    {
-        std::cerr << PI.colwise().sum() << "\n";
-        throw std::runtime_error("colsum of PI is not 1.0!\n");
-    }
+        cao.error(PI.colwise().sum(), "\ncolsum of PI is not 1.0!\n");
 }
 
 /*
@@ -180,10 +173,7 @@ inline double FastPhaseK2::forwardAndBackwardsLowRam(int ind, const MyFloat1D & 
     const MyArr2D emit = get_emission_by_gl(gli, F).transpose(); // C2 x M
     const MyArr1D cs = forward_backwards_diploid(alpha, beta, emit, R, F, PI);
     if(debug && !((1 - ((alpha * beta).colwise().sum())).abs() < 1e-4).all())
-    {
-        std::cerr << (alpha * beta).colwise().sum() / cs.transpose() << "\n";
-        throw std::runtime_error("gamma sum is not 1.0!\n");
-    }
+        cao.error((alpha * beta).colwise().sum() / cs.transpose(), "\ngamma sum is not 1.0!\n");
     const MyArr1D ind_gamma_one = alpha.col(0) * beta.col(0); //  gamma in first snp
     const MyArr1D gamma1_sum = ind_gamma_one.reshaped(C, C).colwise().sum();
     MyArr1D ind_post_zj(C);
@@ -280,10 +270,7 @@ inline auto FastPhaseK2::forwardAndBackwardsHighRam(int ind, const MyFloat1D & G
     MyArr2D emit = get_emission_by_gl(gli, F).transpose(); // C2 x M
     auto cs = forward_backwards_diploid(alpha, beta, emit, R, F, PI);
     if(debug && !((1 - ((alpha * beta).colwise().sum())).abs() < 1e-4).all())
-    {
-        std::cerr << (alpha * beta).colwise().sum() << "\n";
-        throw std::runtime_error("gamma sum is not 1.0!\n");
-    }
+        cao.error((alpha * beta).colwise().sum() / cs.transpose(), "\ngamma sum is not 1.0!\n");
     const MyArr1D ind_gamma_one = alpha.col(0) * beta.col(0); //  gamma in first snp
     MyArr1D gamma1 = ind_gamma_one.reshaped(C, C).colwise().sum();
     MyArr2D ind_post_zj = MyArr2D::Zero(C, M);

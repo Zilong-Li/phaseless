@@ -15,7 +15,7 @@ int main(int argc, char * argv[])
 {
     // ========= helper message and parameters parsing ===========================
 
-    const std::string VERSION{"0.2.0"};
+    const std::string VERSION{"0.2.1"};
 
     // clang-format off
     argparse::ArgumentParser program("phaseless", VERSION);
@@ -70,6 +70,7 @@ int main(int argc, char * argv[])
         .scan<'i', int>();
 
     argparse::ArgumentParser cmd_admix("admix", VERSION, argparse::default_arguments::help);
+    cmd_admix.add_parents(program);
     cmd_admix.add_description("run admixture with cluster likelihoods as input");
     cmd_admix.add_argument("-a", "--no-accel")
         .help("disable accelerated EM")
@@ -111,6 +112,7 @@ int main(int argc, char * argv[])
         .scan<'i', int>();
 
     argparse::ArgumentParser cmd_convert("convert", VERSION, argparse::default_arguments::help);
+    cmd_convert.add_parents(program);
     cmd_convert.add_description("different file format converter");
     cmd_convert.add_argument("input")
         .help("input file to be converted");
@@ -131,6 +133,7 @@ int main(int argc, char * argv[])
         .scan<'i', int>();
 
     argparse::ArgumentParser cmd_parse("parse", VERSION, argparse::default_arguments::help);
+    cmd_parse.add_parents(program);
     cmd_parse.add_description("manipulate pars.bin file outputted by impute command");
     cmd_parse.add_argument("-b", "--bin")
         .help("binary format from impute command as input")
@@ -172,11 +175,7 @@ int main(int argc, char * argv[])
             opts.noscreen = cmd_impute.get<bool>("--no-print");
             opts.debug = cmd_impute.get<bool>("--debug");
             if(opts.single_chunk) opts.chunksize = INT_MAX;
-            if(opts.in_beagle.empty() && opts.in_vcf.empty())
-            {
-                std::cerr << cmd_impute.help().str();
-                std::exit(1);
-            }
+            if(opts.in_beagle.empty() && opts.in_vcf.empty()) cao.error(cmd_impute.help().str());
             run_impute_main(opts);
         }
         else if(program.is_subcommand_used(cmd_admix))
@@ -192,11 +191,7 @@ int main(int argc, char * argv[])
             opts.noaccel = cmd_admix.get<bool>("--no-accel");
             opts.noscreen = cmd_admix.get<bool>("--no-print");
             opts.debug = cmd_admix.get<bool>("--debug");
-            if(opts.in_bin.empty())
-            {
-                std::cerr << cmd_admix.help().str();
-                std::exit(1);
-            }
+            if(opts.in_bin.empty()) cao.error(cmd_admix.help().str());
             run_admix_main(opts);
         }
         else if(program.is_subcommand_used(cmd_parse))
@@ -205,11 +200,7 @@ int main(int argc, char * argv[])
             opts.out.assign(cmd_parse.get("--out"));
             opts.samples = cmd_parse.get("--samples");
             opts.ichunk = cmd_parse.get<int>("--chunk");
-            if(opts.in_bin.empty())
-            {
-                std::cerr << cmd_parse.help().str();
-                std::exit(1);
-            }
+            if(opts.in_bin.empty()) cao.error(cmd_parse.help().str());
             run_parse_main(opts);
         }
         else if(program.is_subcommand_used(cmd_convert))
@@ -219,14 +210,9 @@ int main(int argc, char * argv[])
             opts.out = cmd_convert.get("output");
             opts.chunksize = cmd_convert.get<int>("--chunksize");
             if(cmd_convert.get<bool>("--plink2beagle"))
-            {
                 run_convert_main(opts);
-            }
             else
-            {
-                std::cerr << cmd_convert.help().str();
-                std::exit(1);
-            }
+                cao.error(cmd_convert.help().str());
         }
         else
         {

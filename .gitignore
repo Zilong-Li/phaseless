@@ -27,3 +27,8 @@ compile_commands.json
 !/.gitignore
 test*
 data
+misc
+impute.*
+admix.*
+*.png
+run.sh

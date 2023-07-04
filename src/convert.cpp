@@ -13,7 +13,8 @@ inline auto make_beagle_header(std::string fam)
     while(getline(ifs, line))
     {
         std::stringstream ss(line);
-        std::vector<std::string> token(std::istream_iterator<std::string>{ss}, std::istream_iterator<std::string>{});
+        std::vector<std::string> token(std::istream_iterator<std::string>{ss},
+                                       std::istream_iterator<std::string>{});
         hdr += "\t" + token[1] + "\t" + token[1] + "\t" + token[1];
     }
     hdr += "\n";
@@ -22,7 +23,8 @@ inline auto make_beagle_header(std::string fam)
 
 inline int run_convert_main(Options & opts)
 {
-    Logger cao(opts.out.string() + "log", !opts.noscreen);
+    cao.cao.open(opts.out.string() + ".log");
+    cao.is_screen = !opts.noscreen;
     cao.print(opts.opts_in_effect);
     std::setlocale(LC_ALL, "C"); // use minial locale
     std::ios_base::sync_with_stdio(false); // don't sync
@@ -35,7 +37,7 @@ inline int run_convert_main(Options & opts)
     uint8_t header[3];
     ifs_bed.read(reinterpret_cast<char *>(&header[0]), 3);
     if((header[0] != 0x6c) || (header[1] != 0x1b) || (header[2] != 0x01))
-        throw std::invalid_argument("Incorrect magic number in plink bed file.\n");
+        cao.error("Incorrect magic number in plink bed file.\n");
     ThreadPool poolit(opts.nthreads);
     vector<future<string>> res;
     std::ifstream ifs_bim(opts.in_plink + ".bim", std::ios::in);

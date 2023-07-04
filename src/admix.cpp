@@ -155,7 +155,6 @@ inline int run_admix_main(Options & opts)
     }
     cao.done(tim.date(), "admixture done and outputting");
     admixer.writeQ(opts.out.string() + ".Q");
-    // if(admixer.debug) admixer.writeBin(out.string() + "qf.bin", genome);
     cao.done(tim.date(), "-> good job. have a nice day, bye!");
 
     return 0;
