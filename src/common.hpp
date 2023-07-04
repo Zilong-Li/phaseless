@@ -88,7 +88,7 @@ struct BigAss
     Int1D ends; // chunk index where each chromo ends
     String1D sampleids, chrs;
     Int2D pos; // store position of markers of each chunk
-    MyFloat2D gls; // store gl(M, 3) of each chunk
+    MyFloat2D gls; // store gl(N, M*3) of each chunk
 };
 
 inline auto calc_position_distance(const Int1D & markers)
@@ -346,6 +346,36 @@ inline auto calc_cluster_info(const int N, const MyArr2D & GZP1, const MyArr2D &
     Info = (Info > 1).select(1, Info);
     // Info = Info.isNaN().select(1, Info);
     return Info;
+}
+
+// @params GL genotype likelihoods, N x M x 3
+inline auto estimate_af_by_gl(const MyFloat1D & GL, int N, int M, int niter = 100, double tol = 1e-4)
+{
+    Arr1D af_est = Arr1D::Constant(M, 0.25);
+    Arr1D af_tmp = Arr1D::Zero(M);
+    for(int it = 0; it < niter; it++)
+    {
+        for(int j = 0; j < M; j++)
+        {
+            af_tmp(j) = af_est(j);
+            double p0, p1, p2, pt = 0.0;
+            for(int i = 0; i < N; i++)
+            {
+                p0 = GL[i * M * 3 + 0 * M + j] * (1.0 - af_est(j)) * (1.0 - af_est(j));
+                p1 = GL[i * M * 3 + 1 * M + j] * 2 * af_est(j) * (1.0 - af_est(j));
+                p2 = GL[i * M * 3 + 2 * M + j] * af_est(j) * af_est(j);
+                pt += (p1 + 2 * p2) / (2 * (p0 + p1 + p2));
+            }
+            af_est(j) = pt / (double)M;
+        }
+        double diff = sqrt((af_est - af_tmp).array().square().sum() / M);
+        if(diff < tol)
+            break;
+        else if(it == niter - 1)
+            std::cerr << "EM for estimating AF may not converge\n";
+    }
+
+    return af_est;
 }
 
 #endif // COMMON_H_

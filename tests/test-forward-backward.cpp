@@ -1,3 +1,5 @@
+#define _DECLARE_TOOLBOX_HERE
+
 #include "../src/fastphase.hpp"
 #include "../src/io.hpp"
 #include "../src/threadpool.hpp"

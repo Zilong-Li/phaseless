@@ -70,10 +70,9 @@ inline double Admixture::runOptimalWithBigAss(int ind, const std::unique_ptr<Big
                 for(tmp = 0, c2 = 0; c2 < C; c2++)
                 {
                     c12 = c1 * C + c2;
-                    auto xz = alpha(c12, s) * beta(c12, s);
-                    auto zy = Hz(c1) * Hz(c2);
-                    // tmp += xz * zy / (genome->PI[ic][s * C + c1] * genome->PI[ic][s * C + c2]);
-                    tmp += xz * zy / (gammaC(c1) * gammaC(c2));
+                    double xz = alpha(c12, s) * beta(c12, s) / (gammaC(c1) * gammaC(c2));
+                    double zy = Hz(c1) * Hz(c2);
+                    tmp += xz * zy;
                 }
                 norm += tmp;
                 kapa(Eigen::seqN(c1, K, C), s) = (Q.col(ind) * F(Eigen::seqN(c1, K, C), m)) * tmp / Hz(c1);
@@ -122,7 +121,7 @@ inline double Admixture::runNativeWithBigAss(int ind, const std::unique_ptr<BigA
                 for(c2 = c1; c2 < C; c2++)
                 {
                     c12 = c1 * C + c2;
-                    auto xz = alpha(c12, s) * beta(c12, s) / (gammaC(c1) * gammaC(c2));
+                    double xz = (double)alpha(c12, s) * beta(c12, s) / (gammaC(c1) * gammaC(c2));
                     for(k1 = 0; k1 < K; k1++)
                     {
                         for(k2 = 0; k2 < K; k2++)

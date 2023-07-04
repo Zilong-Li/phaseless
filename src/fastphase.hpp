@@ -9,6 +9,7 @@
 #include "common.hpp"
 #include <cmath>
 #include <mutex>
+#include <stdexcept>
 
 class FastPhaseK2
 {
@@ -21,7 +22,7 @@ class FastPhaseK2
 
     // BOUNDING
     double minRate{0.1}, maxRate{100};
-    double alphaMatThreshold = 1e-4; // Ezj
+    double clusterFreqThreshold = 1e-4; // Ezj
     double alleleEmitThreshold = 1e-4;
     double nGen, Ne;
 
@@ -38,6 +39,7 @@ class FastPhaseK2
     MyArr2D Ezj; // C x M, E(Z=z,J=1|X,par), expectation of switch into state k
     MyArr2D Ezg1, Ezg2; // C x M
     Int1D pos_dist; // physical position distance between two markers
+    MyArr1D AF;
 
     void initIteration();
     void updateIteration();
@@ -66,7 +68,7 @@ inline FastPhaseK2::~FastPhaseK2() {}
 
 inline void FastPhaseK2::initIteration()
 {
-    if(debug) std::cerr << R << std::endl;
+    // if(debug) std::cerr << R << std::endl;
     // initial temp variables
     pi.setZero(C); // reset pi at first SNP
     Ezj.setZero(C, M); // reset post(Z,j)
@@ -93,8 +95,13 @@ inline void FastPhaseK2::updateIteration()
 
     // update F
     F = (Ezg2 / (Ezg1 + Ezg2)).transpose();
+    if(F.isNaN().any())
+    {
+        if(debug) cao.warn("NaN in F in FastPhaseK2 model. will fill it with AF");
+        if(AF.size() == 0) throw std::runtime_error("AF is not assigned!\n");
+        for(int i = 0; i < M; i++) F.row(i) = F.row(i).isNaN().select(AF(i), F.row(i));
+    }
     // map F to domain but no normalization
-    if(F.isNaN().any()) throw std::runtime_error("NaN in F\n");
     F = (F < alleleEmitThreshold).select(alleleEmitThreshold, F); // lower bound
     F = (F > 1 - alleleEmitThreshold).select(1 - alleleEmitThreshold, F); // upper bound
 
@@ -102,31 +109,30 @@ inline void FastPhaseK2::updateIteration()
     // first we normalize Ezj so that each col sum to 1
     Ezj.col(0) = pi / pi.sum(); // now update the first SNP
     Ezj.rowwise() /= Ezj.colwise().sum();
-
-    if(Ezj.isNaN().any() || (Ezj < alphaMatThreshold).any())
+    if(Ezj.isNaN().any() || (Ezj < clusterFreqThreshold).any())
     {
         // std::cerr << "reset values below threshold\n";
-        Ezj = (Ezj < alphaMatThreshold).select(0, Ezj); // reset to 0 first
-        for(int i = 1; i < M; i++)
+        Ezj = (Ezj < clusterFreqThreshold).select(0, Ezj); // reset to 0 first
+        for(int i = 0; i < M; i++)
         {
             // for columns with an entry below 0
             // each 0 entry becomes threshold
             // then rest re-scaled so whole thing has sum 1
             if(auto c = (Ezj.col(i) == 0).count() > 0)
             {
-                double xsum = 1 - c * alphaMatThreshold;
+                double xsum = 1 - c * clusterFreqThreshold;
                 double csum = Ezj.col(i).sum();
-                Ezj.col(i) = (Ezj.col(i) > 0).select(Ezj.col(i) * xsum / csum, alphaMatThreshold);
+                Ezj.col(i) = (Ezj.col(i) > 0).select(Ezj.col(i) * xsum / csum, clusterFreqThreshold);
             }
         }
     }
+    PI = Ezj;
 
     if(Ezj.isNaN().any())
     {
         std::cerr << Ezj << "\n";
-        throw std::runtime_error("NaN in PI\n");
+        throw std::runtime_error("NaN in PI from FastPhaseK2\n");
     }
-    PI = Ezj;
     if(debug && !((1 - PI.colwise().sum()).abs() < 1e-3).all())
     {
         std::cerr << PI.colwise().sum() << "\n";

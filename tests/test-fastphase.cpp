@@ -1,7 +1,10 @@
+#define _DECLARE_TOOLBOX_HERE
+
 #include "../src/fastphase.hpp"
 #include "../src/io.hpp"
 #include "../src/threadpool.hpp"
 #include "catch.hh"
+#include "common.hpp"
 
 using namespace std;
 using namespace Eigen;
@@ -9,7 +12,9 @@ using namespace Eigen;
 double make_input_per_chunk(int niters, int ic, const std::unique_ptr<BigAss> & genome, int seed)
 {
     FastPhaseK2 nofaith(genome->pos[ic], genome->nsamples, genome->C, seed);
-    auto transRate = calc_transRate(genome->pos[ic], genome->C);
+    auto dl = calc_position_distance(genome->pos[ic]);
+    double nGen = 4.0 * 20000 / genome->C;
+    auto transRate = calc_transRate_diploid(dl, nGen);
     return nofaith.runWithOneThread(niters, genome->gls[ic]);
 }
 
@@ -396,7 +401,9 @@ TEST_CASE("fastphasek2 runWithOneThread", "[test-fastphasek2]")
     for(int ic = 0; ic < genome->nchunks; ic++)
     {
         FastPhaseK2 nofaith(genome->pos[ic], genome->nsamples, C, seed);
-        auto transRate = calc_transRate(genome->pos[ic], genome->C);
+        auto dl = calc_position_distance(genome->pos[ic]);
+        double nGen = 4.0 * 20000 / genome->C;
+        auto transRate = calc_transRate_diploid(dl, nGen);
         cout << "diff: " << nofaith.runWithOneThread(niters, genome->gls[ic]) << endl;
     }
 }

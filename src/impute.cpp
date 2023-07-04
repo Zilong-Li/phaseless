@@ -1,3 +1,4 @@
+#include "common.hpp"
 #include "fastphase.hpp"
 #include "io.hpp"
 #include "log.hpp"
@@ -17,6 +18,7 @@ inline auto make_input_per_chunk(const std::unique_ptr<BigAss> & genome,
                                  const int seed)
 {
     FastPhaseK2 faith(genome->pos[ic], genome->nsamples, genome->C, seed);
+    faith.AF = estimate_af_by_gl(genome->gls[ic], genome->nsamples, genome->pos[ic].size()).cast<MyFloat>();
     faith.runWithOneThread(niters, genome->gls[ic]);
     return std::tuple(MyFloat1D(faith.GP.data(), faith.GP.data() + faith.GP.size()), faith.R, faith.PI,
                       faith.F);
@@ -64,6 +66,7 @@ inline int run_impute_main(Options & opts)
         for(int ic = 0; ic < genome->nchunks; ic++)
         {
             FastPhaseK2 faith(genome->pos[ic], genome->nsamples, opts.C, opts.seed);
+            faith.AF = estimate_af_by_gl(genome->gls[ic], genome->nsamples, genome->nsnps).cast<MyFloat>();
             for(int it = 0; it <= opts.nimpute; it++)
             {
                 tim.clock();
