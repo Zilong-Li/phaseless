@@ -6,6 +6,7 @@
 #ifndef LOG_H_
 #define LOG_H_
 
+#include <cstring>
 #include <fstream>
 #include <iomanip> // setw
 #include <iostream>

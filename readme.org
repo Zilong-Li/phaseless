@@ -55,7 +55,8 @@ phaseless admix -b impute.pars.bin -k 3 -n 4
 ** Parameters
 Besides, we can investigate and manipulate the parameters from =fastPHASE= model using the binary file outputted by =impute= command.
 #+begin_src shell
-phaseless parse -b impute.pars.bin -c -1 -s samples.txt
+phaseless parse -b impute.pars.bin -c 0 ## single chunk, all samples
+phaseless parse -b impute.pars.bin -c -1 -s samples.txt ## all chunks, specifc samples
 #+end_src
 
 ** Plotting
@@ -78,8 +79,9 @@ Without specifying the output prefix =-o=, the output filenames of the above com
 ├── admix.log
 ├── parse.haplike.bin
 ├── parse.log
-├── impute.all.info
-├── impute.all.vcf.gz
+├── impute.recomb
+├── impute.pi
+├── impute.vcf.gz
 ├── impute.pars.bin
 └── impute.log
 #+end_src

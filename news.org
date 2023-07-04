@@ -1,5 +1,9 @@
 #+title: News and Changes
 
+* v0.1.9
+- add recombination rate in fastphase
+- use collapsed gamma in cluster likelihoods for admixture
+- estimate AF from GL
 * v0.1.8
 - fix optimal version
 - output big vcf, pi and info files
