@@ -19,28 +19,35 @@ read_haplike <- function(fn) {
 }
 
 ## @param snps which snps to subset
-plot_haplike <- function(haplike, nsamples, npop, snps) {
+plot_haplike <- function(haplike, npop, snpidx = NULL) {
   C <- dim(haplike[[1]])[1]
-  iN <- nsamples / npop # should be integer
-  iM <- length(snps)
+  M <- dim(haplike[[1]])[3]
+  N <- length(haplike) # nsamples
+  iN <- N / npop # should be integer
+  if (is.null(snpidx)) {
+    snpidx <- 1:M
+  }
+  iM <- length(snpidx)
   idx <- 1:iM
   ## layout(matrix(1:2, nrow = 1), widths = c(12, 1))
-  par(mar = c(0, 0, 1, 0))
+  par(mar = c(1, 1, 1.5, 1), oma = c(0, 0, 0, 0))
   plot(0, 0,
     col = "transparent", axes = F, main = "Most Likely Haplotype Cluster Pairs",
-    xlim = c(1, iM), ylim = c(0, 0.7 * nsamples + 4)
+    xlim = c(1, iM), ylim = c(0, 0.7 * N + 4)
   )
   w <- 0.3
   w2 <- 0.1
   x <- 0
   y <- x + w
   j <- 1
-  for (i in 1:nsamples) {
-    out <- t(sapply(snps, function(s) {
+  for (i in 1:N) {
+    i <- 1
+    out <- t(sapply(snpidx, function(s) {
       imat <- haplike[[i]][, , s]
       kk <- sort(as.vector(which(imat == max(imat), arr.ind = T))[1:2])
       kk
     }))
+    out
     if (j == iN + 1 || j == 2 * iN + 1) {
       x <- x + 2
       y <- y + 2
@@ -71,7 +78,7 @@ palette(colors)
 
 l <- read_haplike("parse.haplike.bin")
 
-sum(l$haplike[[1]][,,2])
+sum(l$haplike[[1]][, , 2])
 
 ## check if sum(alpha*beta)==1
 n <- 1
@@ -85,9 +92,7 @@ isTRUE(all.equal(colSums(l$haplike[[n]], dims = 2),
 png("haplike.png", unit = "in", res = 300, width = 12, height = 6)
 
 npop <- 3
-snps <- l$M
-nsamples <- l$N
-plot_haplike(l$haplike, nsamples, npop, snps)
+plot_haplike(l$haplike, npop)
 
 dev.off()
 
@@ -103,15 +108,15 @@ nsnps <- nrow(pi)
 
 par(mfrow = c(2, 1), mar = c(1, 1, 1.5, 1), oma = c(0, 0, 0, 0))
 
-res <- pi[1:nsnps,]
+res <- pi[1:nsnps, ]
 barplot(t(as.matrix(res)),
   beside = F, col = colors, border = NA, space = 0,
   main = "Haplotype Cluster Frequncy", axes = F
 )
 
-res <- sqrt(as.numeric(recomb[3,]))
-plot(1, col = "transparent", axes = F, xlim = c(1, nsnps), ylim = range(res),main = "Recombination rate (1-e^-r)", xlab = "SNP Index")
-lines(res, type="l", col="red")
+res <- sqrt(as.numeric(recomb[3, ]))
+plot(1, col = "transparent", axes = F, xlim = c(1, nsnps), ylim = range(res), main = "Recombination rate (1-e^-r)", xlab = "SNP Index")
+lines(res, type = "l", col = "red")
 
 dev.off()
 
