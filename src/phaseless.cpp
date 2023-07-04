@@ -19,8 +19,14 @@ int main(int argc, char * argv[])
 
     // clang-format off
     argparse::ArgumentParser program("phaseless", VERSION);
+    program.add_argument("--debug")
+        .help("enable debug mode")
+        .default_value(false)
+        .implicit_value(true);
+
 
     argparse::ArgumentParser cmd_impute("impute", VERSION, argparse::default_arguments::help);
+    cmd_impute.add_parents(program);
     cmd_impute.add_description("run imputation for low coverage sequencing data");
     cmd_impute.add_argument("-c", "--cluster")
         .help("number of ancestral haplotype clusters")
@@ -164,6 +170,7 @@ int main(int argc, char * argv[])
             opts.chunksize = cmd_impute.get<int>("--chunksize");
             opts.single_chunk = cmd_impute.get<bool>("--single-chunk");
             opts.noscreen = cmd_impute.get<bool>("--no-print");
+            opts.debug = cmd_impute.get<bool>("--debug");
             if(opts.single_chunk) opts.chunksize = INT_MAX;
             if(opts.in_beagle.empty() && opts.in_vcf.empty())
             {
@@ -184,6 +191,7 @@ int main(int argc, char * argv[])
             opts.ltol = cmd_admix.get<double>("--ltol");
             opts.noaccel = cmd_admix.get<bool>("--no-accel");
             opts.noscreen = cmd_admix.get<bool>("--no-print");
+            opts.debug = cmd_admix.get<bool>("--debug");
             if(opts.in_bin.empty())
             {
                 std::cerr << cmd_admix.help().str();

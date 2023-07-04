@@ -66,7 +66,9 @@ inline int run_impute_main(Options & opts)
         for(int ic = 0; ic < genome->nchunks; ic++)
         {
             FastPhaseK2 faith(genome->pos[ic], genome->nsamples, opts.C, opts.seed);
-            faith.AF = estimate_af_by_gl(genome->gls[ic], genome->nsamples, genome->nsnps).cast<MyFloat>();
+            faith.debug = opts.debug;
+            faith.AF =
+                estimate_af_by_gl(genome->gls[ic], genome->nsamples, genome->pos[ic].size()).cast<MyFloat>();
             for(int it = 0; it <= opts.nimpute; it++)
             {
                 tim.clock();

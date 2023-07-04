@@ -74,7 +74,7 @@ struct Options
 {
     int ichunk{0}, chunksize{10000}, K{2}, C{10}, nadmix{1000}, nimpute{40}, nthreads{1}, seed{999};
     double ltol{1e-1}, qtol{1e-6}, info{0};
-    bool noaccel{0}, noscreen{0}, single_chunk{0};
+    bool noaccel{0}, noscreen{0}, single_chunk{0}, debug{0};
     std::filesystem::path out, in_beagle, in_vcf, in_bin;
     std::string samples{""}, region{""}, in_plink{""};
     std::string opts_in_effect{"Options in effect:\n   "};
@@ -372,7 +372,7 @@ inline auto estimate_af_by_gl(const MyFloat1D & GL, int N, int M, int niter = 10
         if(diff < tol)
             break;
         else if(it == niter - 1)
-            std::cerr << "EM for estimating AF may not converge\n";
+            cao.warn("EM for estimating AF may not converge\n");
     }
 
     return af_est;

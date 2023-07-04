@@ -27,7 +27,7 @@ class FastPhaseK2
     double nGen, Ne;
 
     // FLAGS
-    bool debug = true;
+    bool debug{0};
 
     // SHARED VARIBALES
     const int M, N, C, C2; // C2 = C x C
@@ -68,7 +68,7 @@ inline FastPhaseK2::~FastPhaseK2() {}
 
 inline void FastPhaseK2::initIteration()
 {
-    // if(debug) std::cerr << R << std::endl;
+    if(debug) std::cerr << R << std::endl;
     // initial temp variables
     pi.setZero(C); // reset pi at first SNP
     Ezj.setZero(C, M); // reset post(Z,j)
