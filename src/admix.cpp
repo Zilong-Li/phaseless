@@ -56,7 +56,8 @@ inline int run_admix_main(Options & opts)
     assert(opts.K < genome->C);
 
     cao.warn(tim.date(), "-> running admixture with seed =", opts.seed);
-    Admixture admixer(genome->nsamples, genome->nsnps, genome->C, opts.K, opts.seed);
+    int nGrids = get_total_grids(genome);
+    Admixture admixer(genome->nsamples, nGrids, genome->C, opts.K, opts.seed);
     vector<future<double>> llike;
     if(!opts.noaccel)
     {

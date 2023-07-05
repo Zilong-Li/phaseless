@@ -78,7 +78,7 @@ palette(colors)
 
 l <- read_haplike("parse.haplike.bin")
 
-sum(l$haplike[[1]][, , 2])
+sum(l$haplike[[10]][, , 20])
 
 ## check if sum(alpha*beta)==1
 n <- 1
@@ -100,6 +100,9 @@ dev.off()
 png("hapfreq.png", unit = "in", res = 300, width = 12, height = 6)
 
 
+### pi is no longer cluster frequency.
+### it's the probabilty of switing into cluster k between snp t and t+1
+
 pi <- as.matrix(read.table("impute.pi", h = F, sep = "\t"))
 recomb <- read.table("impute.recomb")
 
@@ -111,7 +114,7 @@ par(mfrow = c(2, 1), mar = c(1, 1, 1.5, 1), oma = c(0, 0, 0, 0))
 res <- pi[1:nsnps, ]
 barplot(t(as.matrix(res)),
   beside = F, col = colors, border = NA, space = 0,
-  main = "Haplotype Cluster Frequncy", axes = F
+  main = "Probabilty of switing into a cluster", axes = F
 )
 
 res <- sqrt(as.numeric(recomb[, 3]))

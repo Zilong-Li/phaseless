@@ -20,7 +20,7 @@ class Admixture
     ~Admixture();
 
     bool debug = false;
-    const int N, M, C, K; // C2 = C x C
+    const int N, M, C, K; // M: number of grids in total,  C2 = C x C
     MyArr2D F; // (C x K) x M
     MyArr2D Q; // K x N
     MyArr2D Ekc; // (C * K) x M, expected number of alleles per c per k
@@ -54,14 +54,15 @@ inline double Admixture::runOptimalWithBigAss(int ind, const std::unique_ptr<Big
     int c1, k1, s, c2, c12;
     for(int ic = 0, m = 0; ic < genome->nchunks; ic++)
     {
-        int iM = genome->pos[ic].size();
-        alpha.setZero(C * C, iM);
-        beta.setZero(C * C, iM);
-        getClusterLikelihoods(ind, alpha, beta, genome->gls[ic], genome->transRate[ic], genome->PI[ic],
-                              genome->F[ic]); // return gamma
-        kapa.setZero(C * K, iM); // C x K x M layout
-        Ekg.setZero(K, iM);
-        for(s = 0; s < iM; s++, m++)
+        const int nsnps = genome->pos[ic].size();
+        const int nGrids = genome->B > 1 ? (nsnps + genome->B - 1) / genome->B : nsnps;
+        alpha.setZero(C * C, nGrids);
+        beta.setZero(C * C, nGrids);
+        get_cluster_likelihood(ind, nsnps, alpha, beta, genome->gls[ic], genome->R[ic], genome->PI[ic],
+                               genome->F[ic]); // return gamma
+        kapa.setZero(C * K, nGrids); // C x K x M layout
+        Ekg.setZero(K, nGrids);
+        for(s = 0; s < nGrids; s++, m++)
         {
             for(c1 = 0; c1 < C; c1++) Hz(c1) = (Q.col(ind) * F(Eigen::seqN(c1, K, C), m)).sum();
             gammaC = (alpha.col(s) * beta.col(s)).reshaped(C, C).colwise().sum();
@@ -84,8 +85,8 @@ inline double Admixture::runOptimalWithBigAss(int ind, const std::unique_ptr<Big
         iQ += Ekg.rowwise().sum();
         { // for update F
             std::lock_guard<std::mutex> lock(mutex_it); // sum over all samples
-            Ekc.middleCols(m - iM, iM) += 2 * kapa;
-            NormF.middleCols(m - iM, iM) += Ekg;
+            Ekc.middleCols(m - nGrids, nGrids) += 2 * kapa;
+            NormF.middleCols(m - nGrids, nGrids) += Ekg;
         }
     }
 
@@ -106,14 +107,15 @@ inline double Admixture::runNativeWithBigAss(int ind, const std::unique_ptr<BigA
     MyArr1D iQ = MyArr1D::Zero(K);
     for(int ic = 0, m = 0; ic < genome->nchunks; ic++)
     {
-        int iM = genome->pos[ic].size();
-        alpha.setZero(C * C, iM);
-        beta.setZero(C * C, iM);
-        getClusterLikelihoods(ind, alpha, beta, genome->gls[ic], genome->transRate[ic], genome->PI[ic],
-                              genome->F[ic]);
-        iEkc.setZero(C * K, iM);
-        Ekg.setZero(K, iM);
-        for(s = 0; s < iM; s++, m++)
+        const int nsnps = genome->pos[ic].size();
+        const int nGrids = genome->B > 1 ? (nsnps + genome->B - 1) / genome->B : nsnps;
+        alpha.setZero(C * C, nGrids);
+        beta.setZero(C * C, nGrids);
+        get_cluster_likelihood(ind, nsnps, alpha, beta, genome->gls[ic], genome->R[ic], genome->PI[ic],
+                               genome->F[ic]);
+        iEkc.setZero(C * K, nGrids);
+        Ekg.setZero(K, nGrids);
+        for(s = 0; s < nGrids; s++, m++)
         {
             gammaC = (alpha.col(s) * beta.col(s)).reshaped(C, C).colwise().sum();
             for(norm = 0, cc = 0, c1 = 0; c1 < C; c1++)
@@ -159,8 +161,8 @@ inline double Admixture::runNativeWithBigAss(int ind, const std::unique_ptr<BigA
         iQ += Ekg.rowwise().sum();
         {
             std::lock_guard<std::mutex> lock(mutex_it); // sum over all samples
-            Ekc.middleCols(m - iM, iM) += iEkc;
-            NormF.middleCols(m - iM, iM) += Ekg;
+            Ekc.middleCols(m - nGrids, nGrids) += iEkc;
+            NormF.middleCols(m - nGrids, nGrids) += Ekg;
         }
     }
     // update Q, iQ.sum() should be 2M

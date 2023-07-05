@@ -52,34 +52,38 @@ inline int run_parse_main(Options & opts)
     MyArr2D alpha, beta;
     if(ic < 0)
     {
-        ofs.write((char *)&genome->nsnps, 4);
+        int nGrids = get_total_grids(genome);
+        ofs.write((char *)&nGrids, 4);
         for(auto ind : ids)
         {
             for(ic = 0; ic < genome->nchunks; ic++)
             {
                 const int iM = genome->pos[ic].size();
-                alpha.setZero(genome->C * genome->C, iM);
-                beta.setZero(genome->C * genome->C, iM);
-                getClusterLikelihoods(ind, alpha, beta, genome->gls[ic], genome->transRate[ic],
-                                      genome->PI[ic], genome->F[ic]);
+                const int nGrids = genome->B > 1 ? (iM + genome->B - 1) / genome->B : iM;
+                alpha.setZero(genome->C * genome->C, nGrids);
+                beta.setZero(genome->C * genome->C, nGrids);
+                get_cluster_likelihood(ind, iM, alpha, beta, genome->gls[ic], genome->R[ic], genome->PI[ic],
+                                       genome->F[ic]);
                 alpha *= beta;
-                ofs.write((char *)alpha.data(), genome->C * genome->C * iM * 4);
+                if(!((1 - alpha.colwise().sum()).abs() < 1e-4).all()) cao.error("gamma sum is not 1.0!\n");
+                ofs.write((char *)alpha.data(), genome->C * genome->C * nGrids * sizeof(MyFloat));
             }
         }
     }
     else
     {
         const int iM = genome->pos[ic].size();
-        ofs.write((char *)&iM, 4);
+        const int nGrids = genome->B > 1 ? (iM + genome->B - 1) / genome->B : iM;
+        ofs.write((char *)&nGrids, 4);
         for(auto ind : ids)
         {
-            alpha.setZero(genome->C * genome->C, iM);
-            beta.setZero(genome->C * genome->C, iM);
-            getClusterLikelihoods(ind, alpha, beta, genome->gls[ic], genome->transRate[ic], genome->PI[ic],
-                                  genome->F[ic]);
+            alpha.setZero(genome->C * genome->C, nGrids);
+            beta.setZero(genome->C * genome->C, nGrids);
+            get_cluster_likelihood(ind, iM, alpha, beta, genome->gls[ic], genome->R[ic], genome->PI[ic],
+                                   genome->F[ic]);
             alpha *= beta;
             if(!((1 - alpha.colwise().sum()).abs() < 1e-4).all()) cao.error("gamma sum is not 1.0!\n");
-            ofs.write((char *)alpha.data(), genome->C * genome->C * iM * 4);
+            ofs.write((char *)alpha.data(), genome->C * genome->C * nGrids * sizeof(MyFloat));
         }
     }
     return 0;

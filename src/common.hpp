@@ -84,8 +84,8 @@ struct Options
 // all the genome info I need from fastphase
 struct BigAss
 {
-    int chunksize, nsamples, nsnps, nchunks, C; // number of clusters
-    MyFloat2D PI, F, transRate; // M x C, 3 x M, fastphase pars
+    int chunksize, nsamples, nsnps, nchunks, C, B; // number of clusters, snps in a grid
+    MyFloat2D PI, F, R; // M x C, 3 x M, fastphase pars
     Int1D ends; // chunk index where each chromo ends
     String1D sampleids, chrs;
     Int2D pos; // store position of markers of each chunk
@@ -232,104 +232,226 @@ inline auto forward_backwards_diploid(MyArr2D & alpha,
     return cs;
 }
 
-inline auto getClusterLikelihoods(int ind,
-                                  MyArr2D & alpha,
-                                  MyArr2D & beta,
-                                  const MyFloat1D & GL,
-                                  const MyFloat1D & R,
-                                  const MyFloat1D & PI,
-                                  const MyFloat1D & F,
-                                  const double minEmission = 1e-6)
+inline auto get_cluster_likelihood(int ind,
+                                   const int M,
+                                   MyArr2D & alpha,
+                                   MyArr2D & beta,
+                                   const MyFloat1D & GL,
+                                   const MyFloat1D & R,
+                                   const MyFloat1D & PI,
+                                   const MyFloat1D & F,
+                                   const double minEmission = 1e-6)
 {
-    const int C2 = alpha.rows();
-    const int M = alpha.cols();
     const int C = F.size() / M;
-    int g1, g2, k1, k2, k12;
+    const int C2 = alpha.rows();
+    const int nGrids = alpha.cols();
+    const int B = (M + nGrids - 1) / nGrids;
+    int g1, g2, z1, z2, z12;
     int igs = ind * M * 3;
-    // ======== forward and backward recursion ===========
-    MyArr2D emit(C2, M);
     MyArr1D sumTmp1(C); // store sum over internal loop
-    MyArr1D cs = MyArr1D::Zero(M);
+    MyArr1D cs = MyArr1D::Zero(nGrids);
     double constTmp;
-    int s{0};
-    for(k1 = 0; k1 < C; k1++)
+    // ======== forward and backward recursion ===========
+    if(nGrids < M)
     {
-        for(k2 = 0; k2 < C; k2++)
+        MyArr2D emitGrid = MyArr2D::Ones(C2, nGrids);
+        int i, s, e, g{0};
+        s = g * B;
+        e = g == nGrids - 1 ? M - 1 : B * (g + 1) - 1;
+        for(z1 = 0; z1 < C; z1++)
         {
-            k12 = k1 * C + k2;
-            emit(k12, s) = 0;
-            for(g1 = 0; g1 <= 1; g1++)
+            for(z2 = 0; z2 < C; z2++)
             {
-                for(g2 = 0; g2 <= 1; g2++)
+                z12 = z1 * C + z2;
+                for(i = s; i <= e; i++)
                 {
-                    emit(k12, s) += GL[igs + (g1 + g2) * M + s]
-                                    * (g1 * F[k1 * M + s] + (1 - g1) * (1 - F[k1 * M + s]))
-                                    * (g2 * F[k2 * M + s] + (1 - g2) * (1 - F[k2 * M + s]));
+                    double emit = 0;
+                    for(g1 = 0; g1 <= 1; g1++)
+                    {
+                        for(g2 = 0; g2 <= 1; g2++)
+                        {
+                            emit += GL[igs + (g1 + g2) * M + i]
+                                    * (g1 * F[z1 * M + i] + (1 - g1) * (1 - F[z1 * M + i]))
+                                    * (g2 * F[z2 * M + i] + (1 - g2) * (1 - F[z2 * M + i]));
+                        }
+                    }
+                    emitGrid(z12, g) *= emit;
                 }
             }
-            // emit(k12, s) = emit(k12, s) < minEmission ? minEmission : emit(k12, s);
-            alpha(k12, s) = emit(k12, s) * PI[s * C + k1] * PI[s * C + k2];
-            cs(s) += alpha(k12, s);
+        }
+        emitGrid.col(g) /= emitGrid.col(g).maxCoeff();
+        emitGrid.col(g) =
+            (emitGrid.col(g) < minEmission).select(minEmission, emitGrid.col(g)); // apply bounding
+        for(z1 = 0; z1 < C; z1++)
+        {
+            for(z2 = 0; z2 < C; z2++)
+            {
+                z12 = z1 * C + z2;
+                alpha(z12, g) = emitGrid(z12, g) * PI[g * C + z1] * PI[g * C + z2];
+                cs(g) += alpha(z12, g);
+            }
+        }
+        cs(g) = 1 / cs(g);
+        alpha.col(g) *= cs(g); // normalize it
+        // now get the rest
+        for(g = 1; g < nGrids; g++)
+        {
+            sumTmp1 = alpha.col(g - 1).reshaped(C, C).rowwise().sum() * R[g * 3 + 1];
+            constTmp = alpha.col(g - 1).sum() * R[g * 3 + 2];
+            s = g * B;
+            e = g == nGrids - 1 ? M - 1 : B * (g + 1) - 1;
+            for(z1 = 0; z1 < C; z1++)
+            {
+                for(z2 = 0; z2 < C; z2++)
+                {
+                    z12 = z1 * C + z2;
+                    for(i = s; i <= e; i++)
+                    {
+                        double emit = 0;
+                        for(g1 = 0; g1 <= 1; g1++)
+                        {
+                            for(g2 = 0; g2 <= 1; g2++)
+                            {
+                                emit += GL[igs + (g1 + g2) * M + i]
+                                        * (g1 * F[z1 * M + i] + (1 - g1) * (1 - F[z1 * M + i]))
+                                        * (g2 * F[z2 * M + i] + (1 - g2) * (1 - F[z2 * M + i]));
+                            }
+                        }
+                        emitGrid(z12, g) *= emit;
+                    }
+                }
+            }
+            emitGrid.col(g) /= emitGrid.col(g).maxCoeff();
+            emitGrid.col(g) =
+                (emitGrid.col(g) < minEmission).select(minEmission, emitGrid.col(g)); // apply bounding
+            for(z1 = 0; z1 < C; z1++)
+            {
+                for(z2 = 0; z2 < C; z2++)
+                {
+                    z12 = z1 * C + z2;
+                    alpha(z12, g) =
+                        emitGrid(z12, g)
+                        * (alpha(z12, g - 1) * R[g * 3 + 0] + PI[g * C + z1] * sumTmp1(z2)
+                           + PI[g * C + z2] * sumTmp1(z1) + PI[g * C + z1] * PI[g * C + z2] * constTmp);
+                    cs(g) += alpha(z12, g);
+                }
+            }
+            cs(g) = 1 / cs(g);
+            alpha.col(g) *= cs(g); // normalize it
+        }
+        // next backwards
+        g = nGrids - 1;
+        beta.col(g).setConstant(1.0);
+        for(g = nGrids - 2; g >= 0; g--)
+        {
+            auto beta_mult_emit = emitGrid.col(g + 1) * beta.col(g + 1);
+            sumTmp1.setZero();
+            for(constTmp = 0, z1 = 0; z1 < C; z1++)
+            {
+                for(z2 = 0; z2 < C; z2++)
+                {
+                    z12 = z1 * C + z2;
+                    sumTmp1(z1) += beta_mult_emit(z12) * PI[(g + 1) * C + z2] * R[(g + 1) * 3 + 1];
+                    constTmp += beta_mult_emit(z12) * PI[(g + 1) * C + z1] * PI[(g + 1) * C + z2]
+                                * R[(g + 1) * 3 + 2];
+                }
+            }
+            for(z1 = 0; z1 < C; z1++)
+            {
+                for(z2 = 0; z2 < C; z2++)
+                {
+                    z12 = z1 * C + z2;
+                    beta(z12, g) =
+                        (beta_mult_emit(z12) * R[(g + 1) * 3 + 0] + sumTmp1(z1) + sumTmp1(z2) + constTmp)
+                        * cs(g + 1);
+                }
+            }
         }
     }
-    cs(s) = 1 / cs(s);
-    alpha.col(s) *= cs(s); // normalize it
-    for(s = 1; s < M; s++)
+    else if(nGrids == M)
     {
-        sumTmp1 = alpha.col(s - 1).reshaped(C, C).rowwise().sum() * R[s * 3 + 1];
-        constTmp = alpha.col(s - 1).sum() * R[s * 3 + 2];
-        for(k1 = 0; k1 < C; k1++)
+        MyArr2D emitSnp(C2, M);
+        int s{0};
+        for(z1 = 0; z1 < C; z1++)
         {
-            for(k2 = 0; k2 < C; k2++)
+            for(z2 = 0; z2 < C; z2++)
             {
-                k12 = k1 * C + k2;
-                emit(k12, s) = 0;
+                z12 = z1 * C + z2;
+                emitSnp(z12, s) = 0;
                 for(g1 = 0; g1 <= 1; g1++)
                 {
                     for(g2 = 0; g2 <= 1; g2++)
                     {
-                        emit(k12, s) += GL[igs + (g1 + g2) * M + s]
-                                        * (g1 * F[k1 * M + s] + (1 - g1) * (1 - F[k1 * M + s]))
-                                        * (g2 * F[k2 * M + s] + (1 - g2) * (1 - F[k2 * M + s]));
+                        emitSnp(z12, s) += GL[igs + (g1 + g2) * M + s]
+                                           * (g1 * F[z1 * M + s] + (1 - g1) * (1 - F[z1 * M + s]))
+                                           * (g2 * F[z2 * M + s] + (1 - g2) * (1 - F[z2 * M + s]));
                     }
                 }
                 // emit(k12, s) = emit(k12, s) < minEmission ? minEmission : emit(k12, s);
-                alpha(k12, s) =
-                    emit(k12, s)
-                    * (alpha(k12, s - 1) * R[s * 3 + 0] + PI[s * C + k1] * sumTmp1(k2)
-                       + PI[s * C + k2] * sumTmp1(k1) + PI[s * C + k1] * PI[s * C + k2] * constTmp);
-                cs(s) += alpha(k12, s);
+                alpha(z12, s) = emitSnp(z12, s) * PI[s * C + z1] * PI[s * C + z2];
+                cs(s) += alpha(z12, s);
             }
         }
         cs(s) = 1 / cs(s);
         alpha.col(s) *= cs(s); // normalize it
-    }
-    // double indLike = LikeForwardInd.col(M - 1).sum(); // just 1
-    // ======== backward recursion ===========
-    s = M - 1;
-    beta.col(s).setConstant(1.0);
-    for(s = M - 2; s >= 0; s--)
-    {
-        auto beta_mult_emit = emit.col(s + 1) * beta.col(s + 1);
-        sumTmp1.setZero();
-        for(constTmp = 0, k1 = 0; k1 < C; k1++)
+
+        for(s = 1; s < M; s++)
         {
-            for(k2 = 0; k2 < C; k2++)
+            sumTmp1 = alpha.col(s - 1).reshaped(C, C).rowwise().sum() * R[s * 3 + 1];
+            constTmp = alpha.col(s - 1).sum() * R[s * 3 + 2];
+            for(z1 = 0; z1 < C; z1++)
             {
-                k12 = k1 * C + k2;
-                sumTmp1(k1) += beta_mult_emit(k12) * PI[(s + 1) * C + k2] * R[(s + 1) * 3 + 1];
-                constTmp +=
-                    beta_mult_emit(k12) * PI[(s + 1) * C + k1] * PI[(s + 1) * C + k2] * R[(s + 1) * 3 + 2];
+                for(z2 = 0; z2 < C; z2++)
+                {
+                    z12 = z1 * C + z2;
+                    emitSnp(z12, s) = 0;
+                    for(g1 = 0; g1 <= 1; g1++)
+                    {
+                        for(g2 = 0; g2 <= 1; g2++)
+                        {
+                            emitSnp(z12, s) += GL[igs + (g1 + g2) * M + s]
+                                               * (g1 * F[z1 * M + s] + (1 - g1) * (1 - F[z1 * M + s]))
+                                               * (g2 * F[z2 * M + s] + (1 - g2) * (1 - F[z2 * M + s]));
+                        }
+                    }
+                    // emit(k12, s) = emit(k12, s) < minEmission ? minEmission : emit(k12, s);
+                    alpha(z12, s) =
+                        emitSnp(z12, s)
+                        * (alpha(z12, s - 1) * R[s * 3 + 0] + PI[s * C + z1] * sumTmp1(z2)
+                           + PI[s * C + z2] * sumTmp1(z1) + PI[s * C + z1] * PI[s * C + z2] * constTmp);
+                    cs(s) += alpha(z12, s);
+                }
             }
+            cs(s) = 1 / cs(s);
+            alpha.col(s) *= cs(s); // normalize it
         }
-        for(k1 = 0; k1 < C; k1++)
+        // double indLike = LikeForwardInd.col(M - 1).sum(); // just 1
+        // ======== backward recursion ===========
+        s = M - 1;
+        beta.col(s).setConstant(1.0);
+        for(s = M - 2; s >= 0; s--)
         {
-            for(k2 = 0; k2 < C; k2++)
+            auto beta_mult_emit = emitSnp.col(s + 1) * beta.col(s + 1);
+            sumTmp1.setZero();
+            for(constTmp = 0, z1 = 0; z1 < C; z1++)
             {
-                k12 = k1 * C + k2;
-                beta(k12, s) =
-                    (beta_mult_emit(k12) * R[(s + 1) * 3 + 0] + sumTmp1(k1) + sumTmp1(k2) + constTmp)
-                    * cs(s + 1);
+                for(z2 = 0; z2 < C; z2++)
+                {
+                    z12 = z1 * C + z2;
+                    sumTmp1(z1) += beta_mult_emit(z12) * PI[(s + 1) * C + z2] * R[(s + 1) * 3 + 1];
+                    constTmp += beta_mult_emit(z12) * PI[(s + 1) * C + z1] * PI[(s + 1) * C + z2]
+                                * R[(s + 1) * 3 + 2];
+                }
+            }
+            for(z1 = 0; z1 < C; z1++)
+            {
+                for(z2 = 0; z2 < C; z2++)
+                {
+                    z12 = z1 * C + z2;
+                    beta(z12, s) =
+                        (beta_mult_emit(z12) * R[(s + 1) * 3 + 0] + sumTmp1(z1) + sumTmp1(z2) + constTmp)
+                        * cs(s + 1);
+                }
             }
         }
     }
@@ -428,4 +550,17 @@ inline auto collapse_emission_by_grid(const MyArr2D & E, int B, int G, double mi
 
     return EG;
 }
+
+inline int get_total_grids(const std::unique_ptr<BigAss> & genome)
+{
+    int G{0};
+    for(int ic = 0; ic < genome->nchunks; ic++)
+    {
+        int nsnps = genome->pos[ic].size();
+        int nGrids = genome->B > 1 ? (nsnps + genome->B - 1) / genome->B : nsnps;
+        G += nGrids;
+    }
+    return G;
+}
+
 #endif // COMMON_H_

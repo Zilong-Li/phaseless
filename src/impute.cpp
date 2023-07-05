@@ -37,7 +37,7 @@ inline int run_impute_main(Options & opts)
     ThreadPool poolit(opts.nthreads);
 
     std::unique_ptr<BigAss> genome = std::make_unique<BigAss>();
-    genome->chunksize = opts.chunksize, genome->C = opts.C;
+    genome->chunksize = opts.chunksize, genome->C = opts.C, genome->B = opts.gridsize;
     tim.clock();
     chunk_beagle_genotype_likelihoods(genome, opts.in_beagle);
     cao.print(tim.date(), "parsing input -> C =", genome->C, ", N =", genome->nsamples,
@@ -54,7 +54,7 @@ inline int run_impute_main(Options & opts)
         for(int ic = 0; ic < genome->nchunks; ic++)
         {
             FastPhaseK2 faith(genome->pos[ic].size(), genome->nsamples, opts.C, opts.seed);
-            faith.initRecombination(genome->pos[ic], opts.gridsize);
+            faith.initRecombination(genome->pos[ic], genome->B);
             faith.debug = opts.debug;
             faith.AF =
                 estimate_af_by_gl(genome->gls[ic], genome->nsamples, genome->pos[ic].size()).cast<MyFloat>();
@@ -88,7 +88,7 @@ inline int run_impute_main(Options & opts)
             }
             tim.clock();
             write_bigass_to_bcf(bw, faith.GP.data(), genome->chrs[ic], genome->pos[ic]);
-            genome->transRate.emplace_back(MyFloat1D(faith.R.data(), faith.R.data() + faith.R.size()));
+            genome->R.emplace_back(MyFloat1D(faith.R.data(), faith.R.data() + faith.R.size()));
             genome->PI.emplace_back(MyFloat1D(faith.PI.data(), faith.PI.data() + faith.PI.size()));
             genome->F.emplace_back(MyFloat1D(faith.F.data(), faith.F.data() + faith.F.size()));
             orecomb << faith.R.transpose().format(fmt) << "\n";
@@ -109,7 +109,7 @@ inline int run_impute_main(Options & opts)
         {
             const auto [GP, faithR, faithPI, faithF] = ll.get();
             write_bigass_to_bcf(bw, GP.data(), genome->chrs[ic], genome->pos[ic]);
-            genome->transRate.emplace_back(MyFloat1D(faithR.data(), faithR.data() + faithR.size()));
+            genome->R.emplace_back(MyFloat1D(faithR.data(), faithR.data() + faithR.size()));
             genome->PI.emplace_back(MyFloat1D(faithPI.data(), faithPI.data() + faithPI.size()));
             genome->F.emplace_back(MyFloat1D(faithF.data(), faithF.data() + faithF.size()));
             orecomb << faithR.transpose().format(fmt) << "\n";
