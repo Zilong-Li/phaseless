@@ -73,7 +73,7 @@ inline MatrixType RandomUniform(const Eigen::Index numRows,
 struct Options
 {
     int ichunk{0}, chunksize{10000}, K{2}, C{10}, nadmix{1000}, nimpute{40}, nthreads{1}, seed{999};
-    int gridsize{0};
+    int gridsize{1};
     double ltol{1e-1}, qtol{1e-6}, info{0};
     bool noaccel{0}, noscreen{0}, single_chunk{0}, debug{0};
     std::filesystem::path out, in_beagle, in_vcf, in_bin;
@@ -377,4 +377,55 @@ inline auto estimate_af_by_gl(const MyFloat1D & GL, int N, int M, int niter = 10
     return af_est;
 }
 
+inline auto turn_pos_into_grid(const Int1D & pos, int B)
+{
+    int M = pos.size();
+    int G = (M + B - 1) / B;
+    Int2D grids(G);
+    Int1D central(G);
+    int g, s, e;
+    for(g = 0; g < G; g++)
+    {
+        s = g * B;
+        e = g == G - 1 ? M - 1 : B * (g + 1) - 1;
+        central[g] = (e - s) / 2;
+        grids[g] = Int1D(pos.begin() + s, pos.begin() + e + 1);
+    }
+    return std::tuple(grids, central);
+}
+
+/*
+** @params pos     snp position, first dim is each grid, second dim is snps in that grid
+** @params central index of central snp in a grid
+*/
+inline auto calc_grid_distance(const Int2D & pos, const Int1D & central)
+{
+    assert(pos.size() == central.size());
+    Int1D dl(pos.size());
+    dl[0] = 0;
+    for(size_t i = 1; i < central.size(); i++) dl[i] = pos[i][central[i]] - pos[i - 1][central[i - 1]];
+    return dl;
+}
+
+/*
+** @param E original size of emission, full SNPs x C2
+*/
+inline auto collapse_emission_by_grid(const MyArr2D & E, int B, int G, double minEmission = 1e-6)
+{
+    const int M = E.cols();
+    const int C2 = E.rows();
+    MyArr2D EG = MyArr2D::Ones(C2, G);
+    int g, s, e, c;
+    for(g = 0; g < G; g++)
+    {
+        // c = g == nGrids - 1 ? M - (nGrids - 1) * B : B;
+        s = g * B;
+        e = g == G - 1 ? M - 1 : B * (g + 1) - 1;
+        for(c = s; c <= e; c++) EG.col(g) *= E.col(c);
+        EG.col(g) /= EG.col(g).maxCoeff(); // rescale by maximum
+        EG.col(g) = (EG.col(g) < minEmission).select(minEmission, EG.col(g)); // apply bounding
+    }
+
+    return EG;
+}
 #endif // COMMON_H_

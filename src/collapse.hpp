@@ -4,57 +4,6 @@
 #include "common.hpp"
 #include <mutex>
 
-inline auto turn_pos_into_grid(const Int1D & pos, int B)
-{
-    int M = pos.size();
-    int G = (M + B - 1) / B;
-    Int2D grids(G);
-    Int1D central(G);
-    int g, s, e;
-    for(g = 0; g < G; g++)
-    {
-        s = g * B;
-        e = g == G - 1 ? M - 1 : B * (g + 1) - 1;
-        central[g] = (e - s) / 2;
-        grids[g] = Int1D(pos.begin() + s, pos.begin() + e + 1);
-    }
-    return std::tuple(grids, central);
-}
-
-/*
-** @params pos     snp position, first dim is each grid, second dim is snps in that grid
-** @params central index of central snp in a grid
-*/
-inline auto calc_grid_distance(const Int2D & pos, const Int1D & central)
-{
-    assert(pos.size() == central.size());
-    Int1D dl(pos.size());
-    dl[0] = 0;
-    for(size_t i = 1; i < central.size(); i++) dl[i] = pos[i][central[i]] - pos[i - 1][central[i - 1]];
-    return dl;
-}
-
-/*
-** @param E original size of emission, full SNPs x C2
-*/
-inline auto collapse_emission_by_grid(const MyArr2D & E, int B, int G, double minEmission = 1e-6)
-{
-    const int M = E.cols();
-    const int C2 = E.rows();
-    MyArr2D EG = MyArr2D::Ones(C2, G);
-    int g, s, e, c;
-    for(g = 0; g < G; g++)
-    {
-        // c = g == nGrids - 1 ? M - (nGrids - 1) * B : B;
-        s = g * B;
-        e = g == G - 1 ? M - 1 : B * (g + 1) - 1;
-        for(c = s; c <= e; c++) EG.col(g) *= E.col(c);
-        EG.col(g) /= EG.col(g).maxCoeff(); // rescale by maximum
-        EG.col(g) = (EG.col(g) < minEmission).select(minEmission, EG.col(g)); // apply bounding
-    }
-
-    return EG;
-}
 
 /*
 ** this class works on Grids level

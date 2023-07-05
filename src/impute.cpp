@@ -17,7 +17,8 @@ inline auto make_input_per_chunk(const std::unique_ptr<BigAss> & genome,
                                  const int niters,
                                  const int seed)
 {
-    FastPhaseK2 faith(genome->pos[ic], genome->nsamples, genome->C, seed);
+    FastPhaseK2 faith(genome->pos[ic].size(), genome->nsamples, genome->C, seed);
+    faith.initRecombination(genome->pos[ic]);
     faith.AF = estimate_af_by_gl(genome->gls[ic], genome->nsamples, genome->pos[ic].size()).cast<MyFloat>();
     faith.runWithOneThread(niters, genome->gls[ic]);
     return std::tuple(MyFloat1D(faith.GP.data(), faith.GP.data() + faith.GP.size()), faith.R, faith.PI,
@@ -40,7 +41,8 @@ inline int run_impute_main(Options & opts)
     tim.clock();
     chunk_beagle_genotype_likelihoods(genome, opts.in_beagle);
     cao.print(tim.date(), "parsing input -> C =", genome->C, ", N =", genome->nsamples,
-              ", M =", genome->nsnps, ", nchunks =", genome->nchunks, ", seed =", opts.seed);
+              ", M =", genome->nsnps, ", nchunks =", genome->nchunks, ", B =", opts.gridsize,
+              ", seed =", opts.seed);
     cao.done(tim.date(), "elapsed time for parsing beagle file", std::fixed, tim.reltime(), " secs");
     auto bw = make_bcfwriter(opts.out.string() + ".vcf.gz", genome->chrs, genome->sampleids);
     std::ofstream orecomb(opts.out.string() + ".recomb");
@@ -51,7 +53,8 @@ inline int run_impute_main(Options & opts)
         vector<future<pars1>> res;
         for(int ic = 0; ic < genome->nchunks; ic++)
         {
-            FastPhaseK2 faith(genome->pos[ic], genome->nsamples, opts.C, opts.seed);
+            FastPhaseK2 faith(genome->pos[ic].size(), genome->nsamples, opts.C, opts.seed);
+            faith.initRecombination(genome->pos[ic], opts.gridsize);
             faith.debug = opts.debug;
             faith.AF =
                 estimate_af_by_gl(genome->gls[ic], genome->nsamples, genome->pos[ic].size()).cast<MyFloat>();

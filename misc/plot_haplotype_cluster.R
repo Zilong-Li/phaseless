@@ -9,7 +9,7 @@ read_haplike <- function(fn) {
   M <- hdr[3]
   l <- list()
   for (i in 1:N) {
-    haplike <- array(readBin(con, numeric(), n = C * C * M, size = 4),
+    haplike <- array(readBin(con, numeric(), n = C * C * M, size = 8),
       dim = c(C, C, M)
     )
     l[[i]] <- haplike
@@ -103,7 +103,7 @@ png("hapfreq.png", unit = "in", res = 300, width = 12, height = 6)
 pi <- as.matrix(read.table("impute.pi", h = F, sep = "\t"))
 recomb <- read.table("impute.recomb")
 
-stopifnot(all.equal(dim(recomb)[2], nrow(pi)))
+stopifnot(all.equal(dim(recomb)[1], nrow(pi)))
 nsnps <- nrow(pi)
 
 par(mfrow = c(2, 1), mar = c(1, 1, 1.5, 1), oma = c(0, 0, 0, 0))
@@ -114,7 +114,7 @@ barplot(t(as.matrix(res)),
   main = "Haplotype Cluster Frequncy", axes = F
 )
 
-res <- sqrt(as.numeric(recomb[3, ]))
+res <- sqrt(as.numeric(recomb[, 3]))
 plot(1, col = "transparent", axes = F, xlim = c(1, nsnps), ylim = range(res), main = "Recombination rate (1-e^-r)", xlab = "SNP Index")
 lines(res, type = "l", col = "red")
 

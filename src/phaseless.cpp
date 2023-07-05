@@ -3,6 +3,7 @@
  * @author      Zilong Li
  * Copyright (C) 2023. The use of this code is governed by the LICENSE file.
  ******************************************************************************/
+#include <exception>
 #define _DECLARE_TOOLBOX_HERE
 
 #include "admix.cpp"
@@ -15,22 +16,26 @@ int main(int argc, char * argv[])
 {
     // ========= helper message and parameters parsing ===========================
 
-    const std::string VERSION{"0.2.1"};
+    const std::string VERSION{"0.2.2"};
 
     // clang-format off
     argparse::ArgumentParser program("phaseless", VERSION);
-    program.add_argument("--debug")
+    program.add_argument("-D","--debug")
         .help("enable debug mode")
         .default_value(false)
         .implicit_value(true);
 
 
-    argparse::ArgumentParser cmd_impute("impute", VERSION, argparse::default_arguments::help);
+    argparse::ArgumentParser cmd_impute("impute", VERSION);
     cmd_impute.add_parents(program);
     cmd_impute.add_description("run imputation for low coverage sequencing data");
     cmd_impute.add_argument("-c", "--cluster")
         .help("number of ancestral haplotype clusters")
         .default_value(10)
+        .scan<'i', int>();
+    cmd_impute.add_argument("-B", "--grid-size")
+        .help("number of SNPs (>1) in each grid. 1 disables collapsing")
+        .default_value(1)
         .scan<'i', int>();
     cmd_impute.add_argument("-f", "--vcf")
         .help("vcf/bcf format with GL/PL tag as input")
@@ -69,7 +74,7 @@ int main(int argc, char * argv[])
         .default_value(999)
         .scan<'i', int>();
 
-    argparse::ArgumentParser cmd_admix("admix", VERSION, argparse::default_arguments::help);
+    argparse::ArgumentParser cmd_admix("admix", VERSION);
     cmd_admix.add_parents(program);
     cmd_admix.add_description("run admixture with cluster likelihoods as input");
     cmd_admix.add_argument("-a", "--no-accel")
@@ -111,7 +116,7 @@ int main(int argc, char * argv[])
         .default_value(999)
         .scan<'i', int>();
 
-    argparse::ArgumentParser cmd_convert("convert", VERSION, argparse::default_arguments::help);
+    argparse::ArgumentParser cmd_convert("convert", VERSION);
     cmd_convert.add_parents(program);
     cmd_convert.add_description("different file format converter");
     cmd_convert.add_argument("input")
@@ -132,7 +137,7 @@ int main(int argc, char * argv[])
         .default_value(10000)
         .scan<'i', int>();
 
-    argparse::ArgumentParser cmd_parse("parse", VERSION, argparse::default_arguments::help);
+    argparse::ArgumentParser cmd_parse("parse", VERSION);
     cmd_parse.add_parents(program);
     cmd_parse.add_description("manipulate pars.bin file outputted by impute command");
     cmd_parse.add_argument("-b", "--bin")
@@ -167,6 +172,7 @@ int main(int argc, char * argv[])
             opts.in_vcf.assign(cmd_impute.get("--vcf"));
             opts.out.assign(cmd_impute.get("--out"));
             opts.C = cmd_impute.get<int>("--cluster");
+            opts.gridsize = cmd_impute.get<int>("--grid-size");
             opts.nthreads = cmd_impute.get<int>("--threads");
             opts.nimpute = cmd_impute.get<int>("--iterations");
             opts.seed = cmd_impute.get<int>("--seed");
@@ -175,7 +181,8 @@ int main(int argc, char * argv[])
             opts.noscreen = cmd_impute.get<bool>("--no-print");
             opts.debug = cmd_impute.get<bool>("--debug");
             if(opts.single_chunk) opts.chunksize = INT_MAX;
-            if(opts.in_beagle.empty() && opts.in_vcf.empty()) cao.error(cmd_impute.help().str());
+            if(opts.in_beagle.empty() && opts.in_vcf.empty())
+                throw std::runtime_error(cmd_impute.help().str());
             run_impute_main(opts);
         }
         else if(program.is_subcommand_used(cmd_admix))
@@ -191,7 +198,7 @@ int main(int argc, char * argv[])
             opts.noaccel = cmd_admix.get<bool>("--no-accel");
             opts.noscreen = cmd_admix.get<bool>("--no-print");
             opts.debug = cmd_admix.get<bool>("--debug");
-            if(opts.in_bin.empty()) cao.error(cmd_admix.help().str());
+            if(opts.in_bin.empty()) throw std::runtime_error(cmd_admix.help().str());
             run_admix_main(opts);
         }
         else if(program.is_subcommand_used(cmd_parse))
@@ -200,7 +207,7 @@ int main(int argc, char * argv[])
             opts.out.assign(cmd_parse.get("--out"));
             opts.samples = cmd_parse.get("--samples");
             opts.ichunk = cmd_parse.get<int>("--chunk");
-            if(opts.in_bin.empty()) cao.error(cmd_parse.help().str());
+            if(opts.in_bin.empty()) throw std::runtime_error(cmd_parse.help().str());
             run_parse_main(opts);
         }
         else if(program.is_subcommand_used(cmd_convert))
@@ -212,7 +219,7 @@ int main(int argc, char * argv[])
             if(cmd_convert.get<bool>("--plink2beagle"))
                 run_convert_main(opts);
             else
-                cao.error(cmd_convert.help().str());
+                throw std::runtime_error(cmd_convert.help().str());
         }
         else
         {
@@ -220,10 +227,9 @@ int main(int argc, char * argv[])
             std::exit(1);
         }
     }
-    catch(const std::runtime_error & err)
+    catch(const std::exception & err)
     {
         std::cerr << err.what() << std::endl;
-        std::cerr << program;
         std::exit(1);
     }
 
