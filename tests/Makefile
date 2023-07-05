@@ -8,9 +8,13 @@ INC      = -I. -I../src -I../external -I$(HTSINC)
 LDFLAGS  =  -L$(HTSLIB) -Wl,-rpath,$(HTSLIB)
 LIBS     = -lhts -lz -lm -lbz2 -llzma -lcurl -lpthread
 
-OBJS = test-main.o test-cli.o test-io.o test-phaseless.o test-fastphase.o test-forward-backward.o
+OBJS = test-main.o test-cli.o test-io.o test-phaseless.o test-fastphase.o \
+		test-forward-backward.o \
+		test-collapse.o
 
-BINS = test-cli.bin test-io.bin test-phaseless.bin test-fastphase.bin test-forward-backward.bin
+BINS = test-cli.bin test-io.bin test-phaseless.bin test-fastphase.bin \
+		test-forward-backward.bin \
+		test-collapse.bin
 
 .PHONY: all test clean
 

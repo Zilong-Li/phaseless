@@ -133,7 +133,7 @@ TEST_CASE("reconstruct alpha and beta from saved pars.bin", "[test-forward-backw
             beta.setZero(genome->C * genome->C, iM);
             Eigen::Map<const MyArr2D> gli(genome->gls[ic].data() + ind * iM * 3, iM, 3);
             MyArr2D emit = get_emission_by_gl(gli, faith.F).transpose(); // C2 x M
-            forward_backwards_diploid(alpha, beta, emit, faith.R, faith.F, faith.PI);
+            forward_backwards_diploid(alpha, beta, emit, faith.R, faith.PI);
             alpha *= beta;
             REQUIRE(((alpha.colwise().sum() - 1.0).abs() < 1e-5).all());
         }
@@ -181,7 +181,7 @@ TEST_CASE("compare optmized fbd to native fbd", "[test-forward-backward]")
         beta1.setZero(genome->C * genome->C, iM);
         Eigen::Map<const MyArr2D> gli(genome->gls[ic].data() + ind * iM * 3, iM, 3);
         MyArr2D emit = get_emission_by_gl(gli, faith.F).transpose(); // C2 x M
-        forward_backwards_diploid(alpha1, beta1, emit, faith.R, faith.F, faith.PI);
+        forward_backwards_diploid(alpha1, beta1, emit, faith.R, faith.PI);
         alpha1 *= beta1;
         alpha1.rowwise() /= alpha1.colwise().sum();
         alpha2.setZero(genome->C * genome->C, iM);

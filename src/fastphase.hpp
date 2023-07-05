@@ -9,7 +9,6 @@
 #include "common.hpp"
 #include <cmath>
 #include <mutex>
-#include <stdexcept>
 
 class FastPhaseK2
 {
@@ -21,9 +20,9 @@ class FastPhaseK2
     ~FastPhaseK2();
 
     // BOUNDING
-    double minRate{0.1}, maxRate{100};
-    double clusterFreqThreshold = 1e-4; // Ezj
-    double alleleEmitThreshold = 1e-4;
+    double minRate{0.1}, maxRate{100}; // threshold for R
+    double clusterFreqThreshold{1e-4}; // threshold for PI
+    double alleleEmitThreshold{1e-4}; // threshold for F
     double nGen, Ne;
 
     // FLAGS
@@ -38,7 +37,7 @@ class FastPhaseK2
     MyArr2D R; // 3 x M, jumping / recombination rate
     MyArr2D Ezj; // C x M, E(Z=z,J=1|X,par), expectation of switch into state k
     MyArr2D Ezg1, Ezg2; // C x M
-    Int1D pos_dist; // physical position distance between two markers
+    Int1D dist; // physical position distance between two markers
     MyArr1D AF;
 
     void initIteration();
@@ -57,11 +56,11 @@ inline FastPhaseK2::FastPhaseK2(const Int1D & pos, int n, int c, int seed)
                                                            1 - alleleEmitThreshold);
     PI = MyArr2D::Ones(C, M);
     PI.rowwise() /= PI.colwise().sum(); // normalize it per site
+    GP.setZero(M * 3, N);
     Ne = 20000; // for human
     nGen = 4 * Ne / C;
-    pos_dist = calc_position_distance(pos);
-    R = calc_transRate_diploid(pos_dist, nGen);
-    GP.setZero(M * 3, N);
+    dist = calc_position_distance(pos);
+    R = calc_transRate_diploid(dist, nGen);
 }
 
 inline FastPhaseK2::~FastPhaseK2() {}
@@ -84,8 +83,8 @@ inline void FastPhaseK2::updateIteration()
     // x2 <- exp(-nGen * maxRate * dl/100/1000000) # upper
     for(int i = 0; i < er.size(); i++)
     {
-        double miner = std::exp(-nGen * maxRate * pos_dist[i] / 1e8);
-        double maxer = std::exp(-nGen * minRate * pos_dist[i] / 1e8);
+        double miner = std::exp(-nGen * maxRate * dist[i] / 1e8);
+        double maxer = std::exp(-nGen * minRate * dist[i] / 1e8);
         er(i) = er(i) < miner ? miner : er(i);
         er(i) = er(i) > maxer ? maxer : er(i);
     }
@@ -171,7 +170,7 @@ inline double FastPhaseK2::forwardAndBackwardsLowRam(int ind, const MyFloat1D & 
     Eigen::Map<const MyArr2D> gli(GL.data() + ind * M * 3, M, 3);
     MyArr2D alpha(C2, M), beta(C2, M);
     const MyArr2D emit = get_emission_by_gl(gli, F).transpose(); // C2 x M
-    const MyArr1D cs = forward_backwards_diploid(alpha, beta, emit, R, F, PI);
+    const MyArr1D cs = forward_backwards_diploid(alpha, beta, emit, R, PI);
     if(debug && !((1 - ((alpha * beta).colwise().sum())).abs() < 1e-4).all())
         cao.error((alpha * beta).colwise().sum() / cs.transpose(), "\ngamma sum is not 1.0!\n");
     const MyArr1D ind_gamma_one = alpha.col(0) * beta.col(0); //  gamma in first snp
@@ -253,8 +252,7 @@ inline double FastPhaseK2::forwardAndBackwardsLowRam(int ind, const MyFloat1D & 
         }
     }
 
-    // return (1 / cs).log().sum();
-    return log((1 / cs).sum());
+    return (1 / cs).log().sum();
 }
 
 /*
@@ -268,7 +266,7 @@ inline auto FastPhaseK2::forwardAndBackwardsHighRam(int ind, const MyFloat1D & G
     Eigen::Map<const MyArr2D> gli(GL.data() + ind * M * 3, M, 3);
     MyArr2D alpha(C2, M), beta(C2, M);
     MyArr2D emit = get_emission_by_gl(gli, F).transpose(); // C2 x M
-    auto cs = forward_backwards_diploid(alpha, beta, emit, R, F, PI);
+    auto cs = forward_backwards_diploid(alpha, beta, emit, R, PI);
     if(debug && !((1 - ((alpha * beta).colwise().sum())).abs() < 1e-4).all())
         cao.error((alpha * beta).colwise().sum() / cs.transpose(), "\ngamma sum is not 1.0!\n");
     const MyArr1D ind_gamma_one = alpha.col(0) * beta.col(0); //  gamma in first snp

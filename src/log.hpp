@@ -70,6 +70,14 @@ class Logger
         }
     }
 
+    // only print to stderr
+    template<typename... Args>
+    void cerr(const Args &... args)
+    {
+        (..., printSpace(std::cerr, args));
+        std::cerr << std::endl;
+    }
+
     template<typename... Args>
     void warn(const Args &... args)
     {

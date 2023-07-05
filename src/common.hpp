@@ -49,7 +49,7 @@ using Arr2D = Eigen::Array<double, Eigen::Dynamic, Eigen::Dynamic, Eigen::ColMaj
 using Arr1D = Eigen::Array<double, Eigen::Dynamic, 1, Eigen::ColMajor>;
 
 // MY TYPES
-using MyFloat = float; // use float if no accuracy drops
+using MyFloat = double; // use float if no accuracy drops
 using MyFloat1D = std::vector<MyFloat>;
 using MyFloat2D = std::vector<MyFloat1D>;
 using MyMat2D = Eigen::Matrix<MyFloat, Eigen::Dynamic, Eigen::Dynamic, Eigen::ColMajor>;
@@ -73,6 +73,7 @@ inline MatrixType RandomUniform(const Eigen::Index numRows,
 struct Options
 {
     int ichunk{0}, chunksize{10000}, K{2}, C{10}, nadmix{1000}, nimpute{40}, nthreads{1}, seed{999};
+    int gridsize{0};
     double ltol{1e-1}, qtol{1e-6}, info{0};
     bool noaccel{0}, noscreen{0}, single_chunk{0}, debug{0};
     std::filesystem::path out, in_beagle, in_vcf, in_bin;
@@ -161,19 +162,17 @@ inline auto get_emission_by_gl(const MyArr2D & gli, const MyArr2D & F, double mi
 ** @param beta     backwards probability (C2,M)
 ** @param E        emission probability with individual genotype likelihood,(C2,M)
 ** @param R        transition probability (3,M)
-** @param F        transition probability (C,M)
-** @param PI       transition probability (C,M)
+** @param PI       cluster frequency (C,M)
 ** @return individual log likelihood
 */
 inline auto forward_backwards_diploid(MyArr2D & alpha,
                                       MyArr2D & beta,
                                       const MyArr2D & E,
                                       const MyArr2D & R,
-                                      const MyArr2D & F,
                                       const MyArr2D & PI)
 {
     const int M = alpha.cols();
-    const int C = F.cols();
+    const int C = PI.rows();
     MyArr1D sumTmp1(C), cs(M); // store sum over internal loop
     double constTmp;
     // ======== forward recursion ===========

@@ -24,20 +24,6 @@ inline auto make_input_per_chunk(const std::unique_ptr<BigAss> & genome,
                       faith.F);
 }
 
-// inline void filter_input_per_chunk(filesystem::path out,
-//                                    const std::unique_ptr<BigAss> & genome,
-//                                    const int ic,
-//                                    const int niters,
-//                                    const int seed,
-//                                    const double info)
-// {
-//     FastPhaseK2 faith(genome->nsamples, genome->pos[ic].size(), genome->C, seed);
-//     auto transRate = calc_transRate(genome->pos[ic], genome->C);
-//     faith.runWithOneThread(niters, genome->gls[ic], transRate);
-//     auto idx2rm = filter_sites_per_chunk(faith.GP.data(), info, genome->nsamples, genome->pos[ic].size());
-//     thin_bigass_per_chunk(ic, idx2rm, genome);
-// }
-
 inline int run_impute_main(Options & opts)
 {
     cao.cao.open(opts.out.string() + ".log");
@@ -102,7 +88,7 @@ inline int run_impute_main(Options & opts)
             genome->transRate.emplace_back(MyFloat1D(faith.R.data(), faith.R.data() + faith.R.size()));
             genome->PI.emplace_back(MyFloat1D(faith.PI.data(), faith.PI.data() + faith.PI.size()));
             genome->F.emplace_back(MyFloat1D(faith.F.data(), faith.F.data() + faith.F.size()));
-            orecomb << faith.R.format(fmt) << "\n";
+            orecomb << faith.R.transpose().format(fmt) << "\n";
             opi << faith.PI.transpose().format(fmt) << "\n";
             cao.done(tim.date(), "chunk", ic, " done. outputting elapsed", tim.reltime(), " secs");
         }
@@ -123,7 +109,7 @@ inline int run_impute_main(Options & opts)
             genome->transRate.emplace_back(MyFloat1D(faithR.data(), faithR.data() + faithR.size()));
             genome->PI.emplace_back(MyFloat1D(faithPI.data(), faithPI.data() + faithPI.size()));
             genome->F.emplace_back(MyFloat1D(faithF.data(), faithF.data() + faithF.size()));
-            orecomb << faithR.format(fmt) << "\n";
+            orecomb << faithR.transpose().format(fmt) << "\n";
             opi << faithPI.transpose().format(fmt) << "\n";
             cao.print(tim.date(), "chunk", ic++, " imputation done and outputting");
         }
