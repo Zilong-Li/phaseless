@@ -1,9 +1,6 @@
-#include "common.hpp"
 #include "fastphase.hpp"
 #include "io.hpp"
-#include "log.hpp"
 #include "threadpool.hpp"
-#include "timer.hpp"
 #include <alpaca/alpaca.h>
 
 using namespace std;
@@ -37,13 +34,7 @@ inline int run_impute_main(Options & opts)
     ThreadPool poolit(opts.nthreads);
 
     std::unique_ptr<BigAss> genome = std::make_unique<BigAss>();
-    genome->chunksize = opts.chunksize, genome->C = opts.C, genome->B = opts.gridsize;
-    tim.clock();
-    chunk_beagle_genotype_likelihoods(genome, opts.in_beagle);
-    cao.print(tim.date(), "parsing input -> C =", genome->C, ", N =", genome->nsamples,
-              ", M =", genome->nsnps, ", nchunks =", genome->nchunks, ", B =", opts.gridsize,
-              ", seed =", opts.seed);
-    cao.done(tim.date(), "elapsed time for parsing beagle file", std::fixed, tim.reltime(), " secs");
+    init_bigass(genome, opts);
     auto bw = make_bcfwriter(opts.out.string() + ".vcf.gz", genome->chrs, genome->sampleids);
     std::ofstream orecomb(opts.out.string() + ".recomb");
     std::ofstream opi(opts.out.string() + ".pi");

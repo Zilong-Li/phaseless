@@ -1,8 +1,6 @@
 #include "admixture.hpp"
 #include "io.hpp"
-#include "log.hpp"
 #include "threadpool.hpp"
-#include "timer.hpp"
 #include <alpaca/alpaca.h>
 
 using namespace std;
@@ -52,12 +50,11 @@ inline int run_admix_main(Options & opts)
     assert((bool)ec == false);
     cao.done(tim.date(), filesize, " bytes deserialized from file. skip imputation, ec", ec);
     cao.print(tim.date(), "parsing input -> C =", genome->C, ", N =", genome->nsamples,
-              ", M =", genome->nsnps, ", nchunks =", genome->nchunks);
+              ", M =", genome->nsnps, ", nchunks =", genome->nchunks, ", B =", genome->B, ", G =", genome->G);
     assert(opts.K < genome->C);
 
     cao.warn(tim.date(), "-> running admixture with seed =", opts.seed);
-    int nGrids = get_total_grids(genome);
-    Admixture admixer(genome->nsamples, nGrids, genome->C, opts.K, opts.seed);
+    Admixture admixer(genome->nsamples, genome->G, genome->C, opts.K, opts.seed);
     vector<future<double>> llike;
     if(!opts.noaccel)
     {

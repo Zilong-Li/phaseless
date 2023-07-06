@@ -52,8 +52,7 @@ inline int run_parse_main(Options & opts)
     MyArr2D alpha, beta;
     if(ic < 0)
     {
-        int nGrids = get_total_grids(genome);
-        ofs.write((char *)&nGrids, 4);
+        ofs.write((char *)&genome->G, 4);
         for(auto ind : ids)
         {
             for(ic = 0; ic < genome->nchunks; ic++)
@@ -65,7 +64,7 @@ inline int run_parse_main(Options & opts)
                 get_cluster_likelihood(ind, iM, alpha, beta, genome->gls[ic], genome->R[ic], genome->PI[ic],
                                        genome->F[ic]);
                 alpha *= beta;
-                if(!((1 - alpha.colwise().sum()).abs() < 1e-4).all()) cao.error("gamma sum is not 1.0!\n");
+                if(!((1 - alpha.colwise().sum()).abs() < 1e-6).all()) cao.error("gamma sum is not 1.0!\n");
                 ofs.write((char *)alpha.data(), genome->C * genome->C * nGrids * sizeof(MyFloat));
             }
         }
@@ -82,7 +81,7 @@ inline int run_parse_main(Options & opts)
             get_cluster_likelihood(ind, iM, alpha, beta, genome->gls[ic], genome->R[ic], genome->PI[ic],
                                    genome->F[ic]);
             alpha *= beta;
-            if(!((1 - alpha.colwise().sum()).abs() < 1e-4).all()) cao.error("gamma sum is not 1.0!\n");
+            if(!((1 - alpha.colwise().sum()).abs() < 1e-6).all()) cao.error("gamma sum is not 1.0!\n");
             ofs.write((char *)alpha.data(), genome->C * genome->C * nGrids * sizeof(MyFloat));
         }
     }

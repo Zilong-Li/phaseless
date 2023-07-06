@@ -23,7 +23,10 @@ inline auto make_bcfwriter(std::string vcfout, const String1D & chrs, const Stri
     return bw;
 }
 
-inline void write_bigass_to_bcf(vcfpp::BcfWriter & bw, const MyFloat * GP, std::string chr, const Int1D & markers)
+inline void write_bigass_to_bcf(vcfpp::BcfWriter & bw,
+                                const MyFloat * GP,
+                                std::string chr,
+                                const Int1D & markers)
 {
     int M = markers.size();
     int N = bw.header.nSamples();
@@ -319,7 +322,8 @@ inline void read_beagle_genotype_likelihoods(const std::string & beagle,
     }
 }
 
-inline void chunk_beagle_genotype_likelihoods(const std::unique_ptr<BigAss> & genome, const std::string & beagle)
+inline void chunk_beagle_genotype_likelihoods(const std::unique_ptr<BigAss> & genome,
+                                              const std::string & beagle)
 {
     // VARIBLES
     gzFile fp = nullptr;
@@ -526,7 +530,8 @@ inline auto read_plink_bed(std::ifstream & ifs_bed,
     while(i < nsnps && getline(ifs_bim, line))
     {
         std::stringstream ss(line);
-        std::vector<std::string> token(std::istream_iterator<std::string>{ss}, std::istream_iterator<std::string>{});
+        std::vector<std::string> token(std::istream_iterator<std::string>{ss},
+                                       std::istream_iterator<std::string>{});
         marker.push_back(token[0] + "_" + token[3] + "\t" + token[4] + "\t" + token[5]);
         i++;
     }
@@ -537,7 +542,9 @@ inline auto read_plink_bed(std::ifstream & ifs_bed,
     return std::tuple(bed, marker);
 }
 
-inline auto convert_geno2like(std::vector<uint8_t> bed, std::vector<std::string> marker, const uint64_t nsamples)
+inline auto convert_geno2like(std::vector<uint8_t> bed,
+                              std::vector<std::string> marker,
+                              const uint64_t nsamples)
 {
     uint64_t bed_bytes_per_snp = (nsamples + 3) >> 2; // get ceiling(nsamples/4)
     std::string res;
@@ -576,6 +583,27 @@ inline auto convert_geno2like(std::vector<uint8_t> bed, std::vector<std::string>
         res += gl;
     }
     return res;
+}
+
+inline void init_bigass(const std::unique_ptr<BigAss> & genome, const Options & opts)
+{
+    genome->chunksize = opts.chunksize, genome->C = opts.C, genome->B = opts.gridsize;
+    tim.clock();
+    chunk_beagle_genotype_likelihoods(genome, opts.in_beagle);
+    int G{0};
+    for(int ic = 0; ic < genome->nchunks; ic++)
+    {
+        int nsnps = genome->pos[ic].size();
+        int nGrids = genome->B > 1 ? (nsnps + genome->B - 1) / genome->B : nsnps;
+        G += nGrids;
+    }
+    genome->G = G;
+    if(genome->B == 1 && genome->G != genome->nsnps)
+        cao.error("number of grids should be same as snps if B=1");
+    cao.print(tim.date(), "parsing input -> C =", genome->C, ", N =", genome->nsamples,
+              ", M =", genome->nsnps, ", nchunks =", genome->nchunks, ", B =", opts.gridsize,
+              ", seed =", opts.seed);
+    cao.done(tim.date(), "elapsed time for parsing beagle file", std::fixed, tim.reltime(), " secs");
 }
 
 #endif // PHASELESS_IO_H_

@@ -84,7 +84,8 @@ struct Options
 // all the genome info I need from fastphase
 struct BigAss
 {
-    int chunksize, nsamples, nsnps, nchunks, C, B; // number of clusters, snps in a grid
+    int chunksize, nsamples, nsnps, nchunks;
+    int B, G, C; // B: snps in a grid; G: total number of grids in a genome
     MyFloat2D PI, F, R; // M x C, 3 x M, fastphase pars
     Int1D ends; // chunk index where each chromo ends
     String1D sampleids, chrs;
@@ -549,18 +550,6 @@ inline auto collapse_emission_by_grid(const MyArr2D & E, int B, int G, double mi
     }
 
     return EG;
-}
-
-inline int get_total_grids(const std::unique_ptr<BigAss> & genome)
-{
-    int G{0};
-    for(int ic = 0; ic < genome->nchunks; ic++)
-    {
-        int nsnps = genome->pos[ic].size();
-        int nGrids = genome->B > 1 ? (nsnps + genome->B - 1) / genome->B : nsnps;
-        G += nGrids;
-    }
-    return G;
 }
 
 #endif // COMMON_H_
