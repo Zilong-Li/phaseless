@@ -1,5 +1,8 @@
 #+title: News and Changes
 
+* v0.2.2
+- add =B= option for collapsing. currently only works with =-S= option
+- switch =float= to =double= type for testing accuracy
 * v0.2.1
 - fix stupid cli
 * v0.2.0
