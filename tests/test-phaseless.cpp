@@ -18,7 +18,8 @@ auto make_input_per_chunk(filesystem::path outdir,
                           const int niters,
                           const int seed)
 {
-    FastPhaseK2 faith(genome->pos[ic], genome->nsamples, genome->C, seed);
+    FastPhaseK2 faith(genome->pos[ic].size(), genome->nsamples, genome->C, seed);
+    faith.initRecombination(genome->pos[ic]);
     faith.AF = estimate_af_by_gl(genome->gls[ic], genome->nsamples, genome->pos[ic].size()).cast<MyFloat>();
     faith.runWithOneThread(niters, genome->gls[ic]);
     write_bcf_genotype_probability(faith.GP.data(), genome->chrs[ic], genome->pos[ic], genome->sampleids,
@@ -40,7 +41,6 @@ TEST_CASE("phaseless naive vs dump dataset 1", "[test-phaseless]")
     filesystem::create_directories(outdir);
     for(int ic = 0; ic < genome->nchunks; ic++)
     {
-        FastPhaseK2 faith(genome->pos[ic], genome->nsamples, C, seed);
         res.emplace_back(poolit.enqueue(make_input_per_chunk, outdir, std::ref(genome), ic, nphase, seed));
     }
     for(auto && ll : res)
@@ -48,7 +48,7 @@ TEST_CASE("phaseless naive vs dump dataset 1", "[test-phaseless]")
         const auto [PI, F, transRate] = ll.get();
         genome->PI.emplace_back(PI);
         genome->F.emplace_back(F);
-        genome->transRate.emplace_back(transRate);
+        genome->R.emplace_back(transRate);
     }
     res.clear(); // clear future and renew
     double llike1, llike2;
@@ -82,7 +82,6 @@ TEST_CASE("phaseless naive vs dump dataset 2", "[test-phaseless]")
     filesystem::create_directories(outdir);
     for(int ic = 0; ic < genome->nchunks; ic++)
     {
-        FastPhaseK2 faith(genome->pos[ic], genome->nsamples, C, seed);
         res.emplace_back(poolit.enqueue(make_input_per_chunk, outdir, std::ref(genome), ic, nphase, seed));
     }
     for(auto && ll : res)
@@ -90,7 +89,7 @@ TEST_CASE("phaseless naive vs dump dataset 2", "[test-phaseless]")
         const auto [PI, F, transRate] = ll.get();
         genome->PI.emplace_back(PI);
         genome->F.emplace_back(F);
-        genome->transRate.emplace_back(transRate);
+        genome->R.emplace_back(transRate);
     }
     res.clear(); // clear future and renew
     double llike1, llike2;
@@ -124,7 +123,6 @@ TEST_CASE("phaseless normal iteration with make_input_per_chunk", "[test-phasele
     filesystem::create_directories(outdir);
     for(int ic = 0; ic < genome->nchunks; ic++)
     {
-        FastPhaseK2 faith(genome->pos[ic], genome->nsamples, C, seed);
         res.emplace_back(poolit.enqueue(make_input_per_chunk, outdir, std::ref(genome), ic, nphase, seed));
     }
     for(auto && ll : res)
@@ -132,7 +130,7 @@ TEST_CASE("phaseless normal iteration with make_input_per_chunk", "[test-phasele
         const auto [PI, F, transRate] = ll.get();
         genome->PI.emplace_back(PI);
         genome->F.emplace_back(F);
-        genome->transRate.emplace_back(transRate);
+        genome->R.emplace_back(transRate);
     }
     res.clear(); // clear future and renew
     Admixture admixer(genome->nsamples, genome->nsnps, genome->C, K, seed);

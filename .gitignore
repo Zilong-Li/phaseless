@@ -25,7 +25,6 @@ compile_commands.json
 *.log
 .*
 !/.gitignore
-test*
 data
 misc
 impute.*
