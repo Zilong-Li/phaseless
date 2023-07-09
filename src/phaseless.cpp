@@ -3,20 +3,18 @@
  * @author      Zilong Li
  * Copyright (C) 2023. The use of this code is governed by the LICENSE file.
  ******************************************************************************/
-#include <exception>
 #define _DECLARE_TOOLBOX_HERE
 
-#include "admix.cpp"
-#include "convert.cpp"
-#include "impute.cpp"
-#include "parse.cpp"
+#include "admixture.hpp"
+#include "fastphase.hpp"
+#include "utils.hpp"
 #include <argparse/argparse.hpp>
 
 int main(int argc, char * argv[])
 {
     // ========= helper message and parameters parsing ===========================
 
-    const std::string VERSION{"0.2.2"};
+    const std::string VERSION{"0.2.3"};
 
     // clang-format off
     argparse::ArgumentParser program("phaseless", VERSION);
