@@ -2,6 +2,7 @@
 
 * v0.2.3
 - fix input for admixture
+- add new collapsing strategy
 * v0.2.2
 - add =B= option for collapsing. currently only works with =-S= option
 - switch =float= to =double= type for testing accuracy

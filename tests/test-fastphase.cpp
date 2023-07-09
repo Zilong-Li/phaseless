@@ -9,9 +9,9 @@
 using namespace std;
 using namespace Eigen;
 
-TEST_CASE("fastphasek2 forwardAndBackwardsLowRam", "[test-fastphasek2]")
+TEST_CASE("fastphasek2 forwardAndBackwardsLowRamNormal", "[test-fastphasek2]")
 {
-    int C{5}, seed{1}, chunksize{10000}, niters{40};
+    int C{10}, seed{1}, chunksize{10000}, niters{40};
     std::unique_ptr<BigAss> genome = std::make_unique<BigAss>();
     genome->chunksize = chunksize, genome->C = C;
     chunk_beagle_genotype_likelihoods(genome, "../data/bgl.gz");
@@ -43,9 +43,9 @@ TEST_CASE("fastphasek2 forwardAndBackwardsLowRam", "[test-fastphasek2]")
     }
 }
 
-TEST_CASE("fastphasek2 forwardAndBackwardsHighRam", "[test-fastphasek2]")
+TEST_CASE("fastphasek2 forwardAndBackwardsLowRamCollapse", "[test-fastphasek2]")
 {
-    int C{5}, seed{1}, chunksize{10000}, niters{40};
+    int C{10}, seed{999}, chunksize{10000}, niters{40};
     std::unique_ptr<BigAss> genome = std::make_unique<BigAss>();
     genome->chunksize = chunksize, genome->C = C;
     chunk_beagle_genotype_likelihoods(genome, "../data/bgl.gz");
@@ -54,10 +54,65 @@ TEST_CASE("fastphasek2 forwardAndBackwardsHighRam", "[test-fastphasek2]")
     faith.initRecombination(genome->pos[ic]);
     faith.AF = estimate_af_by_gl(genome->gls[ic], genome->nsamples, genome->pos[ic].size()).cast<MyFloat>();
     ThreadPool poolit(4);
-    using pars1 = std::tuple<double, MyArr2D, MyArr2D, MyArr2D, MyArr1D>;
-    vector<future<pars1>> llike;
+    vector<future<double>> llike;
     double prevlike{std::numeric_limits<double>::lowest()}, loglike;
-    for(int it = 0; it < niters + 1; it++)
+    for(int it = 0; it <= niters; it++)
+    {
+        faith.initIteration();
+        for(int i = 0; i < genome->nsamples; i++)
+        {
+            if(it == niters)
+                llike.emplace_back(poolit.enqueue(&FastPhaseK2::forwardAndBackwardsLowRam, &faith, i,
+                                                  std::ref(genome->gls[ic]), true));
+            else
+                llike.emplace_back(poolit.enqueue(&FastPhaseK2::forwardAndBackwardsLowRam, &faith, i,
+                                                  std::ref(genome->gls[ic]), false));
+        }
+        loglike = 0;
+        for(auto && ll : llike) loglike += ll.get();
+        llike.clear(); // clear future and renew
+        // REQUIRE(loglike > prevlike);
+        prevlike = loglike;
+        if(it != niters) faith.updateIteration();
+    }
+    // start collapsing
+    faith.collapse_and_resize(genome->pos[ic]);
+    prevlike = std::numeric_limits<double>::lowest();
+    for(int it = 0; it <= 10; it++)
+    {
+        faith.initIteration();
+        for(int i = 0; i < genome->nsamples; i++)
+        {
+            if(it == niters)
+                llike.emplace_back(poolit.enqueue(&FastPhaseK2::forwardAndBackwardsLowRam, &faith, i,
+                                                  std::ref(genome->gls[ic]), true));
+            else
+                llike.emplace_back(poolit.enqueue(&FastPhaseK2::forwardAndBackwardsLowRam, &faith, i,
+                                                  std::ref(genome->gls[ic]), false));
+        }
+        loglike = 0;
+        for(auto && ll : llike) loglike += ll.get();
+        llike.clear(); // clear future and renew
+        REQUIRE(loglike > prevlike);
+        prevlike = loglike;
+        if(it != niters) faith.updateIteration();
+    }
+}
+
+TEST_CASE("fastphasek2 forwardAndBackwardsHighRamNormal", "[test-fastphasek2]")
+{
+    int C{10}, seed{1}, chunksize{10000}, niters{40};
+    std::unique_ptr<BigAss> genome = std::make_unique<BigAss>();
+    genome->chunksize = chunksize, genome->C = C;
+    chunk_beagle_genotype_likelihoods(genome, "../data/bgl.gz");
+    int ic = 0;
+    FastPhaseK2 faith(genome->pos[ic].size(), genome->nsamples, genome->C, seed);
+    faith.initRecombination(genome->pos[ic]);
+    faith.AF = estimate_af_by_gl(genome->gls[ic], genome->nsamples, genome->pos[ic].size()).cast<MyFloat>();
+    ThreadPool poolit(4);
+    vector<future<fbd_res1>> llike;
+    double prevlike{std::numeric_limits<double>::lowest()}, loglike;
+    for(int it = 0; it <= niters; it++)
     {
         faith.initIteration();
         for(int i = 0; i < genome->nsamples; i++)
@@ -83,6 +138,78 @@ TEST_CASE("fastphasek2 forwardAndBackwardsHighRam", "[test-fastphasek2]")
         REQUIRE(loglike > prevlike);
         faith.updateIteration();
         prevlike = loglike;
+    }
+}
+
+TEST_CASE("fastphasek2 forwardAndBackwardsHighRamCollapse", "[test-fastphasek2]")
+{
+    int C{10}, seed{999}, chunksize{10000}, niters{40};
+    std::unique_ptr<BigAss> genome = std::make_unique<BigAss>();
+    genome->chunksize = chunksize, genome->C = C;
+    chunk_beagle_genotype_likelihoods(genome, "../data/bgl.gz");
+    int ic = 0;
+    FastPhaseK2 faith(genome->pos[ic].size(), genome->nsamples, genome->C, seed);
+    faith.initRecombination(genome->pos[ic]);
+    faith.AF = estimate_af_by_gl(genome->gls[ic], genome->nsamples, genome->pos[ic].size()).cast<MyFloat>();
+    ThreadPool poolit(4);
+    vector<future<fbd_res1>> llike;
+    double prevlike{std::numeric_limits<double>::lowest()}, loglike;
+    for(int it = 0; it <= niters; it++)
+    {
+        faith.initIteration();
+        for(int i = 0; i < genome->nsamples; i++)
+        {
+            if(it == niters)
+                llike.emplace_back(poolit.enqueue(&FastPhaseK2::forwardAndBackwardsHighRam, &faith, i,
+                                                  std::ref(genome->gls[ic]), true));
+            else
+                llike.emplace_back(poolit.enqueue(&FastPhaseK2::forwardAndBackwardsHighRam, &faith, i,
+                                                  std::ref(genome->gls[ic]), false));
+        }
+        loglike = 0;
+        for(auto && ll : llike)
+        {
+            const auto [l, zj, zg1, zg2, gamma1] = ll.get();
+            loglike += l;
+            faith.Ezj += zj;
+            faith.Ezg1 += zg1;
+            faith.Ezg2 += zg2;
+            faith.pi += gamma1;
+        }
+        llike.clear(); // clear future and renew
+        // REQUIRE(loglike > prevlike);
+        if(it != niters) faith.updateIteration();
+        prevlike = loglike;
+    }
+    // start collapsing
+    faith.collapse_and_resize(genome->pos[ic]);
+    prevlike = std::numeric_limits<double>::lowest();
+    for(int it = 0; it <= 10; it++)
+    {
+        faith.initIteration();
+        for(int i = 0; i < genome->nsamples; i++)
+        {
+            if(it == niters)
+                llike.emplace_back(poolit.enqueue(&FastPhaseK2::forwardAndBackwardsHighRam, &faith, i,
+                                                  std::ref(genome->gls[ic]), true));
+            else
+                llike.emplace_back(poolit.enqueue(&FastPhaseK2::forwardAndBackwardsHighRam, &faith, i,
+                                                  std::ref(genome->gls[ic]), false));
+        }
+        loglike = 0;
+        for(auto && ll : llike)
+        {
+            const auto [l, zj, zg1, zg2, gamma1] = ll.get();
+            loglike += l;
+            faith.Ezj += zj;
+            faith.Ezg1 += zg1;
+            faith.Ezg2 += zg2;
+            faith.pi += gamma1;
+        }
+        llike.clear(); // clear future and renew
+        REQUIRE(loglike > prevlike);
+        prevlike = loglike;
+        if(it != niters) faith.updateIteration();
     }
 }
 

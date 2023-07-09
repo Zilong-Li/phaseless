@@ -32,6 +32,10 @@ int main(int argc, char * argv[])
         .help("number of ancestral haplotype clusters")
         .default_value(10)
         .scan<'i', int>();
+    cmd_impute.add_argument("-C", "--collapse")
+        .help("collapse SNPs in a reasonable chunk")
+        .default_value(false)
+        .implicit_value(true);
     cmd_impute.add_argument("-B", "--grid-size")
         .help("number of SNPs (>1) in each grid. 1 disables collapsing")
         .default_value(1)
@@ -72,6 +76,14 @@ int main(int argc, char * argv[])
         .help("seed for reproducing results")
         .default_value(999)
         .scan<'i', int>();
+    cmd_impute.add_argument("--maxCoeffPI")
+        .help("max coefficient in PI to determine if a SNP should be collapsed")
+        .default_value(0.99)
+        .scan<'g', double>();
+    cmd_impute.add_argument("--minRecombRate")
+        .help("min recombination rate to determine if a SNP should be collapsed")
+        .default_value(1e-5)
+        .scan<'g', double>();
     cmd_impute.add_parents(program);
 
     argparse::ArgumentParser cmd_admix("admix", VERSION, default_arguments::help);
@@ -179,8 +191,11 @@ int main(int argc, char * argv[])
             opts.seed = cmd_impute.get<int>("--seed");
             opts.chunksize = cmd_impute.get<int>("--chunksize");
             opts.single_chunk = cmd_impute.get<bool>("--single-chunk");
+            opts.collapse = cmd_impute.get<bool>("--collapse");
             opts.noscreen = cmd_impute.get<bool>("--no-print");
             opts.debug = cmd_impute.get<bool>("--debug");
+            opts.tol_r = cmd_impute.get<double>("--minRecombRate");
+            opts.tol_pi = cmd_impute.get<double>("--maxCoeffPI");
             if(opts.single_chunk) opts.chunksize = INT_MAX;
             if((opts.in_beagle.empty() && opts.in_vcf.empty()) || cmd_impute.get<bool>("--help"))
                 throw std::runtime_error(cmd_impute.help().str());

@@ -106,19 +106,31 @@ png("hapfreq.png", unit = "in", res = 300, width = 12, height = 6)
 pi <- as.matrix(read.table("impute.pi", h = F, sep = "\t"))
 recomb <- read.table("impute.recomb")
 
-stopifnot(all.equal(dim(recomb)[1], nrow(pi)))
-nsnps <- nrow(pi)
+nsnps <- 1000
+ngrids <- nrow(pi)-nsnps
 
-par(mfrow = c(2, 1), mar = c(1, 1, 1.5, 1), oma = c(0, 0, 0, 0))
+stopifnot(all.equal(dim(recomb)[1], nrow(pi)))
+
+par(mfrow = c(4, 1), mar = c(1, 1, 1.5, 1), oma = c(0, 0, 0, 0))
 
 res <- pi[1:nsnps, ]
 barplot(t(as.matrix(res)),
   beside = F, col = colors, border = NA, space = 0,
-  main = "Cluster Frequency", axes = F
+  main = paste0("Cluster Frequency (before collapsing, M=", nsnps, ")"), axes = F
 )
 
-res <- sqrt(as.numeric(recomb[, 3]))
-plot(1, col = "transparent", axes = F, xlim = c(1, nsnps), ylim = range(res), main = "Recombination rate (1-e^-r)", xlab = "SNP Index")
+res <- pi[(nsnps+1):nrow(pi), ]
+barplot(t(as.matrix(res)),
+  beside = F, col = colors, border = NA, space = 0,
+  main = paste0("Cluster Frequency (after collapsing, M=", ngrids, ")"), axes = F
+)
+
+res <- sqrt(as.numeric(recomb[1:nsnps, 3]))
+plot(1, col = "transparent", axes = F, xlim = c(1, length(res)), ylim = range(res), main = "Recombination rate (1-e^-r)", xlab = "SNP Index")
+lines(res, type = "l", col = "red")
+
+res <- sqrt(as.numeric(recomb[(nsnps+1):nrow(recomb), 3]))
+plot(1, col = "transparent", axes = F, xlim = c(1, length(res)), ylim = range(res), main = "Recombination rate (1-e^-r)", xlab = "SNP Index")
 lines(res, type = "l", col = "red")
 
 dev.off()

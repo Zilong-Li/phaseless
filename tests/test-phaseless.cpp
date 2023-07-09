@@ -22,7 +22,8 @@ TEST_CASE("phaseless naive vs dump dataset 1", "[test-phaseless]")
     filesystem::create_directories(outdir);
     for(int ic = 0; ic < genome->nchunks; ic++)
     {
-        res.emplace_back(poolit.enqueue(make_input_per_chunk, std::ref(genome), ic, nimpute, seed));
+        res.emplace_back(
+            poolit.enqueue(make_input_per_chunk, std::ref(genome), ic, nimpute, seed, false, 0.99, 1e-5));
     }
     for(auto && ll : res)
     {
@@ -53,7 +54,7 @@ TEST_CASE("phaseless naive vs dump dataset 1", "[test-phaseless]")
 
 TEST_CASE("phaseless naive vs dump dataset 2", "[test-phaseless]")
 {
-    int K{3}, C{10}, seed{1}, nadmix{10}, chunksize{10000}, nphase{40};
+    int K{3}, C{10}, seed{1}, nadmix{10}, chunksize{10000}, nimpute{40};
     std::unique_ptr<BigAss> genome = std::make_unique<BigAss>();
     genome->chunksize = chunksize, genome->C = C;
     chunk_beagle_genotype_likelihoods(genome, "../data/all.bgl.gz");
@@ -63,7 +64,8 @@ TEST_CASE("phaseless naive vs dump dataset 2", "[test-phaseless]")
     filesystem::create_directories(outdir);
     for(int ic = 0; ic < genome->nchunks; ic++)
     {
-        res.emplace_back(poolit.enqueue(make_input_per_chunk, std::ref(genome), ic, nphase, seed));
+        res.emplace_back(
+            poolit.enqueue(make_input_per_chunk, std::ref(genome), ic, nimpute, seed, false, 0.99, 1e-5));
     }
     for(auto && ll : res)
     {
@@ -94,7 +96,7 @@ TEST_CASE("phaseless naive vs dump dataset 2", "[test-phaseless]")
 
 TEST_CASE("phaseless normal iteration with make_input_per_chunk", "[test-phaseless]")
 {
-    int K{3}, C{5}, seed{1}, nadmix{10}, chunksize{10000}, nphase{40};
+    int K{3}, C{5}, seed{1}, nadmix{10}, chunksize{10000}, nimpute{40};
     std::unique_ptr<BigAss> genome = std::make_unique<BigAss>();
     genome->chunksize = chunksize, genome->C = C;
     chunk_beagle_genotype_likelihoods(genome, "../data/bgl.gz");
@@ -104,7 +106,8 @@ TEST_CASE("phaseless normal iteration with make_input_per_chunk", "[test-phasele
     filesystem::create_directories(outdir);
     for(int ic = 0; ic < genome->nchunks; ic++)
     {
-        res.emplace_back(poolit.enqueue(make_input_per_chunk, std::ref(genome), ic, nphase, seed));
+        res.emplace_back(
+            poolit.enqueue(make_input_per_chunk, std::ref(genome), ic, nimpute, seed, false, 0.99, 1e-5));
     }
     for(auto && ll : res)
     {

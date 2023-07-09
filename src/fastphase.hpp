@@ -49,20 +49,30 @@ class FastPhaseK2
     MyArr2D Ezg1, Ezg2; // C x M
     Int1D dist; // physical position distance between two markers
     MyArr1D AF;
+    Int2D grids;
     double nGen;
 
     void initRecombination(const Int1D & pos, int B_ = 1, double Ne = 20000);
+    void collapse_and_resize(const Int1D & pos, double tol_pi = 0.99, double tol_r = 1e-5);
     void initIteration();
     void updateIteration();
+    void callGenoLoopC(int, int, int, const MyArr2D &, const MyArr1D &);
     double runWithOneThread(int, const MyFloat1D &);
     double forwardAndBackwardsLowRam(int, const MyFloat1D &, bool);
+    double forwardAndBackwardsLowRamNormal(int, const MyFloat1D &, bool);
+    double forwardAndBackwardsLowRamCollapse(int, const MyFloat1D &, bool);
     fbd_res1 forwardAndBackwardsHighRam(int, const MyFloat1D &, bool);
+    fbd_res1 forwardAndBackwardsHighRamNormal(int, const MyFloat1D &, bool);
+    fbd_res1 forwardAndBackwardsHighRamCollapse(int, const MyFloat1D &, bool);
 };
 
 fbd_res2 make_input_per_chunk(const std::unique_ptr<BigAss> & genome,
                               const int ic,
                               const int niters,
-                              const int seed);
+                              const int seed,
+                              const bool collapse = false,
+                              const double tol_pi = 0.99,
+                              const double tol_r = 1e-5);
 
 int run_impute_main(Options & opts);
 

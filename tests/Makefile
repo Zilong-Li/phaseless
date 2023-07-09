@@ -8,13 +8,9 @@ INC      = -I. -I../src -I../external -I$(HTSINC)
 LDFLAGS  =  -L$(HTSLIB) -Wl,-rpath,$(HTSLIB)
 LIBS     = -lhts -lz -lm -lbz2 -llzma -lcurl -lpthread
 
-OBJS = test-main.o test-phaseless.o test-fastphase.o \
-		test-forward-backward.o \
-		test-collapse.o
+OBJS = test-main.o test-phaseless.o test-fastphase.o test-forward-backward.o
 
-BINS = test-phaseless.bin test-fastphase.bin \
-		test-forward-backward.bin \
-		test-collapse.bin
+BINS = test-phaseless.bin test-fastphase.bin test-forward-backward.bin
 
 DEPS = ../src/fastphase.o ../src/admixture.o
 

@@ -78,8 +78,8 @@ struct Options
 {
     int ichunk{0}, chunksize{10000}, K{2}, C{10}, nadmix{1000}, nimpute{40}, nthreads{1}, seed{999};
     int gridsize{1};
-    double ltol{1e-1}, qtol{1e-6}, info{0};
-    bool noaccel{0}, noscreen{0}, single_chunk{0}, debug{0};
+    double ltol{1e-1}, qtol{1e-6}, info{0}, tol_pi{0.99}, tol_r{1e-5};
+    bool noaccel{0}, noscreen{0}, single_chunk{0}, debug{0}, collapse{0};
     std::filesystem::path out, in_beagle, in_vcf, in_bin;
     std::string samples{""}, region{""}, in_plink{""};
     std::string opts_in_effect{"Options in effect:\n   "};
@@ -578,7 +578,7 @@ inline auto divide_pos_into_grid(const Int1D & pos, const Bool1D & collapse)
             auto j = i + 1;
             while(collapse[j]) j++;
             grids.push_back(Int1D(pos.begin() + i, pos.begin() + j));
-            i = j;
+            i = j - 1;
         }
         else
         {
@@ -620,21 +620,24 @@ inline auto calc_grid_distance(const Int2D & pos)
 /*
 ** @param E original size of emission, full SNPs x C2
 */
-inline auto collapse_emission_by_grid(const MyArr2D & E, int B, int G, double minEmission = 1e-6)
+inline auto collapse_emission_by_grid(const MyArr2D & E, const Int2D & grids, double minEmission = 1e-6)
 {
     const int M = E.cols();
     const int C2 = E.rows();
+    const int G = grids.size();
     MyArr2D EG = MyArr2D::Ones(C2, G);
-    int g, s, e, c;
+    int g, s, e, c, snp = 0;
     for(g = 0; g < G; g++)
     {
         // c = g == nGrids - 1 ? M - (nGrids - 1) * B : B;
-        s = g * B;
-        e = g == G - 1 ? M - 1 : B * (g + 1) - 1;
+        s = snp;
+        e = snp + grids[g].size() - 1;
+        snp = e + 1;
         for(c = s; c <= e; c++) EG.col(g) *= E.col(c);
         EG.col(g) /= EG.col(g).maxCoeff(); // rescale by maximum
         EG.col(g) = (EG.col(g) < minEmission).select(minEmission, EG.col(g)); // apply bounding
     }
+    assert(snp == M);
 
     return EG;
 }
