@@ -10,8 +10,8 @@ using namespace std;
 void FastPhaseK2::initRecombination(const Int1D & pos, int B_, double Ne)
 {
     B = B_;
-    nGrids = B > 1 ? (pos.size() + B - 1) / B : M;
-    PI = MyArr2D::Ones(C, nGrids);
+    G = B > 1 ? (pos.size() + B - 1) / B : M;
+    PI = MyArr2D::Ones(C, G);
     PI.rowwise() /= PI.colwise().sum(); // normalize it per site
     if(B > 1)
     {
@@ -31,7 +31,7 @@ void FastPhaseK2::initIteration()
     if(debug) std::cerr << R << std::endl;
     // initial temp variables
     pi.setZero(C); // reset pi at first SNP
-    Ezj.setZero(C, nGrids); // reset post(Z,j)
+    Ezj.setZero(C, G); // reset post(Z,j)
     Ezg1.setZero(C, M); // reset pos(Z,g)
     Ezg2.setZero(C, M); // reset pos(Z,g)
 }
@@ -73,7 +73,7 @@ void FastPhaseK2::updateIteration()
     {
         // std::cerr << "reset values below threshold\n";
         Ezj = (Ezj < clusterFreqThreshold).select(0, Ezj); // reset to 0 first
-        for(int i = 0; i < nGrids; i++)
+        for(int i = 0; i < G; i++)
         {
             // for columns with an entry below 0
             // each 0 entry becomes threshold
@@ -225,18 +225,18 @@ double FastPhaseK2::forwardAndBackwardsLowRam(int ind, const MyFloat1D & GL, boo
 fbd_res1 FastPhaseK2::forwardAndBackwardsHighRam(int ind, const MyFloat1D & GL, bool call_geno)
 {
     Eigen::Map<const MyArr2D> gli(GL.data() + ind * M * 3, M, 3);
-    if(nGrids < M)
+    if(G < M)
     {
-        MyArr2D alpha(C2, nGrids), beta(C2, nGrids);
+        MyArr2D alpha(C2, G), beta(C2, G);
         MyArr2D emit = get_emission_by_gl(gli, F).transpose(); // C2 x M
-        MyArr2D emitGrids = collapse_emission_by_grid(emit, B, nGrids);
+        MyArr2D emitGrids = collapse_emission_by_grid(emit, B, G);
         auto cs = forward_backwards_diploid(alpha, beta, emitGrids, R, PI);
         if(debug && !((1 - ((alpha * beta).colwise().sum())).abs() < 1e-4).all())
             cao.cerr((alpha * beta).colwise().sum() / cs.transpose(), "\ngamma sum is not 1.0!\n");
 
         MyArr1D gamma = alpha.col(0) * beta.col(0); //  gamma in first snp
         MyArr1D gamma1 = gamma.reshaped(C, C).colwise().sum();
-        MyArr2D ind_post_zj = MyArr2D::Zero(C, nGrids);
+        MyArr2D ind_post_zj = MyArr2D::Zero(C, G);
         MyArr2D ind_post_zg1 = MyArr2D::Zero(C, M);
         MyArr2D ind_post_zg2 = MyArr2D::Zero(C, M);
         MyArr1D tmp_zg(4);
@@ -244,7 +244,7 @@ fbd_res1 FastPhaseK2::forwardAndBackwardsHighRam(int ind, const MyFloat1D & GL, 
         int z1, z2, s, e, i, g = 0;
         // now get expectation of post(Z,J)
         s = g * B;
-        e = g == nGrids - 1 ? M - 1 : B * (g + 1) - 1;
+        e = g == G - 1 ? M - 1 : B * (g + 1) - 1;
         for(z1 = 0; z1 < C; z1++)
         {
             for(i = s; i <= e; i++)
@@ -272,13 +272,13 @@ fbd_res1 FastPhaseK2::forwardAndBackwardsHighRam(int ind, const MyFloat1D & GL, 
                 }
             }
         }
-        for(g = 1; g < nGrids; g++)
+        for(g = 1; g < G; g++)
         {
             const MyArr1D beta_mult_emit = emitGrids.col(g) * beta.col(g); // C2
             gamma = (alpha.col(g) * beta.col(g)); // C2
             MyArr1D alphatmp(C);
             s = g * B;
-            e = g == nGrids - 1 ? M - 1 : B * (g + 1) - 1;
+            e = g == G - 1 ? M - 1 : B * (g + 1) - 1;
             for(z1 = 0; z1 < C; z1++)
             {
                 alphatmp(z1) = alpha(Eigen::seqN(z1, C, C), g - 1).sum() * R(1, g);

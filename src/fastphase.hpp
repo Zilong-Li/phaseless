@@ -39,7 +39,7 @@ class FastPhaseK2
 
     // SHARED VARIBALES
     const int M, N, C, C2; // C2 = C x C
-    int nGrids, B;
+    int G, B; // G: number of grids after collapsing block
     MyArr2D GP; // N x (M x 3), genotype probabilies for all individuals
     MyArr1D pi; // C, PI in first SNP
     MyArr2D PI; // C x M, cluster frequency

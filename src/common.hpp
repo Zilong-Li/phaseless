@@ -12,6 +12,7 @@
 #include <Eigen/Dense>
 #include <climits>
 #include <clocale>
+#include <cstdint>
 #include <filesystem>
 #include <fstream>
 #include <iostream>
@@ -19,6 +20,7 @@
 #include <map>
 #include <memory>
 #include <random>
+#include <string>
 #include <unordered_map>
 #include <vector>
 
@@ -99,6 +101,54 @@ inline auto calc_position_distance(const Int1D & markers)
     dl[0] = 0;
     for(size_t i = 1; i < markers.size(); i++) dl[i] = markers[i] - markers[i - 1];
     return dl;
+}
+
+//******************************************************************************
+//                               STRING UTILS
+//******************************************************************************
+
+inline std::vector<std::string> split_string(const std::string & s, const std::string & separators)
+{
+    std::vector<std::string> ret;
+    bool is_seperator[256] = {false};
+    for(auto & ch : separators)
+    {
+        is_seperator[(unsigned int)ch] = true;
+    }
+    int begin = 0;
+    for(int i = 0; i <= (int)s.size(); i++)
+    {
+        if(is_seperator[(uint8_t)s[i]] || i == (int)s.size())
+        {
+            ret.push_back(std::string(s.begin() + begin, s.begin() + i));
+            begin = i + 1;
+        }
+    }
+    return ret;
+}
+
+inline std::string trim_string(const std::string & s)
+{
+    int begin = 0, end = (int)s.size();
+    while(begin < end && s[begin] == ' ') begin++;
+    while(begin < end && s[end - 1] == ' ') end--;
+    return std::string(s.begin() + begin, s.begin() + end);
+}
+
+inline bool ends_with(std::string const & str, std::string const & ending)
+{
+    if(ending.size() > str.size())
+        return false;
+    else
+        return std::equal(ending.begin(), ending.end(), str.end() - ending.size());
+}
+
+inline bool starts_with(std::string const & str, std::string const & ending)
+{
+    if(ending.size() > str.size())
+        return false;
+    else
+        return std::equal(ending.begin(), ending.end(), str.begin());
 }
 
 inline auto calc_distRate(const Int1D & markers, int C, double Ne = 20000, double expRate = 0.5)
