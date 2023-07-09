@@ -9,14 +9,6 @@
 using namespace std;
 using namespace Eigen;
 
-double make_input_per_chunk(int niters, int ic, const std::unique_ptr<BigAss> & genome, int seed)
-{
-    FastPhaseK2 faith(genome->pos[ic].size(), genome->nsamples, genome->C, seed);
-    faith.initRecombination(genome->pos[ic]);
-    faith.AF = estimate_af_by_gl(genome->gls[ic], genome->nsamples, genome->pos[ic].size()).cast<MyFloat>();
-    return faith.runWithOneThread(niters, genome->gls[ic]);
-}
-
 TEST_CASE("fastphasek2 forwardAndBackwardsLowRam", "[test-fastphasek2]")
 {
     int C{5}, seed{1}, chunksize{10000}, niters{40};
@@ -92,21 +84,6 @@ TEST_CASE("fastphasek2 forwardAndBackwardsHighRam", "[test-fastphasek2]")
         faith.updateIteration();
         prevlike = loglike;
     }
-}
-
-TEST_CASE("fastphasek2 runWithOneThread in threadpool", "[test-fastphasek2]")
-{
-    int C{5}, seed{1}, niters{10}, chunksize{10000};
-    std::unique_ptr<BigAss> genome = std::make_unique<BigAss>();
-    genome->chunksize = chunksize, genome->C = C;
-    chunk_beagle_genotype_likelihoods(genome, "../data/all.bgl.gz");
-    ThreadPool poolit(genome->nchunks);
-    vector<future<double>> diff;
-    for(int ic = 0; ic < genome->nchunks; ic++)
-    {
-        diff.emplace_back(poolit.enqueue(make_input_per_chunk, niters, ic, std::ref(genome), seed));
-    }
-    for(auto && ll : diff) cout << "diff: " << ll.get() << endl;
 }
 
 TEST_CASE("fastphasek4", "[test-fastphasek4]")

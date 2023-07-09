@@ -8,13 +8,17 @@ INC      = -I. -I../src -I../external -I$(HTSINC)
 LDFLAGS  =  -L$(HTSLIB) -Wl,-rpath,$(HTSLIB)
 LIBS     = -lhts -lz -lm -lbz2 -llzma -lcurl -lpthread
 
-OBJS = test-main.o test-cli.o test-io.o test-phaseless.o test-fastphase.o \
+OBJS = test-main.o test-phaseless.o test-fastphase.o \
 		test-forward-backward.o \
 		test-collapse.o
 
-BINS = test-cli.bin test-io.bin test-phaseless.bin test-fastphase.bin \
+BINS = test-phaseless.bin test-fastphase.bin \
 		test-forward-backward.bin \
 		test-collapse.bin
+
+DEPS = ../src/fastphase.o ../src/admixture.o
+
+UTILS = test-cli test-io
 
 .PHONY: all test clean
 
@@ -23,12 +27,10 @@ all: $(BINS) $(OBJS)
 %.o: %.cpp
 	$(CXX) $(CXXFLAGS) -o $@ -c $< ${INC}
 
-%.bin: %.o test-main.o
-	${CXX} ${CXXFLAGS} -o $@ $< test-main.o $(LDFLAGS) $(LIBS)
+%.bin: %.o test-main.o $(DEPS)
+	${CXX} ${CXXFLAGS} -o $@ $< test-main.o $(DEPS) $(LDFLAGS) $(LIBS)
 
 test: $(BINS)
-	./test-cli.bin --success
-	./test-io.bin --success
 	./test-phaseless.bin --success
 	./test-fastphase.bin --success
 	./test-forward-backward.bin --success

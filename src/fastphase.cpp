@@ -7,7 +7,7 @@
 
 using namespace std;
 
-void FastPhaseK2::initRecombination(const Int1D & pos, int B_ = 1, double Ne = 20000)
+void FastPhaseK2::initRecombination(const Int1D & pos, int B_, double Ne)
 {
     B = B_;
     nGrids = B > 1 ? (pos.size() + B - 1) / B : M;
@@ -401,7 +401,7 @@ fbd_res2 make_input_per_chunk(const std::unique_ptr<BigAss> & genome,
                               const int seed)
 {
     FastPhaseK2 faith(genome->pos[ic].size(), genome->nsamples, genome->C, seed);
-    faith.initRecombination(genome->pos[ic], genome->B);
+    faith.initRecombination(genome->pos[ic]);
     faith.AF = estimate_af_by_gl(genome->gls[ic], genome->nsamples, genome->pos[ic].size()).cast<MyFloat>();
     faith.runWithOneThread(niters, genome->gls[ic]);
     return std::tuple(MyFloat1D(faith.GP.data(), faith.GP.data() + faith.GP.size()), faith.R, faith.PI,

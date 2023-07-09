@@ -51,7 +51,7 @@ class FastPhaseK2
     MyArr1D AF;
     double nGen;
 
-    void initRecombination(const Int1D & pos, int B, double Ne);
+    void initRecombination(const Int1D & pos, int B_ = 1, double Ne = 20000);
     void initIteration();
     void updateIteration();
     double runWithOneThread(int, const MyFloat1D &);
