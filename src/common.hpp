@@ -10,6 +10,7 @@
 #include "log.hpp"
 #include "timer.hpp"
 #include <Eigen/Dense>
+#include <cassert>
 #include <climits>
 #include <clocale>
 #include <cstdint>
@@ -34,6 +35,7 @@ extern Logger cao;
 #endif
 
 // STD TYPES
+using Bool1D = std::vector<bool>;
 using Int1D = std::vector<int>;
 using Int2D = std::vector<Int1D>;
 using Float1D = std::vector<float>;
@@ -550,33 +552,68 @@ inline auto estimate_af_by_gl(const MyFloat1D & GL, int N, int M, int niter = 10
     return af_est;
 }
 
-inline auto turn_pos_into_grid(const Int1D & pos, int B)
+inline auto divide_pos_into_grid(const Int1D & pos, int B)
 {
     int M = pos.size();
     int G = (M + B - 1) / B;
     Int2D grids(G);
-    Int1D central(G);
     int g, s, e;
     for(g = 0; g < G; g++)
     {
         s = g * B;
         e = g == G - 1 ? M - 1 : B * (g + 1) - 1;
-        central[g] = (e - s) / 2;
         grids[g] = Int1D(pos.begin() + s, pos.begin() + e + 1);
     }
-    return std::tuple(grids, central);
+    return grids;
+}
+
+inline auto divide_pos_into_grid(const Int1D & pos, const Bool1D & collapse)
+{
+    assert(pos.size() == collapse.size());
+    Int2D grids;
+    for(auto i = 0; i < collapse.size(); i++)
+    {
+        if(collapse[i])
+        {
+            auto j = i + 1;
+            while(collapse[j]) j++;
+            grids.push_back(Int1D(pos.begin() + i, pos.begin() + j));
+            i = j;
+        }
+        else
+        {
+            grids.push_back(Int1D(1, pos[i]));
+        }
+    }
+
+    return grids;
+}
+
+inline auto find_chunk_to_collapse(const MyArr2D & PI,
+                                   const MyArr2D & R,
+                                   double tol_pi = 0.99,
+                                   double tol_r = 1e-5)
+{
+    Bool1D collapse(PI.cols(), false); // M sites
+    for(auto i = 0; i < PI.cols(); i++)
+    {
+        if(PI.col(i).maxCoeff() > tol_pi) collapse[i] = true;
+        if(std::sqrt(R(2, i)) < tol_r) collapse[i] = true;
+    }
+    return collapse;
 }
 
 /*
 ** @params pos     snp position, first dim is each grid, second dim is snps in that grid
-** @params central index of central snp in a grid
 */
-inline auto calc_grid_distance(const Int2D & pos, const Int1D & central)
+inline auto calc_grid_distance(const Int2D & pos)
 {
-    assert(pos.size() == central.size());
     Int1D dl(pos.size());
     dl[0] = 0;
-    for(size_t i = 1; i < central.size(); i++) dl[i] = pos[i][central[i]] - pos[i - 1][central[i - 1]];
+    for(auto i = 1; i < pos.size(); i++)
+    {
+        dl[i] = pos[i][pos[i].size() / 2] - pos[i - 1][pos[i - 1].size() / 2];
+    }
     return dl;
 }
 

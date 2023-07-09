@@ -17,7 +17,7 @@ class FastPhaseGrid
     std::mutex mutex_it; // in case of race condition
 
   public:
-    FastPhaseGrid(const Int2D & pos, const Int1D & central, int m, int n, int c, int seed);
+    FastPhaseGrid(const Int2D & pos, int m, int n, int c, int seed);
     ~FastPhaseGrid();
 
     // BOUNDING
@@ -48,7 +48,7 @@ class FastPhaseGrid
     auto forwardAndBackwardsHighRam(int, const MyFloat1D &, bool);
 };
 
-inline FastPhaseGrid::FastPhaseGrid(const Int2D & pos, const Int1D & central, int m, int n, int c, int seed)
+inline FastPhaseGrid::FastPhaseGrid(const Int2D & pos, int m, int n, int c, int seed)
 : nGrids(pos.size()), B(pos[0].size()), M(m), N(n), C(c), C2(c * c)
 {
     GP.setZero(M * 3, N);
@@ -60,7 +60,7 @@ inline FastPhaseGrid::FastPhaseGrid(const Int2D & pos, const Int1D & central, in
     PI.rowwise() /= PI.colwise().sum(); // normalize it per grid
     Ne = 20000; // for human
     nGen = 4 * Ne / C;
-    dist = calc_grid_distance(pos, central);
+    dist = calc_grid_distance(pos);
     R = calc_transRate_diploid(dist, nGen);
 }
 
@@ -231,8 +231,8 @@ TEST_CASE("FastPhaseGrid forwardAndBackwardsHighRam", "[test-collapse]")
     genome->chunksize = chunksize, genome->C = C;
     chunk_beagle_genotype_likelihoods(genome, "../data/bgl.gz");
     int ic = 0;
-    auto [pos, central] = turn_pos_into_grid(genome->pos[ic], B);
-    FastPhaseGrid faith(pos, central, genome->pos[ic].size(), genome->nsamples, C, seed);
+    auto pos = divide_pos_into_grid(genome->pos[ic], B);
+    FastPhaseGrid faith(pos, genome->pos[ic].size(), genome->nsamples, C, seed);
     faith.debug = true;
     using pars1 = std::tuple<double, MyArr2D, MyArr2D, MyArr2D, MyArr1D>;
     vector<future<pars1>> res;

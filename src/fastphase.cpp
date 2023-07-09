@@ -15,8 +15,8 @@ void FastPhaseK2::initRecombination(const Int1D & pos, int B_, double Ne)
     PI.rowwise() /= PI.colwise().sum(); // normalize it per site
     if(B > 1)
     {
-        auto [grid_pos, central] = turn_pos_into_grid(pos, B);
-        dist = calc_grid_distance(grid_pos, central);
+        auto grid_pos = divide_pos_into_grid(pos, B);
+        dist = calc_grid_distance(grid_pos);
     }
     else
     {

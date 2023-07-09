@@ -114,7 +114,7 @@ par(mfrow = c(2, 1), mar = c(1, 1, 1.5, 1), oma = c(0, 0, 0, 0))
 res <- pi[1:nsnps, ]
 barplot(t(as.matrix(res)),
   beside = F, col = colors, border = NA, space = 0,
-  main = "Probabilty of switing into a cluster", axes = F
+  main = "Cluster Frequency", axes = F
 )
 
 res <- sqrt(as.numeric(recomb[, 3]))
