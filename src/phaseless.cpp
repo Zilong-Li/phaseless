@@ -240,7 +240,8 @@ int main(int argc, char * argv[])
         }
         else
         {
-            std::cerr << program.help().str();
+            cao.cerr("Contact author: Zilong Li (zilong.dk@gmail.com)\n");
+            cao.cerr(program.help().str());
             std::exit(1);
         }
     }

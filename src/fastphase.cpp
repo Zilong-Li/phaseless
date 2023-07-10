@@ -469,6 +469,10 @@ void FastPhaseK2::callGenoLoopC(int ind, int s, int z1, const MyArr2D & gli, con
 void FastPhaseK2::collapse_and_resize(const Int1D & pos, double tol_pi, double tol_r)
 {
     auto collapse = find_chunk_to_collapse(PI, R, tol_pi, tol_r);
+    if(debug)
+    {
+        for(auto c : collapse) cao.cerr(c);
+    }
     grids = divide_pos_into_grid(pos, collapse);
     G = grids.size();
     MyArr2D PInew(C, G), Rnew(3, G);
@@ -478,8 +482,8 @@ void FastPhaseK2::collapse_and_resize(const Int1D & pos, double tol_pi, double t
         s = snp;
         e = snp + grids[g].size() - 1;
         snp = e + 1;
-        PInew.col(g) = PI.col((s + e) / 2);
-        Rnew.col(g) = R.col((s + e) / 2);
+        PInew.col(g) = PI.col(s); // choose the first snp in this collapsing block
+        Rnew.col(g) = R.col(s); // choose the first snp in this collapsing block
     }
     PI = PInew;
     R = Rnew;

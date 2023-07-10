@@ -114,13 +114,40 @@ stopifnot(all.equal(dim(recomb)[1], nrow(pi)))
 par(mfrow = c(4, 1), mar = c(1, 1, 1.5, 1), oma = c(0, 0, 0, 0))
 
 res <- pi[1:nsnps, ]
-barplot(t(as.matrix(res)),
+res <- t(as.matrix(res))
+barplot(res,
   beside = F, col = colors, border = NA, space = 0,
   main = paste0("Cluster Frequency (before collapsing, M=", nsnps, ")"), axes = F
 )
 
+divide_pos_into_grid <- function(collapse) {
+  l <- list()
+  s <- 1
+  i <- 1
+  while(i <= length(collapse)) {
+    if(collapse[i]) {
+      j <- i + 1
+      while(collapse[j]) j <- j+1
+      l[[s]] <- i:(j-1)
+      i <- j - 1
+    } else {
+      l[[s]] <- i
+    }
+    i <- i + 1
+    s <- s+1
+  }
+  l
+}
+
+d <- read.table("t.log")
+collapse <- as.logical(d[,1])
+
+grids <- divide_pos_into_grid(collapse)
+grids_width <- sapply(grids,length)
+
 res <- pi[(nsnps+1):nrow(pi), ]
-barplot(t(as.matrix(res)),
+res <- t(as.matrix(res))
+barplot(res, width = grids_width,
   beside = F, col = colors, border = NA, space = 0,
   main = paste0("Cluster Frequency (after collapsing, M=", ngrids, ")"), axes = F
 )
@@ -134,6 +161,7 @@ plot(1, col = "transparent", axes = F, xlim = c(1, length(res)), ylim = range(re
 lines(res, type = "l", col = "red")
 
 dev.off()
+
 
 
 ## Local Variables:
