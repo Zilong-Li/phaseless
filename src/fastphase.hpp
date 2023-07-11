@@ -53,7 +53,7 @@ class FastPhaseK2
     double nGen;
 
     void initRecombination(const Int1D & pos, int B_ = 1, double Ne = 20000);
-    void collapse_and_resize(const Int1D & pos, double tol_pi = 0.99, double tol_r = 1e-5);
+    void collapse_and_resize(const Int1D & pos, double tol_r = 1e-6);
     void initIteration();
     void updateIteration();
     void callGenoLoopC(int, int, int, const MyArr2D &, const MyArr1D &);

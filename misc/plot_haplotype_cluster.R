@@ -76,27 +76,6 @@ colors <- c(
 )
 palette(colors)
 
-l <- read_haplike("parse.haplike.bin")
-
-sum(l$haplike[[10]][, , 20])
-
-## check if sum(alpha*beta)==1
-n <- 1
-isTRUE(all.equal(colSums(l$haplike[[n]], dims = 2),
-  rep(1, dim(l$haplike[[n]])[3]),
-  tolerance = 1e-4
-))
-
-## colSums(l$haplike[[n]], dims = 2)
-
-png("haplike.png", unit = "in", res = 300, width = 12, height = 6)
-
-npop <- 3
-plot_haplike(l$haplike, npop)
-
-dev.off()
-
-
 png("hapfreq.png", unit = "in", res = 300, width = 12, height = 6)
 
 
@@ -127,7 +106,7 @@ divide_pos_into_grid <- function(collapse) {
   while(i <= length(collapse)) {
     if(collapse[i]) {
       j <- i + 1
-      while(collapse[j]) j <- j+1
+      while(j <= length(collapse) & collapse[j]) j <- j+1
       l[[s]] <- i:(j-1)
       i <- j - 1
     } else {
@@ -161,6 +140,22 @@ plot(1, col = "transparent", axes = F, xlim = c(1, length(res)), ylim = range(re
 lines(res, type = "l", col = "red")
 
 dev.off()
+
+
+###########
+## l <- read_haplike("parse.haplike.bin")
+## sum(l$haplike[[10]][, , 20])
+## ## check if sum(alpha*beta)==1
+## n <- 1
+## isTRUE(all.equal(colSums(l$haplike[[n]], dims = 2),
+##   rep(1, dim(l$haplike[[n]])[3]),
+##   tolerance = 1e-4
+## ))
+## ## colSums(l$haplike[[n]], dims = 2)
+## png("haplike.png", unit = "in", res = 300, width = 12, height = 6)
+## npop <- 3
+## plot_haplike(l$haplike, npop)
+## dev.off()
 
 
 

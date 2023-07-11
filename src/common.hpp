@@ -589,15 +589,11 @@ inline auto divide_pos_into_grid(const Int1D & pos, const Bool1D & collapse)
     return grids;
 }
 
-inline auto find_chunk_to_collapse(const MyArr2D & PI,
-                                   const MyArr2D & R,
-                                   double tol_pi = 0.99,
-                                   double tol_r = 1e-5)
+inline auto find_chunk_to_collapse(const MyArr2D & R, double tol_r = 1e-6)
 {
-    Bool1D collapse(PI.cols(), false); // M sites
-    for(auto i = 0; i < PI.cols(); i++)
+    Bool1D collapse(R.cols(), false); // M sites
+    for(auto i = 0; i < R.cols(); i++)
     {
-        if(PI.col(i).maxCoeff() > tol_pi) collapse[i] = true;
         if(std::sqrt(R(2, i)) < tol_r) collapse[i] = true;
     }
     return collapse;

@@ -466,13 +466,10 @@ void FastPhaseK2::callGenoLoopC(int ind, int s, int z1, const MyArr2D & gli, con
     }
 }
 
-void FastPhaseK2::collapse_and_resize(const Int1D & pos, double tol_pi, double tol_r)
+void FastPhaseK2::collapse_and_resize(const Int1D & pos, double tol_r)
 {
-    auto collapse = find_chunk_to_collapse(PI, R, tol_pi, tol_r);
-    if(debug)
-    {
-        for(auto c : collapse) cao.cerr(c);
-    }
+    auto collapse = find_chunk_to_collapse(R, tol_r);
+    for(auto c : collapse) cao.cerr(c);
     grids = divide_pos_into_grid(pos, collapse);
     G = grids.size();
     MyArr2D PInew(C, G), Rnew(3, G);
@@ -504,8 +501,8 @@ fbd_res2 make_input_per_chunk(const std::unique_ptr<BigAss> & genome,
     faith.runWithOneThread(niters, genome->gls[ic]);
     if(collapse)
     {
-        faith.collapse_and_resize(genome->pos[ic], tol_pi, tol_r);
-        faith.runWithOneThread(niters, genome->gls[ic]); // FIXME update iterations
+        faith.collapse_and_resize(genome->pos[ic], tol_r);
+        faith.runWithOneThread(2, genome->gls[ic]); // FIXME update iterations
     }
     return std::tuple(MyFloat1D(faith.GP.data(), faith.GP.data() + faith.GP.size()), faith.R, faith.PI,
                       faith.F);
@@ -577,8 +574,8 @@ int run_impute_main(Options & opts)
             if(opts.collapse)
             {
                 cao.warn(tim.date(), "start collapsing!");
-                faith.collapse_and_resize(genome->pos[ic], opts.tol_pi, opts.tol_r);
-                for(int it = 0; it <= opts.nimpute; it++)
+                faith.collapse_and_resize(genome->pos[ic], opts.tol_r);
+                for(int it = 0; it <= 1; it++)
                 {
                     tim.clock();
                     faith.initIteration();

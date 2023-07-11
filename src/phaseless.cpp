@@ -16,7 +16,7 @@ int main(int argc, char * argv[])
 {
     // ========= helper message and parameters parsing ===========================
 
-    const std::string VERSION{"0.2.3"};
+    const std::string VERSION{"0.2.4"};
 
     // clang-format off
     ArgumentParser program("phaseless", VERSION, default_arguments::version);
@@ -33,7 +33,7 @@ int main(int argc, char * argv[])
         .default_value(10)
         .scan<'i', int>();
     cmd_impute.add_argument("-C", "--collapse")
-        .help("collapse SNPs in a reasonable chunk")
+        .help("collapse SNPs in a reasonable window")
         .default_value(false)
         .implicit_value(true);
     cmd_impute.add_argument("-B", "--grid-size")
@@ -76,13 +76,9 @@ int main(int argc, char * argv[])
         .help("seed for reproducing results")
         .default_value(999)
         .scan<'i', int>();
-    cmd_impute.add_argument("--maxCoeffPI")
-        .help("max coefficient in PI to determine if a SNP should be collapsed")
-        .default_value(0.99)
-        .scan<'g', double>();
     cmd_impute.add_argument("--minRecombRate")
         .help("min recombination rate to determine if a SNP should be collapsed")
-        .default_value(1e-5)
+        .default_value(1e-6)
         .scan<'g', double>();
     cmd_impute.add_parents(program);
 
@@ -195,7 +191,6 @@ int main(int argc, char * argv[])
             opts.noscreen = cmd_impute.get<bool>("--no-print");
             opts.debug = cmd_impute.get<bool>("--debug");
             opts.tol_r = cmd_impute.get<double>("--minRecombRate");
-            opts.tol_pi = cmd_impute.get<double>("--maxCoeffPI");
             if(opts.single_chunk) opts.chunksize = INT_MAX;
             if((opts.in_beagle.empty() && opts.in_vcf.empty()) || cmd_impute.get<bool>("--help"))
                 throw std::runtime_error(cmd_impute.help().str());
