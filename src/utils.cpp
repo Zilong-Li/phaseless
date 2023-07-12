@@ -62,7 +62,7 @@ int run_parse_main(Options & opts)
         for(int ind = 0; ind < genome->nsamples; ind++) ids.push_back(ind);
     }
     // haplike is p(Z_is |X_is , theta) = alpha * beta / p(X|theta) = gamma
-    std::ofstream ofs(opts.out.string() + ".haplike.bin", std::ios::binary);
+    std::ofstream ofs(opts.out.string() + ".gamma.bin", std::ios::binary);
     int nsamples = ids.size();
     ofs.write((char *)&genome->C, 4);
     ofs.write((char *)&nsamples, 4);
@@ -91,16 +91,23 @@ int run_parse_main(Options & opts)
         const int iM = genome->pos[ic].size();
         const int nGrids = genome->B > 1 ? (iM + genome->B - 1) / genome->B : iM;
         ofs.write((char *)&nGrids, 4);
+        std::ofstream ofs2(opts.out.string() + ".gamma.ae");
+        Eigen::IOFormat fmt(6, Eigen::DontAlignCols, "\t", "\n");
+        MyArr2D ae = MyArr2D::Zero(genome->C, nGrids);
         for(auto ind : ids)
         {
             alpha.setZero(genome->C * genome->C, nGrids);
             beta.setZero(genome->C * genome->C, nGrids);
             get_cluster_likelihood(ind, iM, alpha, beta, genome->gls[ic], genome->R[ic], genome->PI[ic],
                                    genome->F[ic]);
-            alpha *= beta;
+            alpha *= beta; // gamma
             if(!((1 - alpha.colwise().sum()).abs() < 1e-6).all()) cao.error("gamma sum is not 1.0!\n");
+            for(int i = 0; i < nGrids; i++)
+                ae.col(i) += alpha.col(i).reshaped(genome->C, genome->C).colwise().sum();
             ofs.write((char *)alpha.data(), genome->C * genome->C * nGrids * sizeof(MyFloat));
         }
+        ae.rowwise() /= ae.colwise().sum();
+        ofs2 << ae.transpose().format(fmt) << "\n";
     }
     return 0;
 }

@@ -79,25 +79,16 @@ palette(colors)
 png("hapfreq.png", unit = "in", res = 300, width = 12, height = 6)
 
 
-### pi is no longer cluster frequency.
-### it's the probabilty of switing into cluster k between snp t and t+1
+par(mfrow = c(1, 1), mar = c(1, 1, 1.5, 1), oma = c(0, 0, 0, 0))
 
-pi <- as.matrix(read.table("impute.pi", h = F, sep = "\t"))
-recomb <- read.table("impute.recomb")
-
-nsnps <- 1000
-ngrids <- nrow(pi)-nsnps
-
-stopifnot(all.equal(dim(recomb)[1], nrow(pi)))
-
-par(mfrow = c(4, 1), mar = c(1, 1, 1.5, 1), oma = c(0, 0, 0, 0))
-
-res <- pi[1:nsnps, ]
-res <- t(as.matrix(res))
+res <- t(as.matrix(read.table("parse.gamma.ae")))
 barplot(res,
   beside = F, col = colors, border = NA, space = 0,
-  main = paste0("Cluster Frequency (before collapsing, M=", nsnps, ")"), axes = F
+  main = paste0("Cluster Frequency (before collapsing, M=", ncol(res), ")"), axes = F
 )
+
+dev.off()
+q()
 
 divide_pos_into_grid <- function(collapse) {
   l <- list()
@@ -118,26 +109,52 @@ divide_pos_into_grid <- function(collapse) {
   l
 }
 
+
+library("DescTools")
+
+### pi is no longer cluster frequency.
+### it's the probabilty of switing into cluster k between snp t and t+1
+
 d <- read.table("t.log")
 collapse <- as.logical(d[,1])
-
 grids <- divide_pos_into_grid(collapse)
 grids_width <- sapply(grids,length)
 
+res <- pi[1:nsnps, ]
+res <- t(as.matrix(res))
+
+
+nsnps <- 1000
+pi <- as.matrix(read.table("impute.pi", h = F, sep = "\t"))
+
+recomb <- read.table("impute.recomb")
+ngrids <- nrow(pi)-nsnps
+
+stopifnot(all.equal(dim(recomb)[1], nrow(pi)))
+res <- sqrt(as.numeric(recomb[1:nsnps, 3]))
+res <- res[-1] # remove first one
+x <- Midx(1:nsnps) - 0.5
+## plot(x, y = res,axes = T, type = 'l',log = 'y',  main = "Recombination rate (1-e^-r)", xlab = "SNP Index")
+plot(1, col = "transparent", axes = F, xlim = c(0, nsnps), ylim = range(res), main = "Recombination rate (1-e^-r)", xlab = "SNP Index")
+
+cw <- cumsum(grids_width)
+w <- which(grids_width>1)
+points(x, res, type = "l", col = "red")
+abline(v = cw[w-1], col = "black" )
+abline(v = cw[w], col = "gray60" )
+
 res <- pi[(nsnps+1):nrow(pi), ]
 res <- t(as.matrix(res))
-barplot(res, width = grids_width,
+barplot(res[,-1], width = grids_width,
   beside = F, col = colors, border = NA, space = 0,
   main = paste0("Cluster Frequency (after collapsing, M=", ngrids, ")"), axes = F
 )
 
-res <- sqrt(as.numeric(recomb[1:nsnps, 3]))
-plot(1, col = "transparent", axes = F, xlim = c(1, length(res)), ylim = range(res), main = "Recombination rate (1-e^-r)", xlab = "SNP Index")
-lines(res, type = "l", col = "red")
-
 res <- sqrt(as.numeric(recomb[(nsnps+1):nrow(recomb), 3]))
-plot(1, col = "transparent", axes = F, xlim = c(1, length(res)), ylim = range(res), main = "Recombination rate (1-e^-r)", xlab = "SNP Index")
-lines(res, type = "l", col = "red")
+res <- res[-1] # remove first one
+plot(1, col = "transparent", axes = F, xlim = c(0, nsnps), ylim = range(res), main = "Recombination rate (1-e^-r)", xlab = "SNP Index")
+x <- Midx(cumsum(grids_width)) - 0.5
+points(x,res, type = "l", col = "red")
 
 dev.off()
 
