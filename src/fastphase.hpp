@@ -11,7 +11,7 @@
 #include <mutex>
 
 using fbd_res1 = std::tuple<double, MyArr2D, MyArr2D, MyArr2D, MyArr1D>;
-using fbd_res2 = std::tuple<MyFloat1D, MyArr2D, MyArr2D, MyArr2D>;
+using fbd_res2 = std::tuple<MyFloat1D, MyArr2D, MyArr2D, MyArr2D, MyArr2D>;
 
 class FastPhaseK2
 {

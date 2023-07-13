@@ -22,7 +22,7 @@ TEST_CASE("fastphasek2 forwardAndBackwardsLowRamNormal", "[test-fastphasek2]")
     ThreadPool poolit(4);
     vector<future<double>> llike;
     double prevlike{std::numeric_limits<double>::lowest()}, loglike;
-    for(int it = 0; it < niters + 1; it++)
+    for(int it = 0; it <= niters; it++)
     {
         faith.initIteration();
         for(int i = 0; i < genome->nsamples; i++)
@@ -38,7 +38,7 @@ TEST_CASE("fastphasek2 forwardAndBackwardsLowRamNormal", "[test-fastphasek2]")
         for(auto && ll : llike) loglike += ll.get();
         llike.clear(); // clear future and renew
         REQUIRE(loglike > prevlike);
-        faith.updateIteration();
+        if(it != niters) faith.updateIteration();
         prevlike = loglike;
     }
 }
@@ -136,7 +136,7 @@ TEST_CASE("fastphasek2 forwardAndBackwardsHighRamNormal", "[test-fastphasek2]")
         }
         llike.clear(); // clear future and renew
         REQUIRE(loglike > prevlike);
-        faith.updateIteration();
+        if(it != niters) faith.updateIteration();
         prevlike = loglike;
     }
 }

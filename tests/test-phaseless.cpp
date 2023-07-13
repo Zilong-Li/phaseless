@@ -27,7 +27,9 @@ TEST_CASE("phaseless naive vs dump dataset 1", "[test-phaseless]")
     }
     for(auto && ll : res)
     {
-        const auto [GP, R, PI, F] = ll.get();
+        auto [GP, R, PI, F, AE] = ll.get();
+        AE.rowwise() /= AE.colwise().sum(); // norm gamma ae
+        genome->GammaAE.emplace_back(MyFloat1D(AE.data(), AE.data() + AE.size()));
         genome->PI.emplace_back(MyFloat1D(PI.data(), PI.data() + PI.size()));
         genome->F.emplace_back(MyFloat1D(F.data(), F.data() + F.size()));
         genome->R.emplace_back(MyFloat1D(R.data(), R.data() + R.size()));
@@ -69,7 +71,9 @@ TEST_CASE("phaseless naive vs dump dataset 2", "[test-phaseless]")
     }
     for(auto && ll : res)
     {
-        const auto [GP, R, PI, F] = ll.get();
+        auto [GP, R, PI, F, AE] = ll.get();
+        AE.rowwise() /= AE.colwise().sum(); // norm gamma ae
+        genome->GammaAE.emplace_back(MyFloat1D(AE.data(), AE.data() + AE.size()));
         genome->PI.emplace_back(MyFloat1D(PI.data(), PI.data() + PI.size()));
         genome->F.emplace_back(MyFloat1D(F.data(), F.data() + F.size()));
         genome->R.emplace_back(MyFloat1D(R.data(), R.data() + R.size()));
@@ -111,7 +115,9 @@ TEST_CASE("phaseless normal iteration with make_input_per_chunk", "[test-phasele
     }
     for(auto && ll : res)
     {
-        const auto [GP, R, PI, F] = ll.get();
+        auto [GP, R, PI, F, AE] = ll.get();
+        AE.rowwise() /= AE.colwise().sum(); // norm gamma ae
+        genome->GammaAE.emplace_back(MyFloat1D(AE.data(), AE.data() + AE.size()));
         genome->PI.emplace_back(MyFloat1D(PI.data(), PI.data() + PI.size()));
         genome->F.emplace_back(MyFloat1D(F.data(), F.data() + F.size()));
         genome->R.emplace_back(MyFloat1D(R.data(), R.data() + R.size()));
