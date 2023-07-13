@@ -90,7 +90,7 @@ struct BigAss
 {
     int chunksize, nsamples, nsnps, nchunks;
     int B, G, C; // B: snps in a grid; G: total number of grids in a genome
-    MyFloat2D PI, F, R; // M x C, 3 x M, fastphase pars
+    MyFloat2D PI, F, R, GammaAE; // M x C, 3 x M, fastphase pars
     Int1D ends; // chunk index where each chromo ends
     String1D sampleids, chrs;
     Int2D pos; // store position of markers of each chunk

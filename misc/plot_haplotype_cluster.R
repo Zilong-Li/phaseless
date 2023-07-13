@@ -81,11 +81,16 @@ png("hapfreq.png", unit = "in", res = 300, width = 12, height = 6)
 
 par(mfrow = c(1, 1), mar = c(1, 1, 1.5, 1), oma = c(0, 0, 0, 0))
 
-res <- t(as.matrix(read.table("parse.gamma.ae")))
+res <- t(as.matrix(read.table("impute.cluster.freq")))
 barplot(res,
   beside = F, col = colors, border = NA, space = 0,
   main = paste0("Cluster Frequency (before collapsing, M=", ncol(res), ")"), axes = F
 )
+
+recomb <- read.table("impute.recomb")
+nsnps <- 1000
+res <- sqrt(as.numeric(recomb[1:nsnps, 3]))
+lines(res, type = "l", col = "black")
 
 dev.off()
 q()
@@ -124,10 +129,8 @@ res <- pi[1:nsnps, ]
 res <- t(as.matrix(res))
 
 
-nsnps <- 1000
-pi <- as.matrix(read.table("impute.pi", h = F, sep = "\t"))
-
 recomb <- read.table("impute.recomb")
+nsnps <- 1000
 ngrids <- nrow(pi)-nsnps
 
 stopifnot(all.equal(dim(recomb)[1], nrow(pi)))

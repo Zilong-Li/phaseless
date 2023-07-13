@@ -13,7 +13,7 @@ double Admixture::runOptimalWithBigAss(int ind, const std::unique_ptr<BigAss> & 
     MyArr2D kapa, Ekg;
     MyArr2D alpha, beta;
     MyArr1D iQ = MyArr1D::Zero(K);
-    MyArr1D Hz(C), ae(C);
+    MyArr1D Hz(C);
     double norm = 0, llike = 0, tmp = 0;
     int c1, k1, s, c2, c12;
     for(int ic = 0, m = 0; ic < genome->nchunks; ic++)
@@ -28,15 +28,14 @@ double Admixture::runOptimalWithBigAss(int ind, const std::unique_ptr<BigAss> & 
         Ekg.setZero(K, nGrids);
         for(s = 0; s < nGrids; s++, m++)
         {
-            ae = (alpha.col(s) * beta.col(s)).reshaped(C, C).colwise().sum();
-            ae /= ae.sum();
             for(c1 = 0; c1 < C; c1++) Hz(c1) = (Q.col(ind) * F(Eigen::seqN(c1, K, C), m)).sum();
             for(norm = 0, c1 = 0; c1 < C; c1++)
             {
                 for(tmp = 0, c2 = 0; c2 < C; c2++)
                 {
                     c12 = c1 * C + c2;
-                    double xz = alpha(c12, s) * beta(c12, s) / (ae(c1) * ae(c2));
+                    double xz = alpha(c12, s) * beta(c12, s)
+                                / (genome->GammaAE[ic][s * C + c1] * genome->GammaAE[ic][s * C + c2]);
                     double zy = Hz(c1) * Hz(c2);
                     tmp += xz * zy;
                 }
@@ -69,7 +68,6 @@ double Admixture::runNativeWithBigAss(int ind, const std::unique_ptr<BigAss> & g
     int c1, c2, c12, cc;
     int k1, k2, k12, s;
     MyArr1D iQ = MyArr1D::Zero(K);
-    MyArr1D ae(C);
     for(int ic = 0, m = 0; ic < genome->nchunks; ic++)
     {
         const int nsnps = genome->pos[ic].size();
@@ -82,14 +80,13 @@ double Admixture::runNativeWithBigAss(int ind, const std::unique_ptr<BigAss> & g
         Ekg.setZero(K, nGrids);
         for(s = 0; s < nGrids; s++, m++)
         {
-            ae = (alpha.col(s) * beta.col(s)).reshaped(C, C).colwise().sum();
-            ae /= ae.sum();
             for(norm = 0, cc = 0, c1 = 0; c1 < C; c1++)
             {
                 for(c2 = c1; c2 < C; c2++)
                 {
                     c12 = c1 * C + c2;
-                    double xz = alpha(c12, s) * beta(c12, s) / (ae(c1) * ae(c2));
+                    double xz = alpha(c12, s) * beta(c12, s)
+                                / (genome->GammaAE[ic][s * C + c1] * genome->GammaAE[ic][s * C + c2]);
                     for(k1 = 0; k1 < K; k1++)
                     {
                         for(k2 = 0; k2 < K; k2++)
