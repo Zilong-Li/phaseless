@@ -50,6 +50,7 @@ class FastPhaseK2
     Int1D dist; // physical position distance between two markers
     MyArr1D AF;
     Int2D grids;
+    Bool1D collapse;
     double nGen;
 
     void initRecombination(const Int1D & pos, int B_ = 1, double Ne = 20000);

@@ -78,7 +78,7 @@ int main(int argc, char * argv[])
         .scan<'i', int>();
     cmd_impute.add_argument("--minRecombRate")
         .help("min recombination rate to determine if a SNP should be collapsed")
-        .default_value(1e-6)
+        .default_value(1e-4)
         .scan<'g', double>();
     cmd_impute.add_parents(program);
 

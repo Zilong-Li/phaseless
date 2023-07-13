@@ -79,7 +79,7 @@ palette(colors)
 png("hapfreq.png", unit = "in", res = 300, width = 12, height = 6)
 
 
-par(mfrow = c(1, 1), mar = c(1, 1, 1.5, 1), oma = c(0, 0, 0, 0))
+par(mfrow = c(2, 1), mar = c(1, 1, 1.5, 1), oma = c(0, 0, 0, 0))
 
 res <- t(as.matrix(read.table("impute.cluster.freq")))
 barplot(res,
@@ -88,8 +88,17 @@ barplot(res,
 )
 
 recomb <- read.table("impute.recomb")
-nsnps <- 1000
-res <- sqrt(as.numeric(recomb[1:nsnps, 3]))
+res <- sqrt(as.numeric(recomb[, 3]))
+lines(res, type = "l", col = "black")
+
+res <- t(as.matrix(read.table("impute.cluster.freq2")))
+barplot(res,
+  beside = F, col = colors, border = NA, space = 0,
+  main = paste0("Cluster Frequency (after collapsing, M=", ncol(res), ")"), axes = F
+)
+
+recomb <- read.table("impute.recomb2")
+res <- sqrt(as.numeric(recomb[, 3]))
 lines(res, type = "l", col = "black")
 
 dev.off()
