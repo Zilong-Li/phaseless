@@ -170,6 +170,12 @@ points(x,res, type = "l", col = "red")
 
 dev.off()
 
+alpha <- read_haplike("parse.alpha.bin")
+beta <- read_haplike("parse.beta.bin")
+
+gamma <- alpha$haplike[[1]] * beta$haplike[[1]]
+sum(gamma[,,20])
+
 
 ###########
 ## l <- read_haplike("parse.haplike.bin")
