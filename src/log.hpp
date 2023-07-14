@@ -10,6 +10,7 @@
 #include <fstream>
 #include <iomanip> // setw
 #include <iostream>
+#include <sstream>
 
 class Logger
 {
@@ -96,13 +97,11 @@ class Logger
     {
         (..., printSpace(cao, args));
         cao << std::endl;
-        if(is_screen)
-        {
-            std::cout << "\x1B[31m";
-            (..., printSpace(std::cout, args));
-            std::cout << "\033[0m" << std::endl;
-        }
-        exit(EXIT_FAILURE);
+        std::ostringstream oss;
+        oss << "\x1B[31m";
+        (..., printSpace(oss, args));
+        oss << "\033[0m" << std::endl;
+        throw std::runtime_error(oss.str());
     }
 
     template<typename... Args>

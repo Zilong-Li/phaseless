@@ -8,8 +8,6 @@
 using namespace std;
 using namespace Eigen;
 
-using pars1 = std::tuple<double, MyArr2D, MyArr2D, MyArr2D, MyArr1D>;
-
 TEST_CASE("reconstruct alpha and beta from saved pars.bin", "[test-forward-backward]")
 {
     int C{10}, seed{1}, chunksize{10000}, niters{40};
@@ -17,7 +15,7 @@ TEST_CASE("reconstruct alpha and beta from saved pars.bin", "[test-forward-backw
     genome->chunksize = chunksize, genome->C = C;
     chunk_beagle_genotype_likelihoods(genome, "../data/bgl.gz");
     ThreadPool poolit(4);
-    vector<future<pars1>> res;
+    vector<future<fbd_res1>> res;
     for(int ic = 0; ic < genome->nchunks; ic++)
     {
         FastPhaseK2 faith(genome->pos[ic].size(), genome->nsamples, C, seed);

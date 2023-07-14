@@ -16,7 +16,7 @@ int main(int argc, char * argv[])
 {
     // ========= helper message and parameters parsing ===========================
 
-    const std::string VERSION{"0.2.4"};
+    const std::string VERSION{"0.2.5"};
 
     // clang-format off
     ArgumentParser program("phaseless", VERSION, default_arguments::version);

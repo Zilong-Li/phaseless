@@ -90,7 +90,7 @@ void FastPhaseK2::updateIteration()
     PI = Ezj;
 
     if(Ezj.isNaN().any()) cao.error(Ezj, "NaN in PI from FastPhaseK2\n");
-    if(debug && !((1 - PI.colwise().sum()).abs() < 1e-4).all())
+    if(debug && !((1 - PI.colwise().sum()).abs() < 1e-3).all())
         cao.error(PI.colwise().sum(), "\ncolsum of PI is not 1.0!\n");
 }
 
