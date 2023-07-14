@@ -97,6 +97,9 @@ int run_parse_main(Options & opts)
         const int nGrids = genome->B > 1 ? (iM + genome->B - 1) / genome->B : iM;
         ofs_alpha.write((char *)&nGrids, 4);
         ofs_beta.write((char *)&nGrids, 4);
+        std::ofstream ofs_ae(opts.out.string() + ".cluster.freq");
+        Eigen::IOFormat fmt(6, Eigen::DontAlignCols, "\t", "\n");
+        MyArr2D ae = MyArr2D::Zero(genome->C, nGrids);
         for(auto ind : ids)
         {
             alpha.setZero(genome->C * genome->C, nGrids);
@@ -107,7 +110,11 @@ int run_parse_main(Options & opts)
                 cao.error("gamma sum is not 1.0!\n");
             ofs_alpha.write((char *)alpha.data(), genome->C * genome->C * nGrids * sizeof(MyFloat));
             ofs_beta.write((char *)beta.data(), genome->C * genome->C * nGrids * sizeof(MyFloat));
+            for(int i = 0; i < nGrids; i++)
+                ae.col(i) += (alpha.col(i) * beta.col(i)).reshaped(genome->C, genome->C).colwise().sum();
         }
+        ae.rowwise() /= ae.colwise().sum();
+        ofs_ae << ae.transpose().format(fmt) << "\n";
     }
     return 0;
 }

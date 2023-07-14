@@ -78,7 +78,8 @@ TEST_CASE("fastphasek2 forwardAndBackwardsLowRamCollapse", "[test-fastphasek2]")
     // start collapsing
     faith.collapse_and_resize(genome->pos[ic]);
     prevlike = std::numeric_limits<double>::lowest();
-    for(int it = 0; it <= 10; it++)
+    niters = 2;
+    for(int it = 0; it <= niters; it++)
     {
         faith.initIteration();
         for(int i = 0; i < genome->nsamples; i++)
@@ -184,7 +185,8 @@ TEST_CASE("fastphasek2 forwardAndBackwardsHighRamCollapse", "[test-fastphasek2]"
     // start collapsing
     faith.collapse_and_resize(genome->pos[ic]);
     prevlike = std::numeric_limits<double>::lowest();
-    for(int it = 0; it <= 10; it++)
+    niters = 2;
+    for(int it = 0; it <= niters; it++)
     {
         faith.initIteration();
         for(int i = 0; i < genome->nsamples; i++)

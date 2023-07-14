@@ -30,7 +30,6 @@ void FastPhaseK2::initRecombination(const Int1D & pos, int B_, double Ne)
 
 void FastPhaseK2::initIteration()
 {
-    if(debug) std::cerr << R << std::endl;
     // initial temp variables
     pi.setZero(C); // reset pi at first SNP
     Ezj.setZero(C, G); // reset post(Z,j)
@@ -91,7 +90,7 @@ void FastPhaseK2::updateIteration()
     PI = Ezj;
 
     if(Ezj.isNaN().any()) cao.error(Ezj, "NaN in PI from FastPhaseK2\n");
-    if(debug && !((1 - PI.colwise().sum()).abs() < 1e-3).all())
+    if(debug && !((1 - PI.colwise().sum()).abs() < 1e-4).all())
         cao.error(PI.colwise().sum(), "\ncolsum of PI is not 1.0!\n");
 }
 
@@ -103,7 +102,7 @@ void FastPhaseK2::updateIteration()
 */
 double FastPhaseK2::runWithOneThread(int niters, const MyFloat1D & GL)
 {
-    double loglike, diff, prevlike;
+    double diff{-1}, loglike, prevlike;
     for(int it = 0; it <= niters; it++)
     {
         initIteration();
@@ -215,10 +214,40 @@ double FastPhaseK2::forwardAndBackwardsLowRamNormal(int ind, const MyFloat1D & G
     else
     {
         // now we call geno and output gamma ae
-        for(s = 0; s < M; s++)
+        alpha *= beta; // alpha is gamma now
+        MyArr2D ind_post_z_g(M, 4);
+        int z2, z12, g1, g2, g12;
+        for(z1 = 0; z1 < C; z1++)
         {
-            std::lock_guard<std::mutex> lock(mutex_it);
-            Ezj.col(s) += (alpha.col(s) * beta.col(s)).reshaped(C, C).colwise().sum();
+            for(z2 = 0; z2 < C; z2++)
+            {
+                z12 = z1 * C + z2;
+                for(g1 = 0; g1 < 2; g1++)
+                {
+                    for(g2 = 0; g2 < 2; g2++)
+                    {
+                        g12 = g1 * 2 + g2;
+                        ind_post_z_g.col(g12) = gli.col(g1 + g2)
+                                                * (g1 * F.col(z1) + (1 - g1) * (1 - F.col(z1)))
+                                                * (g2 * F.col(z2) + (1 - g2) * (1 - F.col(z2)));
+                    }
+                }
+                // emit.row(z12) == ind_post_z_g.rowwise().sum();
+                ind_post_z_g.colwise() *= alpha.row(z12).transpose() / ind_post_z_g.rowwise().sum();
+                for(g1 = 0; g1 < 2; g1++)
+                {
+                    for(g2 = 0; g2 < 2; g2++)
+                    {
+                        g12 = g1 * 2 + g2;
+                        GP(Eigen::seqN(g1 + g2, M, 3), ind) += ind_post_z_g.col(g12);
+                    }
+                }
+                {
+                    // update GammaAE now
+                    std::lock_guard<std::mutex> lock(mutex_it);
+                    Ezj.row(z1) += alpha.row(z12);
+                }
+            }
         }
     }
 
@@ -474,9 +503,37 @@ fbd_res1 FastPhaseK2::forwardAndBackwardsHighRamNormal(int ind, const MyFloat1D 
     else
     {
         // now we call geno and output gamma ae
-        for(s = 0; s < M; s++)
+        alpha *= beta; // alpha is gamma now
+        MyArr2D ind_post_z_g(M, 4);
+        int z2, z12, g1, g2, g12;
+        for(z1 = 0; z1 < C; z1++)
         {
-            ind_post_zj.col(s) += (alpha.col(s) * beta.col(s)).reshaped(C, C).colwise().sum();
+            for(z2 = 0; z2 < C; z2++)
+            {
+                z12 = z1 * C + z2;
+                for(g1 = 0; g1 < 2; g1++)
+                {
+                    for(g2 = 0; g2 < 2; g2++)
+                    {
+                        g12 = g1 * 2 + g2;
+                        ind_post_z_g.col(g12) = gli.col(g1 + g2)
+                                                * (g1 * F.col(z1) + (1 - g1) * (1 - F.col(z1)))
+                                                * (g2 * F.col(z2) + (1 - g2) * (1 - F.col(z2)));
+                    }
+                }
+                // emit.row(z12) == ind_post_z_g.rowwise().sum();
+                ind_post_z_g.colwise() *= alpha.row(z12).transpose() / ind_post_z_g.rowwise().sum();
+                for(g1 = 0; g1 < 2; g1++)
+                {
+                    for(g2 = 0; g2 < 2; g2++)
+                    {
+                        g12 = g1 * 2 + g2;
+                        GP(Eigen::seqN(g1 + g2, M, 3), ind) += ind_post_z_g.col(g12);
+                    }
+                }
+                // update gamma ae now
+                ind_post_zj.row(z1) += alpha.row(z12);
+            }
         }
     }
     double indLogLike = (1 / cs).log().sum();
