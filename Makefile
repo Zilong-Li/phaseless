@@ -10,6 +10,12 @@ LIBS     = -lhts -lz -lm -lbz2 -llzma -lcurl -lpthread
 # OBJS     = $(patsubst src/%.cpp, src/%.o, $(wildcard *.cpp))
 OBJS     = src/phaseless.o src/fastphase.o src/admixture.o src/utils.o
 BINS     = phaseless
+FLOAT    = 0
+
+ifeq ($(strip $(FLOAT)),1)
+  $(info "use float in phaseless!")
+  CXXFLAGS += -DUSE_FLOAT
+endif
 
 .PHONY: all clean
 

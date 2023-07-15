@@ -142,8 +142,8 @@ inline double FastPhaseK4::forwardAndBackwards(int ind,
                     + log((likeForwardTmp * transDip(s, Eigen::seq(z12s, z12e)).transpose()).sum());
             }
         }
-        // protect_me = logLikeForwardInd.row(s).maxCoeff();
-        protect_me = logLikeForwardInd(C2 - 1, s);
+        protect_me = logLikeForwardInd.col(s).maxCoeff();
+        // protect_me = logLikeForwardInd(C2 - 1, s);
     }
     // total likelhoods of the individual
     double indLogLikeForwardAll = protect_me + log((logLikeForwardInd.col(M - 1) - protect_me).exp().sum());
@@ -167,8 +167,8 @@ inline double FastPhaseK4::forwardAndBackwards(int ind,
                     + log((likeBackwardTmp * transDip(s + 1, Eigen::seqN(z12, C2, C2)).transpose()).sum());
             }
         }
-        // protect_me = logLikeBackwardInd.row(s).maxCoeff();
-        protect_me = logLikeBackwardInd(C2 - 1, s);
+        protect_me = logLikeBackwardInd.col(s).maxCoeff();
+        // protect_me = logLikeBackwardInd(C2 - 1, s);
     }
 
     std::lock_guard<std::mutex> lock(mutex_it); // lock here if RAM cost really matters

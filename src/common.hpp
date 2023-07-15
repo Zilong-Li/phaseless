@@ -53,7 +53,12 @@ using Arr2D = Eigen::Array<double, Eigen::Dynamic, Eigen::Dynamic, Eigen::ColMaj
 using Arr1D = Eigen::Array<double, Eigen::Dynamic, 1, Eigen::ColMajor>;
 
 // MY TYPES
+#ifdef USE_FLOAT
+using MyFloat = float; // use float if no accuracy drops
+#else
 using MyFloat = double; // use float if no accuracy drops
+#endif
+
 using MyFloat1D = std::vector<MyFloat>;
 using MyFloat2D = std::vector<MyFloat1D>;
 using MyMat2D = Eigen::Matrix<MyFloat, Eigen::Dynamic, Eigen::Dynamic, Eigen::ColMajor>;
@@ -618,7 +623,6 @@ inline auto calc_grid_distance(const Int2D & pos)
 */
 inline auto collapse_emission_by_grid(const MyArr2D & E, const Int2D & grids, double minEmission = 1e-6)
 {
-    const int M = E.cols();
     const int C2 = E.rows();
     const int G = grids.size();
     MyArr2D EG = MyArr2D::Ones(C2, G);
@@ -633,7 +637,7 @@ inline auto collapse_emission_by_grid(const MyArr2D & E, const Int2D & grids, do
         EG.col(g) /= EG.col(g).maxCoeff(); // rescale by maximum
         EG.col(g) = (EG.col(g) < minEmission).select(minEmission, EG.col(g)); // apply bounding
     }
-    assert(snp == M);
+    assert(snp == E.cols());
 
     return EG;
 }
