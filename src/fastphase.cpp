@@ -671,6 +671,7 @@ int run_impute_main(Options & opts)
                 std::ofstream orecomb2(opts.out.string() + ".recomb2");
                 std::ofstream opi2(opts.out.string() + ".pi2");
                 std::ofstream oae2(opts.out.string() + ".cluster.freq2");
+                std::ofstream oclp(opts.out.string() + ".collapse");
                 opts.nimpute = 2;
                 for(int it = 0; it <= opts.nimpute; it++)
                 {
@@ -704,6 +705,7 @@ int run_impute_main(Options & opts)
                 opi2 << faith.PI.transpose().format(fmt) << "\n";
                 faith.Ezj.rowwise() /= faith.Ezj.colwise().sum(); // norm gamma ae
                 oae2 << faith.Ezj.transpose().format(fmt) << "\n";
+                for(auto cl : faith.collapse) oclp << cl << "\n";
             }
         }
     }

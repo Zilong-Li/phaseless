@@ -11,7 +11,7 @@ using namespace Eigen;
 
 TEST_CASE("fastphasek4", "[test-fastphasek4]")
 {
-    int C{10}, seed{1}, chunksize{10000}, niters{10};
+    int C{10}, seed{1}, chunksize{10000}, niters{40};
     std::unique_ptr<BigAss> genome = std::make_unique<BigAss>();
     genome->chunksize = chunksize, genome->C = C;
     chunk_beagle_genotype_likelihoods(genome, "../data/bgl.gz");

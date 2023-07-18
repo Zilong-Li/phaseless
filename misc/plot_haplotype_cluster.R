@@ -124,25 +124,57 @@ divide_pos_into_grid <- function(collapse) {
 }
 
 
-library("DescTools")
 
 ### pi is no longer cluster frequency.
 ### it's the probabilty of switing into cluster k between snp t and t+1
 
-d <- read.table("t.log")
-collapse <- as.logical(d[,1])
+png("hapfreq.png", unit = "in", res = 300, width = 12, height = 6)
+
+library("DescTools")
+
+par(mfrow = c(2, 1), mar = c(1, 1, 1.5, 1), oma = c(0, 0, 0, 0))
+
+nsnps <- 1000
+
+res <- t(as.matrix(read.table("impute.cluster.freq")))
+nsnps <- ncol(res)
+barplot(res,
+  beside = F, col = colors, border = NA, space = 0,
+  main = paste0("Cluster Frequency (before collapsing, M=", ncol(res), ")"), axes = F
+)
+
+recomb <- read.table("impute.recomb")
+res <- sqrt(as.numeric(recomb[, 3]))
+lines(res, type = "l", col = "black")
+
+res <- t(as.matrix(read.table("impute.cluster.freq2")))
+collapse <- as.logical(read.table("impute.collapse")[,1])
 grids <- divide_pos_into_grid(collapse)
 grids_width <- sapply(grids,length)
 
-res <- pi[1:nsnps, ]
-res <- t(as.matrix(res))
+barplot(res, width = grids_width,
+  beside = F, col = colors, border = NA, space = 0,
+  main = paste0("Cluster Frequency (after collapsing, M=", ncol(res), ")"), axes = F
+)
 
+recomb <- read.table("impute.recomb2")
+res <- sqrt(as.numeric(recomb[, 3]))
+x <- Midx(1:nsnps) - 0.5
+x <- Midx(cumsum(grids_width)) - 0.5
+res <- res[-1] # remove first one
+## lines(res, type = "l", col = "black")
+points(x, res, type = "l", col = "black")
+
+dev.off()
+
+q()
 
 recomb <- read.table("impute.recomb")
 nsnps <- 1000
 ngrids <- nrow(pi)-nsnps
 
 stopifnot(all.equal(dim(recomb)[1], nrow(pi)))
+
 res <- sqrt(as.numeric(recomb[1:nsnps, 3]))
 res <- res[-1] # remove first one
 x <- Midx(1:nsnps) - 0.5
