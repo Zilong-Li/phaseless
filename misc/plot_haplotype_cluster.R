@@ -205,8 +205,81 @@ dev.off()
 alpha <- read_haplike("parse.alpha.bin")
 beta <- read_haplike("parse.beta.bin")
 
-gamma <- alpha$haplike[[1]] * beta$haplike[[1]]
-sum(gamma[,,20])
+gamma <- lapply(1:alpha$N, function(i) {
+  o <- alpha$haplike[[i]] * beta$haplike[[i]]
+  o
+})
+
+## get collapse gamma, Probability of copying from the cluster haplotype
+gammaK_t <- lapply(1:alpha$N, function(i) {
+  o <- alpha$haplike[[i]] * beta$haplike[[i]]
+  apply(o, MARGIN = 3, colSums)
+})
+
+## barplot(gammaK_t[[1]], beside = F, border = NA, col = colors, space = 0,axes = F)
+
+N <- alpha$N
+M <- alpha$M
+C <- alpha$C
+Step <- 0
+
+png("new.haplike.png", unit = "in", res = 300, width = 12, height = 6)
+plot(0, 0,col = "white", axes = F, main = "Probability of copying from the cluster haplotype",
+     xlim = c(0, M), ylim = c(1, N + 1))
+
+d <- 1
+xleft <- 1:M - d
+xright <- 1:M - d
+for (i in seq(N)) {
+  ytop <- i + array(0, M)
+  ybottom <- i + array(0, M)
+  for(c in 1:C) {
+    ytop <- ytop + gammaK_t[[i]][c,1:M+Step]
+    rect(xleft = xleft - d,  xright = xright + d, ybottom = ybottom, ytop = ytop, col = c, lwd = 0, border = NA)
+    ybottom <- ytop
+  }
+}
+
+dev.off()
+
+png("haplike.png", unit = "in", res = 300, width = 12, height = 6)
+par(mfrow = c(2, 1),mar = c(1, 1, 1.5, 1), oma = c(0, 0, 0, 0))
+
+plot(0, 0,col = "white", axes = F, main = "Probability of copying from the cluster haplotype",
+     xlim = c(0, M), ylim = c(1, 25 + 1))
+d <- 1
+xleft <- 1:M - d
+xright <- 1:M - d
+
+odd <- seq(1, N, 2)
+for (i in seq(25)) {
+  ytop <- i + array(0, M)
+  ybottom <- i + array(0, M)
+  for(c in 1:C) {
+    ytop <- ytop + gammaK_t[[odd[i]]][c,1:M+Step]
+    rect(xleft = xleft - d,  xright = xright + d, ybottom = ybottom, ytop = ytop, col = c, lwd = 0, border = NA)
+    ybottom <- ytop
+  }
+}
+
+plot(0, 0,col = "white", axes = F, main = "Probability of copying from the cluster haplotype",
+     xlim = c(0, M), ylim = c(1, 25 + 1))
+d <- 1
+xleft <- 1:M - d
+xright <- 1:M - d
+
+even <- seq(2, N, 2)
+for (i in seq(25)) {
+  ytop <- i + array(0, M)
+  ybottom <- i + array(0, M)
+  for(c in 1:C) {
+    ytop <- ytop + gammaK_t[[even[i]]][c,1:M+Step]
+    rect(xleft = xleft - d,  xright = xright + d, ybottom = ybottom, ytop = ytop, col = c, lwd = 0, border = NA)
+    ybottom <- ytop
+  }
+}
+
+dev.off()
 
 
 ###########
@@ -219,10 +292,8 @@ sum(gamma[,,20])
 ##   tolerance = 1e-4
 ## ))
 ## ## colSums(l$haplike[[n]], dims = 2)
-## png("haplike.png", unit = "in", res = 300, width = 12, height = 6)
 ## npop <- 3
-## plot_haplike(l$haplike, npop)
-## dev.off()
+## plot_haplike(gamma, npop)
 
 
 
