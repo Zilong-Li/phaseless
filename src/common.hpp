@@ -175,8 +175,8 @@ inline auto calc_transRate_diploid(const Int1D & dl, double nGen, double expRate
     MyArr2D transRate(3, dl.size());
     MyArr1D distRate(dl.size());
     distRate(0) = 1; //  act as sentinel. so dim aligns with M
-    // for(size_t i = 1; i < dl.size(); i++) distRate(i) = std::exp(-dl[i] * expRate * nGen / 1e8);
-    for(size_t i = 1; i < dl.size(); i++) distRate(i) = std::exp(-dl[i] / 1e6);
+    for(size_t i = 1; i < dl.size(); i++) distRate(i) = std::exp(-dl[i] * expRate * nGen / 1e8);
+    // for(size_t i = 1; i < dl.size(); i++) distRate(i) = std::exp(-dl[i] / 1e6);
     transRate.row(0) = distRate.square();
     transRate.row(1) = distRate * (1 - distRate);
     transRate.row(2) = (1 - distRate).square();

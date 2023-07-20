@@ -35,24 +35,23 @@ void FastPhaseK2::initIteration()
     Ezj.setZero(C, G); // reset post(Z,j)
     Ezg1.setZero(C, M); // reset pos(Z,g)
     Ezg2.setZero(C, M); // reset pos(Z,g)
-
 }
 
 void FastPhaseK2::updateIteration()
 {
     MyArr1D er = 1.0 - Ezj.colwise().sum() / N;
-    er = (er < 0.9).select(0.9, er);
-    er = (er > std::exp(-1e-9)).select(std::exp(-1e-9), er);
+    // er = (er < 0.9).select(0.9, er);
+    // er = (er > std::exp(-1e-9)).select(std::exp(-1e-9), er);
     // morgans per SNP assuming T=100, 0.5 cM/Mb
     // x1 <- exp(-nGen * minRate * dl/100/1000000) # lower
     // x2 <- exp(-nGen * maxRate * dl/100/1000000) # upper
-    // for(int i = 0; i < er.size(); i++)
-    // {
-    //     double miner = std::exp(-nGen * maxRate * dist[i] / 1e8);
-    //     double maxer = std::exp(-nGen * minRate * dist[i] / 1e8);
-    //     er(i) = er(i) < miner ? miner : er(i);
-    //     er(i) = er(i) > maxer ? maxer : er(i);
-    // }
+    for(int i = 0; i < er.size(); i++)
+    {
+        double miner = std::exp(-nGen * maxRate * dist[i] / 100 / 1e6);
+        double maxer = std::exp(-nGen * minRate * dist[i] / 100 / 1e6);
+        er(i) = er(i) < miner ? miner : er(i);
+        er(i) = er(i) > maxer ? maxer : er(i);
+    }
     R.row(0) = er.square();
     R.row(1) = (1 - er) * er;
     R.row(2) = (1 - er).square();
@@ -74,23 +73,23 @@ void FastPhaseK2::updateIteration()
     Ezj.col(0) = pi / pi.sum(); // now update the first SNP
     Ezj.rowwise() /= Ezj.colwise().sum();
 
-    // if(Ezj.isNaN().any() || (Ezj < clusterFreqThreshold).any())
-    // {
-    //     // std::cerr << "reset values below threshold\n";
-    //     Ezj = (Ezj < clusterFreqThreshold).select(0, Ezj); // reset to 0 first
-    //     for(int i = 0; i < G; i++)
-    //     {
-    //         // for columns with an entry below 0
-    //         // each 0 entry becomes threshold
-    //         // then rest re-scaled so whole thing has sum 1
-    //         if(auto c = (Ezj.col(i) == 0).count() > 0)
-    //         {
-    //             double xsum = 1 - c * clusterFreqThreshold;
-    //             double csum = Ezj.col(i).sum();
-    //             Ezj.col(i) = (Ezj.col(i) > 0).select(Ezj.col(i) * xsum / csum, clusterFreqThreshold);
-    //         }
-    //     }
-    // }
+    if(Ezj.isNaN().any() || (Ezj < clusterFreqThreshold).any())
+    {
+        // std::cerr << "reset values below threshold\n";
+        Ezj = (Ezj < clusterFreqThreshold).select(0, Ezj); // reset to 0 first
+        for(int i = 0; i < G; i++)
+        {
+            // for columns with an entry below 0
+            // each 0 entry becomes threshold
+            // then rest re-scaled so whole thing has sum 1
+            if(auto c = (Ezj.col(i) == 0).count() > 0)
+            {
+                double xsum = 1 - c * clusterFreqThreshold;
+                double csum = Ezj.col(i).sum();
+                Ezj.col(i) = (Ezj.col(i) > 0).select(Ezj.col(i) * xsum / csum, clusterFreqThreshold);
+            }
+        }
+    }
 
     PI = Ezj;
 

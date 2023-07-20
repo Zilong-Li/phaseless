@@ -281,6 +281,14 @@ for (i in seq(25)) {
 
 dev.off()
 
+# ab = alpha * beta in stitch
+# the shape of ab[[isample]] is (C*C, M)
+## conbin <- file("stitch.ab", "wb")
+## writeBin(as.integer(c(N, M, C)), conbin, size=4)
+## for(i in 1:length(ab)) {
+##   writeBin(as.numeric(unlist(ab[[i]])), conbin, size=8)
+## }
+## close(conbin)
 
 ###########
 ## l <- read_haplike("parse.haplike.bin")
