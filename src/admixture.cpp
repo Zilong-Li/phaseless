@@ -1,5 +1,6 @@
 #include "admixture.hpp"
 
+#include "common.hpp"
 #include "io.hpp"
 #include "threadpool.hpp"
 #include <alpaca/alpaca.h>
@@ -11,7 +12,7 @@ using namespace std;
 double Admixture::runOptimalWithBigAss(int ind, const std::unique_ptr<BigAss> & genome)
 {
     MyArr2D kapa, Ekg;
-    MyArr2D alpha, beta;
+    MyArr2D alpha, beta, ae;
     MyArr1D iQ = MyArr1D::Zero(K);
     MyArr1D Hz(C);
     double norm = 0, llike = 0, tmp = 0;
@@ -24,6 +25,8 @@ double Admixture::runOptimalWithBigAss(int ind, const std::unique_ptr<BigAss> & 
         beta.setZero(C * C, nGrids);
         get_cluster_likelihood(ind, nsnps, alpha, beta, genome->gls[ic], genome->R[ic], genome->PI[ic],
                                genome->F[ic]); // return gamma
+        ae.setZero(C * C, nGrids);
+        get_cluster_pairs_probabity(ae, genome->R[ic], genome->PI[ic]);
         kapa.setZero(C * K, nGrids); // C x K x M layout
         Ekg.setZero(K, nGrids);
         for(s = 0; s < nGrids; s++, m++)
@@ -34,7 +37,7 @@ double Admixture::runOptimalWithBigAss(int ind, const std::unique_ptr<BigAss> & 
                 for(tmp = 0, c2 = 0; c2 < C; c2++)
                 {
                     c12 = c1 * C + c2;
-                    double xz = alpha(c12, s) * beta(c12, s);
+                    double xz = alpha(c12, s) * beta(c12, s) / ae(c12, s);
                     double zy = Hz(c1) * Hz(c2);
                     tmp += xz * zy;
                 }
@@ -62,7 +65,7 @@ double Admixture::runOptimalWithBigAss(int ind, const std::unique_ptr<BigAss> & 
 double Admixture::runNativeWithBigAss(int ind, const std::unique_ptr<BigAss> & genome)
 {
     MyArr2D w((C * C + C) / 2, K * K);
-    MyArr2D Ekg, iEkc, alpha, beta;
+    MyArr2D Ekg, iEkc, alpha, beta, ae;
     double norm = 0, llike = 0;
     int c1, c2, c12, cc;
     int k1, k2, k12, s;
@@ -75,6 +78,8 @@ double Admixture::runNativeWithBigAss(int ind, const std::unique_ptr<BigAss> & g
         beta.setZero(C * C, nGrids);
         get_cluster_likelihood(ind, nsnps, alpha, beta, genome->gls[ic], genome->R[ic], genome->PI[ic],
                                genome->F[ic]);
+        ae.setZero(C * C, nGrids);
+        get_cluster_pairs_probabity(ae, genome->R[ic], genome->PI[ic]);
         iEkc.setZero(C * K, nGrids);
         Ekg.setZero(K, nGrids);
         for(s = 0; s < nGrids; s++, m++)
@@ -84,7 +89,7 @@ double Admixture::runNativeWithBigAss(int ind, const std::unique_ptr<BigAss> & g
                 for(c2 = c1; c2 < C; c2++)
                 {
                     c12 = c1 * C + c2;
-                    double xz = alpha(c12, s) * beta(c12, s);
+                    double xz = alpha(c12, s) * beta(c12, s) / ae(c12, s);
                     for(k1 = 0; k1 < K; k1++)
                     {
                         for(k2 = 0; k2 < K; k2++)

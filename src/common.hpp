@@ -516,6 +516,36 @@ inline auto get_cluster_likelihood(int ind,
     return cs;
 }
 
+inline auto get_cluster_pairs_probabity(MyArr2D & ae, const MyFloat1D & R_, const MyFloat1D & PI_)
+{
+    const int C2 = ae.rows();
+    const int M = ae.cols();
+    const int C = std::sqrt(C2);
+    Eigen::Map<const MyArr2D> PI(PI_.data(), C, M);
+    Eigen::Map<const MyArr2D> R(R_.data(), 3, M);
+
+    int s{0};
+    ae.col(s) = (PI.col(s).matrix() * PI.col(s).transpose().matrix()).reshaped().array();
+    // ======== forward recursion ===========
+    MyArr1D sumTmp1(C); // store sum over internal loop
+    double constTmp;
+    int z1, z2, z12;
+    for(s = 1; s < M; s++)
+    {
+        sumTmp1 = ae.col(s - 1).reshaped(C, C).rowwise().sum() * R(1, s);
+        constTmp = R(2, s); // since alpha.col(s - 1).sum() = 1
+        for(z1 = 0; z1 < C; z1++)
+        {
+            for(z2 = 0; z2 < C; z2++)
+            {
+                z12 = z1 * C + z2;
+                ae(z12, s) = (ae(z12, s - 1) * R(0, s) + PI(z1, s) * sumTmp1(z2) + PI(z2, s) * sumTmp1(z1)
+                              + PI(z1, s) * PI(z2, s) * constTmp);
+            }
+        }
+    }
+}
+
 inline auto calc_cluster_info(const int N, const MyArr2D & GZP1, const MyArr2D & GZP2)
 {
     auto eij = GZP1 + GZP2 * 2;
