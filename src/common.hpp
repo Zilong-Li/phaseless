@@ -544,6 +544,9 @@ inline auto get_cluster_pairs_probabity(MyArr2D & ae, const MyFloat1D & R_, cons
             }
         }
     }
+    // (1.0 - ae.colwise().sum()).abs() < 1e-2 is OK. this may be due to rounding error
+    // if we want to colsum equals 1.0. then normlize it
+    ae.rowwise() /= ae.colwise().sum();
 }
 
 inline auto calc_cluster_info(const int N, const MyArr2D & GZP1, const MyArr2D & GZP2)
