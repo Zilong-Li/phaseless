@@ -199,7 +199,7 @@ int run_admix_main(Options & opts)
     {
         MyArr2D F0, Q0, F1, Q1;
         const int istep{4};
-        double alpha, qdiff, ldiff, stepMax{4}, alphaMax{1280};
+        double alpha{std::numeric_limits<double>::lowest()}, qdiff, ldiff, stepMax{4}, alphaMax{1280};
         double prevlike{std::numeric_limits<double>::lowest()};
         for(int it = 0; it < opts.nadmix / 3; it++)
         {
@@ -229,7 +229,7 @@ int run_admix_main(Options & opts)
             ldiff = loglike - prevlike;
             prevlike = loglike;
             cao.print(tim.date(), "SqS3 iteration", it * 3 + 1, ", diff(Q) =", std::scientific, qdiff,
-                      ", likelihoods =", std::fixed, loglike, ",", tim.reltime(), " sec");
+                      ", alpha=", alpha, ", likelihoods =", std::fixed, loglike, ",", tim.reltime(), " sec");
             if(qdiff < opts.qtol)
             {
                 cao.print(tim.date(), "hit stopping criteria, diff(Q) =", std::scientific, qdiff, " <",
@@ -246,6 +246,7 @@ int run_admix_main(Options & opts)
             admixer.initIteration();
             alpha = ((F1 - F0).square().sum() + (Q1 - Q0).square().sum())
                     / ((admixer.F - 2 * F1 + F0).square().sum() + (admixer.Q - 2 * Q1 + Q0).square().sum());
+            // alpha = ((Q1 - Q0).square().sum()) / ((admixer.Q - 2 * Q1 + Q0).square().sum());
             alpha = max(1.0, sqrt(alpha));
             if(alpha >= stepMax)
             {
