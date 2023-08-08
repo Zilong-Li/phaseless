@@ -10,6 +10,7 @@
 #include "io.hpp"
 #include "threadpool.hpp"
 #include <alpaca/alpaca.h>
+#include <cassert>
 
 using namespace std;
 
@@ -21,20 +22,36 @@ void Phaseless::initRecombination(const Int1D & pos, double Ne = 20000, int B = 
     et = calc_distRate(pos, C, 0.05);
 }
 
+void Phaseless::initRecombination(const Int2D & pos, double Ne = 20000, int B = 1)
+{
+    int nchunks = pos.size();
+    pos_chunk.resize(nchunks + 1);
+    er = MyArr1D::Ones(M);
+    et = MyArr1D::Ones(M);
+    int i{0}, ss{0};
+    for(i = 0; i < nchunks; i++)
+    {
+        pos_chunk[i] = ss;
+        dist = calc_position_distance(pos[i]);
+        er.segment(ss, pos[i].size()) = calc_distRate(pos[i], C, 1.0);
+        et.segment(ss, pos[i].size()) = calc_distRate(pos[i], C, 0.05);
+        ss += pos[i].size();
+    }
+    pos_chunk[nchunks] = ss; // add sentinel
+}
+
 void Phaseless::initIteration()
 {
     PclusterK.setZero(C * K, M);
     EclusterA1.setZero(C, M);
     EclusterA2.setZero(C, M);
+    Eancestry.setZero(K, N);
 }
 
 void Phaseless::updateIteration()
 {
     P = (EclusterA2 / (EclusterA1 + EclusterA2)).transpose();
-    if(P.isNaN().any())
-    {
-        if(debug) cao.warn("NaN in P in Phaseless model. will fill it with AF");
-    }
+    if(debug && P.isNaN().any()) cao.warn("NaN in P in Phaseless model. will fill it with AF");
     // map F to domain but no normalization
     P = (P < alleleEmitThreshold).select(alleleEmitThreshold, P); // lower bound
     P = (P > 1 - alleleEmitThreshold).select(1 - alleleEmitThreshold, P); // upper bound
@@ -44,6 +61,7 @@ void Phaseless::updateIteration()
         F[i] = PclusterK.middleRows(i * C, C);
         F[i].rowwise() /= F[i].colwise().sum(); // normalize F per site
     }
+    Q = Eancestry;
     Q.rowwise() /= Q.colwise().sum(); // normalize Q per individual
 }
 
@@ -106,8 +124,8 @@ void Phaseless::getBackwardPrevSums(const MyArr2D & beta_mult_emit,
 void Phaseless::moveForward(int ind,
                             int s,
                             MyArr2D & curr,
+                            const MyArr1D & emit,
                             const MyArr2D & prev,
-                            const MyArr2D & emit,
                             const MyArr2D & prevsum_z,
                             const MyArr2D & prevsum_zz,
                             const MyArr2D & prevsum_zy,
@@ -133,14 +151,14 @@ void Phaseless::moveForward(int ind,
                                    + Q(y1, ind) * F[y1](z1, s)
                                          * (er(s) * prevsum_zy(z2, y2) + (1 - er(s)) * prevsum_zzy(y2) * F[y2](z2, s)));
                     double jj = (1 - et(s)) * (1 - et(s)) * Q(y1, ind) * F[y1](z1, s) * Q(y2, ind) * F[y2](z2, s);
-                    curr(zz, yy) = emit(zz, s) * (ss + sj + jj);
+                    curr(zz, yy) = emit(zz) * (ss + sj + jj);
                 }
 }
 
 void Phaseless::moveBackward(int ind,
                              int s,
+                             MyFloat cs,
                              MyArr2D & curr,
-                             const MyArr1D & cs,
                              const MyArr2D & beta_mult_emit,
                              const MyArr2D & prevsum_z,
                              const MyArr2D & prevsum_zz,
@@ -165,70 +183,27 @@ void Phaseless::moveBackward(int ind,
                                 * (er(s) * (prevsum_zy(z1, y1) + prevsum_zy(z2, y2))
                                    + (1 - er(s)) * (prevsum_zzy(y1) + prevsum_zzy(y2)));
                     double jj = (1 - et(s)) * (1 - et(s)) * prevsum_zzyy;
-                    curr(zz, yy) = (ss + sj + jj) / cs(s);
+                    curr(zz, yy) = (ss + sj + jj) / cs;
                 }
 }
 
-double Phaseless::runForwardBackwards(int ind, const MyFloat1D & GL, bool finalIter)
-{
-    Eigen::Map<const MyArr2D> gli(GL.data() + ind * M * 3, M, 3);
-    MyArr2D emit = get_emission_by_gl(gli, P).transpose(); // CC x M
-    std::vector<MyArr2D> alpha(M, MyArr2D(CC, KK));
-    std::vector<MyArr2D> beta(M, MyArr2D(CC, KK));
-    MyArr2D prevsum_z(C, KK), prevsum_zz(K, K), prevsum_zy(C, K);
-    MyArr1D cs(M), prevsum_zzy(K);
-    // init
-    int s{0}, z1{0}, z2{0}, y1{0}, y2{0}, zz{0}, yy{0};
-    for(z1 = 0; z1 < C; z1++)
-        for(z2 = 0; z2 < C; z2++)
-            for(y1 = 0; y1 < K; y1++)
-                for(y2 = 0; y2 < K; y2++)
-                {
-                    zz = z1 * C + z2;
-                    yy = y1 * K + y2;
-                    alpha[s](zz, yy) = emit(zz, s) * Q(y1, ind) * F[y1](z1, s) * Q(y2, ind) * F[y2](z2, s);
-                }
-    cs(s) = alpha[s].sum();
-    alpha[s] /= cs(s); // norm alpha
-    // forward recursion
-    for(s = 1; s < M; s++)
-    {
-        getForwardPrevSums(alpha[s - 1], prevsum_z, prevsum_zz, prevsum_zy, prevsum_zzy);
-        moveForward(ind, s, alpha[s], alpha[s - 1], emit, prevsum_z, prevsum_zz, prevsum_zy, prevsum_zzy);
-        cs(s) = alpha[s].sum();
-        alpha[s] /= cs(s); // norm alpha
-    }
-    // backwards recursion
-    s = M - 1;
-    beta[s].setConstant(1.0);
-    MyArr2D beta_mult_emit(CC, KK);
-    double prevsum_zzyy{0};
-    for(s = M - 2; s >= 0; s--)
-    {
-        for(int yy = 0; yy < KK; yy++) beta_mult_emit.col(yy) = beta[s + 1].col(yy) * emit.col(s + 1);
-        getBackwardPrevSums(beta_mult_emit, prevsum_z, prevsum_zz, prevsum_zy, prevsum_zzy, prevsum_zzyy, ind, s + 1);
-        moveBackward(ind, s + 1, beta[s], cs, beta_mult_emit, prevsum_z, prevsum_zz, prevsum_zy, prevsum_zzy,
-                     prevsum_zzyy);
-    }
-    // get posterios
-    getPosterios(ind, gli, emit, cs, alpha, beta);
-    return (1 / cs).log().sum();
-}
-
-void Phaseless::getPosterios(int ind,
+void Phaseless::getPosterios(const int ind,
+                             const int ic,
                              const MyArr2D & gli,
                              const MyArr2D & emit,
                              const MyArr1D & cs,
                              const std::vector<MyArr2D> & alpha,
                              const std::vector<MyArr2D> & beta)
 {
-    int s{0}, z1{0}, z2{0}, y1{0}, y2{0}, zz{0}, yy{0};
-    MyArr2D ind_post_zg1(C, M), ind_post_zg2(C, M), ind_post_zz(CC, M);
-    MyArr2D ind_post_y = MyArr2D::Zero(K, M);
-    MyArr2D ind_post_zy = MyArr2D::Zero(C * K, M);
+    const int S = pos_chunk[ic + 1] - pos_chunk[ic];
+    assert(S == alpha.size());
+    int m{0}, s{0}, z1{0}, z2{0}, y1{0}, y2{0}, zz{0}, yy{0};
+    MyArr2D ind_post_zg1(C, S), ind_post_zg2(C, S), ind_post_zz(CC, S);
+    MyArr2D ind_post_y = MyArr2D::Zero(K, S);
+    MyArr2D ind_post_zy = MyArr2D::Zero(C * K, S);
     MyArr2D prevsum_z(C, KK), prevsum_zz(K, K), prevsum_zy(C, K);
     MyArr1D prevsum_zzy(K);
-    for(s = 0; s < M; s++)
+    for(s = 0; s < S; s++)
     {
         MyArr2D gamma = alpha[s] * beta[s]; // post(z, y)
         if(debug && !(std::abs(1.0 - gamma.sum()) < 1e-6))
@@ -237,13 +212,14 @@ void Phaseless::getPosterios(int ind,
         auto ind_post_yy = gamma.colwise().sum();
         ind_post_y.col(s) = ind_post_yy.reshaped(K, K).colwise().sum();
         auto gamma_div_emit = ind_post_zz.col(s) / emit.col(s);
+        m = s + pos_chunk[ic];
         for(z1 = 0; z1 < C; z1++)
         {
-            ind_post_zg1(z1, s) = (gamma_div_emit(Eigen::seqN(z1, C, C)) * (1 - P(s, z1))
-                                   * (gli(s, 0) * (1 - P.row(s)) + gli(s, 1) * P.row(s)).transpose())
+            ind_post_zg1(z1, s) = (gamma_div_emit(Eigen::seqN(z1, C, C)) * (1 - P(m, z1))
+                                   * (gli(s, 0) * (1 - P.row(m)) + gli(s, 1) * P.row(m)).transpose())
                                       .sum();
-            ind_post_zg2(z1, s) = (gamma_div_emit(Eigen::seqN(z1, C, C)) * (P(s, z1))
-                                   * (gli(s, 1) * (1 - P.row(s)) + gli(s, 2) * P.row(s)).transpose())
+            ind_post_zg2(z1, s) = (gamma_div_emit(Eigen::seqN(z1, C, C)) * (P(m, z1))
+                                   * (gli(s, 1) * (1 - P.row(m)) + gli(s, 2) * P.row(m)).transpose())
                                       .sum();
             for(y1 = 0; y1 < K; y1++)
                 ind_post_zy(y1 * C + z1, s) = gamma(Eigen::seqN(z1, C, C), Eigen::seqN(y1, K, K)).sum();
@@ -260,28 +236,90 @@ void Phaseless::getPosterios(int ind,
                         double ebc = emit(zz, s) * beta[s](zz, yy) / cs(s);
                         ind_post_y(y1, s) +=
                             ebc
-                            * ((1 - et(s)) * (1 - et(s)) * F[y1](z1, s) * Q(y1, ind) * F[y2](z2, s) * Q(y2, ind)
-                               + et(s) * (1 - et(s)) * Q(y1, ind) * F[y1](z1, s)
-                                     * (er(s) * prevsum_zy(z2, y2) + (1 - er(s)) * F[y2](z2, s) * prevsum_zzy(y2)));
+                            * ((1 - et(m)) * (1 - et(m)) * F[y1](z1, m) * Q(y1, ind) * F[y2](z2, m) * Q(y2, ind)
+                               + et(m) * (1 - et(m)) * Q(y1, ind) * F[y1](z1, m)
+                                     * (er(m) * prevsum_zy(z2, y2) + (1 - er(m)) * F[y2](z2, m) * prevsum_zzy(y2)));
                         ind_post_zy(y1 * C + z1, s) +=
                             ebc
-                            * ((1 - et(s)) * Q(y1, ind) * F[y1](z1, s)
-                                   * ((1 - et(s)) * F[y2](z2, s) * Q(y2, ind)
-                                      + et(s) * (1 - er(s)) * F[y2](z2, s) * prevsum_zzy(y2)
-                                      + et(s) * er(s) * prevsum_zy(z2, y2))
-                               + et(s) * (1 - er(s)) * F[y1](z1, s)
-                                     * ((1 - et(s)) * F[y2](z2, s) * Q(y2, ind) * prevsum_zzy(y1)
-                                        + et(s) * (1 - er(s)) * F[y2](z2, s) * prevsum_zz(y1, y2)
-                                        + et(s) * er(s) * prevsum_z(z2, yy)));
+                            * ((1 - et(m)) * Q(y1, ind) * F[y1](z1, m)
+                                   * ((1 - et(m)) * F[y2](z2, m) * Q(y2, ind)
+                                      + et(m) * (1 - er(m)) * F[y2](z2, m) * prevsum_zzy(y2)
+                                      + et(m) * er(m) * prevsum_zy(z2, y2))
+                               + et(m) * (1 - er(m)) * F[y1](z1, m)
+                                     * ((1 - et(m)) * F[y2](z2, m) * Q(y2, ind) * prevsum_zzy(y1)
+                                        + et(m) * (1 - er(m)) * F[y2](z2, m) * prevsum_zz(y1, y2)
+                                        + et(m) * er(m) * prevsum_z(z2, yy)));
                     }
     }
     { // sum over all samples for updates
         std::lock_guard<std::mutex> lock(mutex_it);
-        EclusterA1 += ind_post_zg1;
-        EclusterA2 += ind_post_zg2;
-        PclusterK += ind_post_zy; // cluster ancestry allele jump
-        Q.col(ind) = ind_post_y.rowwise().sum();
+        EclusterA1.middleCols(pos_chunk[ic], S) += ind_post_zg1;
+        EclusterA2.middleCols(pos_chunk[ic], S) += ind_post_zg2;
+        PclusterK.middleCols(pos_chunk[ic], S) += ind_post_zy; // cluster ancestry allele jump
+        Eancestry.col(ind) += ind_post_y.rowwise().sum(); // FIXME need to take care
     }
+}
+
+double Phaseless::runForwardBackwards(const int ind, const int ic, const MyFloat1D & GL, bool finalIter)
+{
+    const int S = pos_chunk[ic + 1] - pos_chunk[ic];
+    Eigen::Map<const MyArr2D> gli(GL.data() + ind * S * 3, S, 3);
+    MyArr2D emit = get_emission_by_gl(gli, P.middleRows(pos_chunk[ic], S)).transpose(); // CC x S
+    std::vector<MyArr2D> alpha(S, MyArr2D(CC, KK));
+    std::vector<MyArr2D> beta(S, MyArr2D(CC, KK));
+    MyArr2D prevsum_z(C, KK), prevsum_zz(K, K), prevsum_zy(C, K);
+    MyArr1D cs(S), prevsum_zzy(K);
+    // init
+    int m{0}, s{0}, z1{0}, z2{0}, y1{0}, y2{0}, zz{0}, yy{0};
+    m = s + pos_chunk[ic];
+    for(z1 = 0; z1 < C; z1++)
+        for(z2 = 0; z2 < C; z2++)
+            for(y1 = 0; y1 < K; y1++)
+                for(y2 = 0; y2 < K; y2++)
+                {
+                    zz = z1 * C + z2;
+                    yy = y1 * K + y2;
+                    alpha[s](zz, yy) = emit(zz, s) * Q(y1, ind) * F[y1](z1, m) * Q(y2, ind) * F[y2](z2, m);
+                }
+    cs(s) = alpha[s].sum();
+    alpha[s] /= cs(s); // norm alpha
+    // forward recursion
+    for(s = 1; s < S; s++)
+    {
+        getForwardPrevSums(alpha[s - 1], prevsum_z, prevsum_zz, prevsum_zy, prevsum_zzy);
+        m = s + pos_chunk[ic];
+        moveForward(ind, m, alpha[s], emit.col(s), alpha[s - 1], prevsum_z, prevsum_zz, prevsum_zy, prevsum_zzy);
+        cs(s) = alpha[s].sum();
+        alpha[s] /= cs(s); // norm alpha
+    }
+    // backwards recursion
+    s = S - 1;
+    beta[s].setConstant(1.0);
+    MyArr2D beta_mult_emit(CC, KK);
+    double prevsum_zzyy{0};
+    for(s = S - 2; s >= 0; s--)
+    {
+        for(int yy = 0; yy < KK; yy++) beta_mult_emit.col(yy) = beta[s + 1].col(yy) * emit.col(s + 1);
+        m = s + 1 + pos_chunk[ic];
+        getBackwardPrevSums(beta_mult_emit, prevsum_z, prevsum_zz, prevsum_zy, prevsum_zzy, prevsum_zzyy, ind, m);
+        moveBackward(ind, m, cs(s + 1), beta[s], beta_mult_emit, prevsum_z, prevsum_zz, prevsum_zy, prevsum_zzy,
+                     prevsum_zzyy);
+    }
+    // get posterios
+    getPosterios(ind, ic, gli, emit, cs, alpha, beta);
+    return (1 / cs).log().sum();
+}
+
+double Phaseless::runBigass(int ind, const MyFloat2D & GL, bool finalIter)
+{
+    if(pos_chunk.size() == 0) cao.error("please run initRecombination first");
+    int nchunks = GL.size();
+    double loglike{0};
+    for(int ic = 0; ic < nchunks; ic++)
+    {
+        loglike += runForwardBackwards(ind, ic, GL[ic], finalIter);
+    }
+    return loglike;
 }
 
 int run_phaseless_main(Options & opts)
@@ -300,33 +338,29 @@ int run_phaseless_main(Options & opts)
     Eigen::IOFormat fmt(6, Eigen::DontAlignCols, "\t", "\n");
     vector<future<double>> res;
     std::ofstream oanc(opts.out.string() + ".Q");
-    for(int ic = 0; ic < genome->nchunks; ic++)
+    Phaseless faith(opts.K, opts.C, genome->nsamples, genome->nsnps, opts.seed);
+    faith.initRecombination(genome->pos);
+    faith.debug = opts.debug;
+    for(int it = 0; it <= opts.nimpute; it++)
     {
-        Phaseless faith(opts.K, opts.C, genome->nsamples, genome->pos[ic].size(), opts.seed);
-        faith.initRecombination(genome->pos[ic]);
-        faith.debug = opts.debug;
-        for(int it = 0; it <= opts.nimpute; it++)
+        tim.clock();
+        faith.initIteration();
+        for(int i = 0; i < genome->nsamples; i++)
         {
-            tim.clock();
-            faith.initIteration();
-            for(int i = 0; i < genome->nsamples; i++)
-            {
-                if(it == opts.nimpute)
-                    res.emplace_back(
-                        pool.enqueue(&Phaseless::runForwardBackwards, &faith, i, std::ref(genome->gls[ic]), true));
-                else
-                    res.emplace_back(
-                        pool.enqueue(&Phaseless::runForwardBackwards, &faith, i, std::ref(genome->gls[ic]), false));
-            }
-            double loglike = 0;
-            for(auto && ll : res) loglike += ll.get();
-            res.clear(); // clear future and renew
-            cao.print(tim.date(), "run single chunk", ic, ", iteration", it, ", likelihoods =", loglike, ",",
-                      tim.reltime(), " sec");
-            if(it != opts.nimpute) faith.updateIteration();
+            if(it == opts.nimpute)
+                res.emplace_back(pool.enqueue(&Phaseless::runBigass, &faith, i, std::ref(genome->gls), true));
+            else
+                res.emplace_back(pool.enqueue(&Phaseless::runBigass, &faith, i, std::ref(genome->gls), false));
         }
-        oanc << faith.Q.transpose().format(fmt) << "\n";
+        double loglike = 0;
+        for(auto && ll : res) loglike += ll.get();
+        res.clear(); // clear future and renew
+        cao.print(tim.date(), "run whole genome, iteration", it, ", likelihoods =", loglike, ",", tim.reltime(),
+                  " sec");
+        faith.updateIteration();
     }
+    faith.Q = (faith.Q * 1e6).round() / 1e6;
+    oanc << std::fixed << faith.Q.transpose().format(fmt) << "\n";
 
     return 0;
 }
