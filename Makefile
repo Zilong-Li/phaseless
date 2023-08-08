@@ -8,7 +8,7 @@ INC      = -I./src -I./external -I$(HTSINC) -I$(HTSLIB)
 LDFLAGS  =  -L$(HTSLIB) -Wl,-rpath,$(HTSLIB)
 LIBS     = -lhts -lz -lm -lbz2 -llzma -lcurl -lpthread
 # OBJS     = $(patsubst src/%.cpp, src/%.o, $(wildcard *.cpp))
-OBJS     = src/phaseless.o src/fastphase.o src/admixture.o src/utils.o
+OBJS     = src/main.o src/phaseless.o src/fastphase.o src/admixture.o src/utils.o
 BINS     = phaseless
 FLOAT    = 0
 

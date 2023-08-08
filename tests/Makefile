@@ -8,11 +8,11 @@ INC      = -I. -I../src -I../external -I$(HTSINC)
 LDFLAGS  =  -L$(HTSLIB) -Wl,-rpath,$(HTSLIB)
 LIBS     = -lhts -lz -lm -lbz2 -llzma -lcurl -lpthread
 
-OBJS = test-main.o test-phaseless.o test-fastphase.o test-forward-backward.o
+OBJS = test-main.o test-joint.o test-phaseless.o test-fastphase.o test-forward-backward.o
 
-BINS = test-phaseless.bin test-fastphase.bin test-forward-backward.bin
+BINS = test-joint.bin test-phaseless.bin test-fastphase.bin test-forward-backward.bin
 
-DEPS = ../src/fastphase.o ../src/admixture.o
+DEPS = ../src/phaseless.o ../src/fastphase.o ../src/admixture.o
 
 UTILS = test-cli test-io
 
@@ -27,6 +27,7 @@ all: $(BINS) $(OBJS)
 	${CXX} ${CXXFLAGS} -o $@ $< test-main.o $(DEPS) $(LDFLAGS) $(LIBS)
 
 test: $(BINS)
+	./test-joint.bin --success
 	./test-phaseless.bin --success
 	./test-fastphase.bin --success
 	./test-forward-backward.bin --success
