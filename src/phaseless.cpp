@@ -6,11 +6,9 @@
 
 #include "phaseless.hpp"
 
-#include "common.hpp"
 #include "io.hpp"
 #include "threadpool.hpp"
 #include <alpaca/alpaca.h>
-#include <cassert>
 
 using namespace std;
 
@@ -209,8 +207,9 @@ void Phaseless::getPosterios(const int ind,
         if(debug && !(std::abs(1.0 - gamma.sum()) < 1e-6))
             cao.error(s, ", gamma sum is not approx 1.0 (tol = 1e-6)\n", gamma.sum());
         ind_post_zz.col(s) = gamma.rowwise().sum();
-        auto ind_post_yy = gamma.colwise().sum();
-        ind_post_y.col(s) = ind_post_yy.reshaped(K, K).colwise().sum();
+        if(debug && !(std::abs(1.0 - ind_post_zz.col(s).sum()) < 1e-6))
+            cao.error(s, ", zpost is not approx 1.0 (tol = 1e-6)\n", ind_post_zz.col(s).sum());
+
         auto gamma_div_emit = ind_post_zz.col(s) / emit.col(s);
         m = s + pos_chunk[ic];
         for(z1 = 0; z1 < C; z1++)
@@ -221,9 +220,13 @@ void Phaseless::getPosterios(const int ind,
             ind_post_zg2(z1, s) = (gamma_div_emit(Eigen::seqN(z1, C, C)) * (P(m, z1))
                                    * (gli(s, 1) * (1 - P.row(m)) + gli(s, 2) * P.row(m)).transpose())
                                       .sum();
-            for(y1 = 0; y1 < K; y1++)
-                ind_post_zy(y1 * C + z1, s) = gamma(Eigen::seqN(z1, C, C), Eigen::seqN(y1, K, K)).sum();
+            if(s == 0)
+                for(y1 = 0; y1 < K; y1++)
+                    ind_post_zy(y1 * C + z1, s) = gamma(Eigen::seqN(z1, C, C), Eigen::seqN(y1, K, K)).sum();
         }
+        if(debug && !(std::abs(1.0 - (ind_post_zg1.col(s) + ind_post_zg2.col(s)).sum()) < 1e-6))
+            cao.error(s, ", clusterallele is not approx 1.0 (tol = 1e-6)\n", gamma.sum());
+        if(s == 0) ind_post_y.col(s) = gamma.colwise().sum().reshaped(K, K).colwise().sum();
         if(s == 0) continue;
         getForwardPrevSums(alpha[s - 1], prevsum_z, prevsum_zz, prevsum_zy, prevsum_zzy);
         for(z1 = 0; z1 < C; z1++)
@@ -307,7 +310,7 @@ double Phaseless::runForwardBackwards(const int ind, const int ic, const MyFloat
     }
     // get posterios
     getPosterios(ind, ic, gli, emit, cs, alpha, beta);
-    return (1 / cs).log().sum();
+    return cs.log().sum();
 }
 
 double Phaseless::runBigass(int ind, const MyFloat2D & GL, bool finalIter)

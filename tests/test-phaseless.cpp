@@ -22,8 +22,7 @@ TEST_CASE("phaseless naive vs dump dataset 1", "[test-phaseless]")
     filesystem::create_directories(outdir);
     for(int ic = 0; ic < genome->nchunks; ic++)
     {
-        res.emplace_back(
-            poolit.enqueue(make_input_per_chunk, std::ref(genome), ic, nimpute, seed, false, 0.99, 1e-5));
+        res.emplace_back(poolit.enqueue(make_input_per_chunk, std::ref(genome), ic, nimpute, seed, false, 0.99, 1e-5));
     }
     for(auto && ll : res)
     {
@@ -66,8 +65,7 @@ TEST_CASE("phaseless naive vs dump dataset 2", "[test-phaseless]")
     filesystem::create_directories(outdir);
     for(int ic = 0; ic < genome->nchunks; ic++)
     {
-        res.emplace_back(
-            poolit.enqueue(make_input_per_chunk, std::ref(genome), ic, nimpute, seed, false, 0.99, 1e-5));
+        res.emplace_back(poolit.enqueue(make_input_per_chunk, std::ref(genome), ic, nimpute, seed, false, 0.99, 1e-5));
     }
     for(auto && ll : res)
     {
@@ -110,8 +108,7 @@ TEST_CASE("phaseless normal iteration with make_input_per_chunk", "[test-phasele
     filesystem::create_directories(outdir);
     for(int ic = 0; ic < genome->nchunks; ic++)
     {
-        res.emplace_back(
-            poolit.enqueue(make_input_per_chunk, std::ref(genome), ic, nimpute, seed, false, 0.99, 1e-5));
+        res.emplace_back(poolit.enqueue(make_input_per_chunk, std::ref(genome), ic, nimpute, seed, false, 0.99, 1e-5));
     }
     for(auto && ll : res)
     {
@@ -130,8 +127,7 @@ TEST_CASE("phaseless normal iteration with make_input_per_chunk", "[test-phasele
     {
         admixer.initIteration();
         for(int i = 0; i < genome->nsamples; i++)
-            llike.emplace_back(
-                poolit.enqueue(&Admixture::runNativeWithBigAss, &admixer, i, std::ref(genome)));
+            llike.emplace_back(poolit.enqueue(&Admixture::runNativeWithBigAss, &admixer, i, std::ref(genome)));
         loglike = 0;
         for(auto && ll : llike) loglike += ll.get();
         llike.clear(); // clear future and renew
