@@ -25,7 +25,47 @@ int main(int argc, char * argv[])
         .help("enable debug mode")
         .default_value(false)
         .implicit_value(true);
+    program.add_argument("-P", "--no-stdout")
+        .help("disable print log to screen")
+        .default_value(false)
+        .implicit_value(true);
 
+    argparse::ArgumentParser cmd_joint("joint", VERSION, default_arguments::help);
+    cmd_joint.add_argument("-c", "--cluster")
+        .help("number of haplotype clusters")
+        .default_value(10)
+        .scan<'i', int>();
+    cmd_joint.add_argument("-k", "--ancestry")
+        .help("number of ancestry")
+        .default_value(3)
+        .scan<'i', int>();
+    cmd_joint.add_argument("-g", "--beagle")
+        .help("gziped beagle format as input")
+        .default_value(std::string{""});
+    cmd_joint.add_argument("-i", "--iterations")
+        .help("number of EM iterations")
+        .default_value(40)
+        .scan<'i', int>();
+    cmd_joint.add_argument("-n", "--threads")
+        .help("number of threads")
+        .default_value(1)
+        .scan<'i', int>();
+    cmd_joint.add_argument("-o", "--out")
+        .help("output prefix")
+        .default_value(std::string{"joint"});
+    cmd_joint.add_argument("-s", "--chunksize")
+        .help("size of each chunk in sites unit ")
+        .default_value(10000)
+        .scan<'i', int>();
+    cmd_joint.add_argument("-S", "--single-chunk")
+        .help("treat input as big single chunk")
+        .default_value(false)
+        .implicit_value(true);
+    cmd_joint.add_argument("--seed")
+        .help("seed for reproducing results")
+        .default_value(999)
+        .scan<'i', int>();
+    // cmd_joint.add_parents(program);
 
     argparse::ArgumentParser cmd_impute("impute", VERSION, default_arguments::help);
     cmd_impute.add_description("run imputation for low coverage sequencing data");
@@ -58,10 +98,6 @@ int main(int argc, char * argv[])
     cmd_impute.add_argument("-o", "--out")
         .help("output prefix")
         .default_value(std::string{"impute"});
-    cmd_impute.add_argument("-p", "--no-print")
-        .help("disable print log to screen")
-        .default_value(false)
-        .implicit_value(true);
     cmd_impute.add_argument("-r", "--region")
         .help("region in vcf/bcf to subset")
         .default_value(std::string{""});
@@ -81,7 +117,7 @@ int main(int argc, char * argv[])
         .help("min recombination rate to determine if a SNP should be collapsed")
         .default_value(1e-4)
         .scan<'g', double>();
-    cmd_impute.add_parents(program);
+    // cmd_impute.add_parents(program);
 
     argparse::ArgumentParser cmd_admix("admix", VERSION, default_arguments::help);
     cmd_admix.add_description("run admixture with cluster likelihoods as input");
@@ -107,10 +143,6 @@ int main(int argc, char * argv[])
     cmd_admix.add_argument("-o", "--out")
         .help("output prefix")
         .default_value(std::string{"admix"});
-    cmd_admix.add_argument("-p", "--no-print")
-        .help("disable print log to screen")
-        .default_value(false)
-        .implicit_value(true);
     cmd_admix.add_argument("-q", "--qtol")
         .help("tolerance of stopping criteria for diff(Q)")
         .default_value(1e-6)
@@ -123,7 +155,7 @@ int main(int argc, char * argv[])
         .help("seed for reproducing results")
         .default_value(999)
         .scan<'i', int>();
-    cmd_admix.add_parents(program);
+    // cmd_admix.add_parents(program);
 
     argparse::ArgumentParser cmd_convert("convert", VERSION, default_arguments::help);
     cmd_convert.add_description("different file format converter");
@@ -145,7 +177,7 @@ int main(int argc, char * argv[])
         .help("size of each chunk in sites unit ")
         .default_value(10000)
         .scan<'i', int>();
-    cmd_convert.add_parents(program);
+    // cmd_convert.add_parents(program);
 
     argparse::ArgumentParser cmd_parse("parse", VERSION, default_arguments::help);
     cmd_parse.add_description("manipulate pars.bin file outputted by impute command");
@@ -162,44 +194,7 @@ int main(int argc, char * argv[])
     cmd_parse.add_argument("-o", "--out")
         .help("output prefix")
         .default_value(std::string{"parse"});
-    cmd_parse.add_parents(program);
-
-    argparse::ArgumentParser cmd_joint("joint", VERSION, default_arguments::help);
-    cmd_joint.add_argument("-c", "--cluster")
-        .help("number of haplotype clusters")
-        .default_value(10)
-        .scan<'i', int>();
-    cmd_joint.add_argument("-k", "--ancestry")
-        .help("number of ancestry")
-        .default_value(3)
-        .scan<'i', int>();
-    cmd_joint.add_argument("-g", "--beagle")
-        .help("gziped beagle format as input")
-        .default_value(std::string{""});
-    cmd_joint.add_argument("-i", "--iterations")
-        .help("number of EM iterations")
-        .default_value(40)
-        .scan<'i', int>();
-    cmd_joint.add_argument("-n", "--threads")
-        .help("number of threads")
-        .default_value(1)
-        .scan<'i', int>();
-    cmd_joint.add_argument("-o", "--out")
-        .help("output prefix")
-        .default_value(std::string{"joint"});
-    cmd_joint.add_argument("-p", "--no-print")
-        .help("disable print log to screen")
-        .default_value(false)
-        .implicit_value(true);
-    cmd_joint.add_argument("-S", "--single-chunk")
-        .help("treat input as big single chunk")
-        .default_value(false)
-        .implicit_value(true);
-    cmd_joint.add_argument("--seed")
-        .help("seed for reproducing results")
-        .default_value(999)
-        .scan<'i', int>();
-    cmd_joint.add_parents(program);
+    // cmd_parse.add_parents(program);
 
     program.add_subparser(cmd_impute);
     program.add_subparser(cmd_admix);
@@ -213,6 +208,8 @@ int main(int argc, char * argv[])
         Options opts;
         for(int i = 0; i < argc; i++) opts.opts_in_effect += " " + std::string{argv[i]};
         program.parse_args(argc, argv);
+        opts.debug = program.get<bool>("--debug");
+        opts.noscreen = program.get<bool>("--no-stdout");
 
         if(program.is_subcommand_used(cmd_joint))
         {
@@ -223,8 +220,9 @@ int main(int argc, char * argv[])
             opts.nthreads = cmd_joint.get<int>("--threads");
             opts.nimpute = cmd_joint.get<int>("--iterations");
             opts.seed = cmd_joint.get<int>("--seed");
-            opts.debug = cmd_joint.get<bool>("--debug");
-            opts.chunksize = INT_MAX;
+            opts.chunksize = cmd_joint.get<int>("--chunksize");
+            opts.single_chunk = cmd_joint.get<bool>("--single-chunk");
+            if(opts.single_chunk) opts.chunksize = INT_MAX;
             if((opts.in_beagle.empty() && opts.in_vcf.empty()) || cmd_joint.get<bool>("--help"))
                 throw std::runtime_error(cmd_joint.help().str());
             run_phaseless_main(opts);
@@ -242,8 +240,6 @@ int main(int argc, char * argv[])
             opts.chunksize = cmd_impute.get<int>("--chunksize");
             opts.single_chunk = cmd_impute.get<bool>("--single-chunk");
             opts.collapse = cmd_impute.get<bool>("--collapse");
-            opts.noscreen = cmd_impute.get<bool>("--no-print");
-            opts.debug = cmd_impute.get<bool>("--debug");
             opts.tol_r = cmd_impute.get<double>("--minRecombRate");
             if(opts.single_chunk) opts.chunksize = INT_MAX;
             if((opts.in_beagle.empty() && opts.in_vcf.empty()) || cmd_impute.get<bool>("--help"))
@@ -261,8 +257,6 @@ int main(int argc, char * argv[])
             opts.qtol = cmd_admix.get<double>("--qtol");
             opts.ltol = cmd_admix.get<double>("--ltol");
             opts.noaccel = cmd_admix.get<bool>("--no-accel");
-            opts.noscreen = cmd_admix.get<bool>("--no-print");
-            opts.debug = cmd_admix.get<bool>("--debug");
             if(opts.in_bin.empty() || cmd_admix.get<bool>("--help"))
                 throw std::runtime_error(cmd_admix.help().str());
             run_admix_main(opts);
