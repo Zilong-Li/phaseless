@@ -39,29 +39,18 @@ void Phaseless::initRecombination(const Int2D & pos, double Ne = 20000, int B = 
     pos_chunk[nchunks] = ss; // add sentinel
 }
 
-void Phaseless::initIteration()
+void Phaseless::protectPars()
 {
-    PclusterK.setZero(C * K, M);
-    EclusterA1.setZero(C, M);
-    EclusterA2.setZero(C, M);
-    Eancestry.setZero(K, N);
-}
-
-void Phaseless::updateIteration()
-{
-    // update Q
-    Q = Eancestry;
+    // if we accelerate pars, protect them!
+    // protect Q
     Q.rowwise() /= Q.colwise().sum(); // normalize Q per individual
-    // update P
-    P = (EclusterA2 / (EclusterA1 + EclusterA2)).transpose();
     if(debug && P.isNaN().any()) cao.warn("NaN in P in Phaseless model. will fill it with AF");
-    // map P to domain but no normalization
+    // protect P
     P = (P < alleleEmitThreshold).select(alleleEmitThreshold, P); // lower bound
     P = (P > 1 - alleleEmitThreshold).select(1 - alleleEmitThreshold, P); // upper bound
-    // update F
+    // protect F
     for(int k = 0; k < K; k++)
     {
-        F[k] = PclusterK.middleRows(k * C, C);
         F[k].rowwise() /= F[k].colwise().sum(); // normalize F per site
         // could cluster jump be zero?
         if(F[k].isNaN().any() || (F[k] < clusterFreqThreshold).any())
@@ -82,6 +71,25 @@ void Phaseless::updateIteration()
             }
         }
     }
+}
+
+void Phaseless::initIteration()
+{
+    PclusterK.setZero(C * K, M);
+    EclusterA1.setZero(C, M);
+    EclusterA2.setZero(C, M);
+    Eancestry.setZero(K, N);
+}
+
+void Phaseless::updateIteration()
+{
+    // update Q
+    Q = Eancestry;
+    // update P
+    P = (EclusterA2 / (EclusterA1 + EclusterA2)).transpose();
+    // update F
+    for(int k = 0; k < K; k++) F[k] = PclusterK.middleRows(k * C, C);
+    protectPars();
 }
 
 void Phaseless::getForwardPrevSums(const MyArr2D & alpha,
@@ -385,7 +393,7 @@ int run_phaseless_main(Options & opts)
             for(auto && ll : res) loglike += ll.get();
             res.clear(); // clear future and renew
             faith.updateIteration();
-            diff = it ? loglike - prevlike : 999.999;
+            diff = it ? loglike - prevlike : NAN;
             prevlike = loglike;
             cao.print(tim.date(), "run whole genome, iteration", it, ", likelihoods =", loglike, ", diff =", diff,
                       ", time", tim.reltime(), " sec");
@@ -420,6 +428,7 @@ int run_phaseless_main(Options & opts)
             res.clear(); // clear future and renew
             faith.updateIteration();
             // second normal iter
+            tim.clock();
             faith.initIteration();
             Q1 = faith.Q;
             F1 = cat_stdvec_of_eigen(faith.F);
@@ -434,7 +443,7 @@ int run_phaseless_main(Options & opts)
             for(auto && ll : res) loglike += ll.get();
             res.clear(); // clear future and renew
             faith.updateIteration();
-            diff = it ? loglike - prevlike : 999.999;
+            diff = it ? loglike - prevlike : NAN;
             prevlike = loglike;
             cao.print(tim.date(), "SqS3 iteration", it * 3 + 1, ", alpha=", alpha, ", likelihoods =", std::fixed,
                       loglike, ", diff =", diff, ", time", tim.reltime(), " sec");
@@ -462,6 +471,7 @@ int run_phaseless_main(Options & opts)
                     + 2 * alpha * (F1.middleRows(k * opts.C, opts.C) - F0.middleRows(k * opts.C, opts.C))
                     + alpha * alpha
                           * (faith.F[k] - 2 * F1.middleRows(k * opts.C, opts.C) + F0.middleRows(k * opts.C, opts.C));
+            faith.protectPars();
             for(int i = 0; i < genome->nsamples; i++)
             {
                 if(it == opts.nimpute)
