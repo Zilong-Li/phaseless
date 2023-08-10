@@ -47,11 +47,9 @@ using MapStringInt1D = std::map<std::string, Int1D>;
 using UMapStringInt = std::unordered_map<std::string, int>;
 
 // EIGEN TYPES
-using Mat2D =
-    Eigen::Matrix<double, Eigen::Dynamic, Eigen::Dynamic, Eigen::ColMajor>;
+using Mat2D = Eigen::Matrix<double, Eigen::Dynamic, Eigen::Dynamic, Eigen::ColMajor>;
 using Mat1D = Eigen::Matrix<double, Eigen::Dynamic, 1, Eigen::ColMajor>;
-using Arr2D =
-    Eigen::Array<double, Eigen::Dynamic, Eigen::Dynamic, Eigen::ColMajor>;
+using Arr2D = Eigen::Array<double, Eigen::Dynamic, Eigen::Dynamic, Eigen::ColMajor>;
 using Arr1D = Eigen::Array<double, Eigen::Dynamic, 1, Eigen::ColMajor>;
 
 // MY TYPES
@@ -63,11 +61,9 @@ using MyFloat = double; // use float if no accuracy drops
 
 using MyFloat1D = std::vector<MyFloat>;
 using MyFloat2D = std::vector<MyFloat1D>;
-using MyMat2D =
-    Eigen::Matrix<MyFloat, Eigen::Dynamic, Eigen::Dynamic, Eigen::ColMajor>;
+using MyMat2D = Eigen::Matrix<MyFloat, Eigen::Dynamic, Eigen::Dynamic, Eigen::ColMajor>;
 using MyMat1D = Eigen::Matrix<MyFloat, Eigen::Dynamic, 1, Eigen::ColMajor>;
-using MyArr2D =
-    Eigen::Array<MyFloat, Eigen::Dynamic, Eigen::Dynamic, Eigen::ColMajor>;
+using MyArr2D = Eigen::Array<MyFloat, Eigen::Dynamic, Eigen::Dynamic, Eigen::ColMajor>;
 using MyArr1D = Eigen::Array<MyFloat, Eigen::Dynamic, 1, Eigen::ColMajor>;
 
 template<typename MatrixType, typename RandomEngineType>
@@ -77,17 +73,14 @@ inline MatrixType RandomUniform(const Eigen::Index numRows,
                                 typename MatrixType::Scalar a,
                                 typename MatrixType::Scalar b)
 {
-    std::uniform_real_distribution<typename MatrixType::Scalar>
-        uniform_real_distribution{a, b}; // or using 0.05, 0.95
-    const auto uniform{[&](typename MatrixType::Scalar)
-                       { return uniform_real_distribution(engine); }};
+    std::uniform_real_distribution<typename MatrixType::Scalar> uniform_real_distribution{a, b}; // or using 0.05, 0.95
+    const auto uniform{[&](typename MatrixType::Scalar) { return uniform_real_distribution(engine); }};
     return MatrixType::NullaryExpr(numRows, numCols, uniform);
 };
 
 struct Options
 {
-    int ichunk{0}, chunksize{10000}, K{2}, C{10}, nadmix{1000}, nimpute{40},
-        nthreads{1}, seed{999};
+    int ichunk{0}, chunksize{10000}, K{2}, C{10}, nadmix{1000}, nimpute{40}, nthreads{1}, seed{999};
     int gridsize{1};
     double ltol{1e-1}, qtol{1e-6}, info{0}, tol_pi{0.99}, tol_r{1e-5};
     bool noaccel{0}, noscreen{0}, single_chunk{0}, debug{0}, collapse{0};
@@ -112,8 +105,7 @@ inline auto calc_position_distance(const Int1D & markers)
 {
     Int1D dl(markers.size());
     dl[0] = 0;
-    for(size_t i = 1; i < markers.size(); i++)
-        dl[i] = markers[i] - markers[i - 1];
+    for(size_t i = 1; i < markers.size(); i++) dl[i] = markers[i] - markers[i - 1];
     return dl;
 }
 
@@ -121,8 +113,7 @@ inline auto calc_position_distance(const Int1D & markers)
 //                               STRING UTILS
 //******************************************************************************
 
-inline std::vector<std::string> split_string(const std::string & s,
-                                             const std::string & separators)
+inline std::vector<std::string> split_string(const std::string & s, const std::string & separators)
 {
     std::vector<std::string> ret;
     bool is_seperator[256] = {false};
@@ -155,8 +146,7 @@ inline bool ends_with(std::string const & str, std::string const & ending)
     if(ending.size() > str.size())
         return false;
     else
-        return std::equal(ending.begin(), ending.end(),
-                          str.end() - ending.size());
+        return std::equal(ending.begin(), ending.end(), str.end() - ending.size());
 }
 
 inline bool starts_with(std::string const & str, std::string const & ending)
@@ -167,29 +157,22 @@ inline bool starts_with(std::string const & str, std::string const & ending)
         return std::equal(ending.begin(), ending.end(), str.begin());
 }
 
-inline auto calc_distRate(const Int1D & markers,
-                          int C,
-                          double expRate = 1.0,
-                          double Ne = 20000)
+inline auto calc_distRate(const Int1D & markers, int C, double expRate = 1.0, double Ne = 20000)
 {
     MyArr1D distRate(markers.size());
     distRate(0) = 1; //  act as sentinel. so dim aligns with M
-    for(size_t i = 1; i < markers.size(); i++)
-        distRate(i) = std::exp(-(markers[i] - markers[i - 1]) * expRate / 1e6);
+    for(size_t i = 1; i < markers.size(); i++) distRate(i) = std::exp(-(markers[i] - markers[i - 1]) * expRate / 1e6);
     return distRate;
 }
 
 // check initialize_sigmaCurrent_m in STITCH
 // double nGen = 4 * Ne / C;
-inline auto calc_transRate_diploid(const Int1D & dl,
-                                   double nGen,
-                                   double expRate = 0.5)
+inline auto calc_transRate_diploid(const Int1D & dl, double nGen, double expRate = 0.5)
 {
     MyArr2D transRate(3, dl.size());
     MyArr1D distRate(dl.size());
     distRate(0) = 1; //  act as sentinel. so dim aligns with M
-    for(size_t i = 1; i < dl.size(); i++)
-        distRate(i) = std::exp(-dl[i] * expRate * nGen / 1e8);
+    for(size_t i = 1; i < dl.size(); i++) distRate(i) = std::exp(-dl[i] * expRate * nGen / 1e8);
     // for(size_t i = 1; i < dl.size(); i++) distRate(i) = std::exp(-dl[i] /
     // 1e6);
     transRate.row(0) = distRate.square();
@@ -203,9 +186,7 @@ inline auto calc_transRate_diploid(const Int1D & dl,
 ** @param F    cluster-specific allele frequence (M, C)
 ** @return emission probability (M, C2)
 */
-inline auto get_emission_by_gl(const MyArr2D & gli,
-                               const MyArr2D & F,
-                               double minEmission = 1e-6)
+inline auto get_emission_by_gl(const MyArr2D & gli, const MyArr2D & F, double minEmission = 1e-6)
 {
     int k1, k2, g1, g2;
     const int M = F.rows();
@@ -219,10 +200,8 @@ inline auto get_emission_by_gl(const MyArr2D & gli,
             {
                 for(g2 = 0; g2 <= 1; g2++)
                 {
-                    emitDip.col(k1 * C + k2) +=
-                        gli.col(g1 + g2)
-                        * (g1 * F.col(k1) + (1 - g1) * (1 - F.col(k1)))
-                        * (g2 * F.col(k2) + (1 - g2) * (1 - F.col(k2)));
+                    emitDip.col(k1 * C + k2) += gli.col(g1 + g2) * (g1 * F.col(k1) + (1 - g1) * (1 - F.col(k1)))
+                                                * (g2 * F.col(k2) + (1 - g2) * (1 - F.col(k2)));
                 }
             }
         }
@@ -253,10 +232,7 @@ inline auto forward_backwards_diploid(MyArr2D & alpha,
     // ======== forward recursion ===========
     int z1, z2, z12;
     int s{0};
-    alpha.col(s) = E.col(s)
-                   * (PI.col(s).matrix() * PI.col(s).transpose().matrix())
-                         .reshaped()
-                         .array();
+    alpha.col(s) = E.col(s) * (PI.col(s).matrix() * PI.col(s).transpose().matrix()).reshaped().array();
     cs(s) = 1.0 / alpha.col(s).sum();
     alpha.col(s) *= cs(s); // normalize it
     // alpha_s = emit * (alpha_(s-1) * R + pi(z1) * tmp1(z2) + pi(z2) * tmp2(z1)
@@ -271,11 +247,9 @@ inline auto forward_backwards_diploid(MyArr2D & alpha,
             for(z2 = 0; z2 < C; z2++)
             {
                 z12 = z1 * C + z2;
-                alpha(z12, s) =
-                    E(z12, s)
-                    * (alpha(z12, s - 1) * R(0, s) + PI(z1, s) * sumTmp1(z2)
-                       + PI(z2, s) * sumTmp1(z1)
-                       + PI(z1, s) * PI(z2, s) * constTmp);
+                alpha(z12, s) = E(z12, s)
+                                * (alpha(z12, s - 1) * R(0, s) + PI(z1, s) * sumTmp1(z2) + PI(z2, s) * sumTmp1(z1)
+                                   + PI(z1, s) * PI(z2, s) * constTmp);
             }
         }
         cs(s) = 1.0 / alpha.col(s).sum();
@@ -294,10 +268,8 @@ inline auto forward_backwards_diploid(MyArr2D & alpha,
             for(z2 = 0; z2 < C; z2++)
             {
                 z12 = z1 * C + z2;
-                sumTmp1(z1) +=
-                    beta_mult_emit(z12) * PI(z2, s + 1) * R(1, s + 1);
-                constTmp += beta_mult_emit(z12) * PI(z1, s + 1) * PI(z2, s + 1)
-                            * R(2, s + 1);
+                sumTmp1(z1) += beta_mult_emit(z12) * PI(z2, s + 1) * R(1, s + 1);
+                constTmp += beta_mult_emit(z12) * PI(z1, s + 1) * PI(z2, s + 1) * R(2, s + 1);
             }
         }
         for(z1 = 0; z1 < C; z1++)
@@ -306,9 +278,7 @@ inline auto forward_backwards_diploid(MyArr2D & alpha,
             {
                 z12 = z1 * C + z2;
                 // apply scaling
-                beta(z12, s) = (beta_mult_emit(z12) * R(0, s + 1) + sumTmp1(z1)
-                                + sumTmp1(z2) + constTmp)
-                               * cs(s + 1);
+                beta(z12, s) = (beta_mult_emit(z12) * R(0, s + 1) + sumTmp1(z1) + sumTmp1(z2) + constTmp) * cs(s + 1);
             }
         }
     }
@@ -353,11 +323,8 @@ inline auto get_cluster_likelihood(int ind,
                     {
                         for(g2 = 0; g2 <= 1; g2++)
                         {
-                            emit += GL[igs + (g1 + g2) * M + i]
-                                    * (g1 * F[z1 * M + i]
-                                       + (1 - g1) * (1 - F[z1 * M + i]))
-                                    * (g2 * F[z2 * M + i]
-                                       + (1 - g2) * (1 - F[z2 * M + i]));
+                            emit += GL[igs + (g1 + g2) * M + i] * (g1 * F[z1 * M + i] + (1 - g1) * (1 - F[z1 * M + i]))
+                                    * (g2 * F[z2 * M + i] + (1 - g2) * (1 - F[z2 * M + i]));
                         }
                     }
                     emitGrid(z12, g) *= emit;
@@ -365,16 +332,13 @@ inline auto get_cluster_likelihood(int ind,
             }
         }
         emitGrid.col(g) /= emitGrid.col(g).maxCoeff();
-        emitGrid.col(g) =
-            (emitGrid.col(g) < minEmission)
-                .select(minEmission, emitGrid.col(g)); // apply bounding
+        emitGrid.col(g) = (emitGrid.col(g) < minEmission).select(minEmission, emitGrid.col(g)); // apply bounding
         for(z1 = 0; z1 < C; z1++)
         {
             for(z2 = 0; z2 < C; z2++)
             {
                 z12 = z1 * C + z2;
-                alpha(z12, g) =
-                    emitGrid(z12, g) * PI[g * C + z1] * PI[g * C + z2];
+                alpha(z12, g) = emitGrid(z12, g) * PI[g * C + z1] * PI[g * C + z2];
                 cs(g) += alpha(z12, g);
             }
         }
@@ -383,8 +347,7 @@ inline auto get_cluster_likelihood(int ind,
         // now get the rest
         for(g = 1; g < nGrids; g++)
         {
-            sumTmp1 =
-                alpha.col(g - 1).reshaped(C, C).rowwise().sum() * R[g * 3 + 1];
+            sumTmp1 = alpha.col(g - 1).reshaped(C, C).rowwise().sum() * R[g * 3 + 1];
             constTmp = alpha.col(g - 1).sum() * R[g * 3 + 2];
             s = g * B;
             e = g == nGrids - 1 ? M - 1 : B * (g + 1) - 1;
@@ -401,10 +364,8 @@ inline auto get_cluster_likelihood(int ind,
                             for(g2 = 0; g2 <= 1; g2++)
                             {
                                 emit += GL[igs + (g1 + g2) * M + i]
-                                        * (g1 * F[z1 * M + i]
-                                           + (1 - g1) * (1 - F[z1 * M + i]))
-                                        * (g2 * F[z2 * M + i]
-                                           + (1 - g2) * (1 - F[z2 * M + i]));
+                                        * (g1 * F[z1 * M + i] + (1 - g1) * (1 - F[z1 * M + i]))
+                                        * (g2 * F[z2 * M + i] + (1 - g2) * (1 - F[z2 * M + i]));
                             }
                         }
                         emitGrid(z12, g) *= emit;
@@ -412,20 +373,15 @@ inline auto get_cluster_likelihood(int ind,
                 }
             }
             emitGrid.col(g) /= emitGrid.col(g).maxCoeff();
-            emitGrid.col(g) =
-                (emitGrid.col(g) < minEmission)
-                    .select(minEmission, emitGrid.col(g)); // apply bounding
+            emitGrid.col(g) = (emitGrid.col(g) < minEmission).select(minEmission, emitGrid.col(g)); // apply bounding
             for(z1 = 0; z1 < C; z1++)
             {
                 for(z2 = 0; z2 < C; z2++)
                 {
                     z12 = z1 * C + z2;
-                    alpha(z12, g) =
-                        emitGrid(z12, g)
-                        * (alpha(z12, g - 1) * R[g * 3 + 0]
-                           + PI[g * C + z1] * sumTmp1(z2)
-                           + PI[g * C + z2] * sumTmp1(z1)
-                           + PI[g * C + z1] * PI[g * C + z2] * constTmp);
+                    alpha(z12, g) = emitGrid(z12, g)
+                                    * (alpha(z12, g - 1) * R[g * 3 + 0] + PI[g * C + z1] * sumTmp1(z2)
+                                       + PI[g * C + z2] * sumTmp1(z1) + PI[g * C + z1] * PI[g * C + z2] * constTmp);
                     cs(g) += alpha(z12, g);
                 }
             }
@@ -444,10 +400,8 @@ inline auto get_cluster_likelihood(int ind,
                 for(z2 = 0; z2 < C; z2++)
                 {
                     z12 = z1 * C + z2;
-                    sumTmp1(z1) += beta_mult_emit(z12) * PI[(g + 1) * C + z2]
-                                   * R[(g + 1) * 3 + 1];
-                    constTmp += beta_mult_emit(z12) * PI[(g + 1) * C + z1]
-                                * PI[(g + 1) * C + z2] * R[(g + 1) * 3 + 2];
+                    sumTmp1(z1) += beta_mult_emit(z12) * PI[(g + 1) * C + z2] * R[(g + 1) * 3 + 1];
+                    constTmp += beta_mult_emit(z12) * PI[(g + 1) * C + z1] * PI[(g + 1) * C + z2] * R[(g + 1) * 3 + 2];
                 }
             }
             for(z1 = 0; z1 < C; z1++)
@@ -455,9 +409,8 @@ inline auto get_cluster_likelihood(int ind,
                 for(z2 = 0; z2 < C; z2++)
                 {
                     z12 = z1 * C + z2;
-                    beta(z12, g) = (beta_mult_emit(z12) * R[(g + 1) * 3 + 0]
-                                    + sumTmp1(z1) + sumTmp1(z2) + constTmp)
-                                   * cs(g + 1);
+                    beta(z12, g) =
+                        (beta_mult_emit(z12) * R[(g + 1) * 3 + 0] + sumTmp1(z1) + sumTmp1(z2) + constTmp) * cs(g + 1);
                 }
             }
         }
@@ -477,16 +430,13 @@ inline auto get_cluster_likelihood(int ind,
                     for(g2 = 0; g2 <= 1; g2++)
                     {
                         emitSnp(z12, s) += GL[igs + (g1 + g2) * M + s]
-                                           * (g1 * F[z1 * M + s]
-                                              + (1 - g1) * (1 - F[z1 * M + s]))
-                                           * (g2 * F[z2 * M + s]
-                                              + (1 - g2) * (1 - F[z2 * M + s]));
+                                           * (g1 * F[z1 * M + s] + (1 - g1) * (1 - F[z1 * M + s]))
+                                           * (g2 * F[z2 * M + s] + (1 - g2) * (1 - F[z2 * M + s]));
                     }
                 }
                 // emit(k12, s) = emit(k12, s) < minEmission ? minEmission :
                 // emit(k12, s);
-                alpha(z12, s) =
-                    emitSnp(z12, s) * PI[s * C + z1] * PI[s * C + z2];
+                alpha(z12, s) = emitSnp(z12, s) * PI[s * C + z1] * PI[s * C + z2];
                 cs(s) += alpha(z12, s);
             }
         }
@@ -495,8 +445,7 @@ inline auto get_cluster_likelihood(int ind,
 
         for(s = 1; s < M; s++)
         {
-            sumTmp1 =
-                alpha.col(s - 1).reshaped(C, C).rowwise().sum() * R[s * 3 + 1];
+            sumTmp1 = alpha.col(s - 1).reshaped(C, C).rowwise().sum() * R[s * 3 + 1];
             constTmp = alpha.col(s - 1).sum() * R[s * 3 + 2];
             for(z1 = 0; z1 < C; z1++)
             {
@@ -508,22 +457,16 @@ inline auto get_cluster_likelihood(int ind,
                     {
                         for(g2 = 0; g2 <= 1; g2++)
                         {
-                            emitSnp(z12, s) +=
-                                GL[igs + (g1 + g2) * M + s]
-                                * (g1 * F[z1 * M + s]
-                                   + (1 - g1) * (1 - F[z1 * M + s]))
-                                * (g2 * F[z2 * M + s]
-                                   + (1 - g2) * (1 - F[z2 * M + s]));
+                            emitSnp(z12, s) += GL[igs + (g1 + g2) * M + s]
+                                               * (g1 * F[z1 * M + s] + (1 - g1) * (1 - F[z1 * M + s]))
+                                               * (g2 * F[z2 * M + s] + (1 - g2) * (1 - F[z2 * M + s]));
                         }
                     }
                     // emit(k12, s) = emit(k12, s) < minEmission ? minEmission :
                     // emit(k12, s);
-                    alpha(z12, s) =
-                        emitSnp(z12, s)
-                        * (alpha(z12, s - 1) * R[s * 3 + 0]
-                           + PI[s * C + z1] * sumTmp1(z2)
-                           + PI[s * C + z2] * sumTmp1(z1)
-                           + PI[s * C + z1] * PI[s * C + z2] * constTmp);
+                    alpha(z12, s) = emitSnp(z12, s)
+                                    * (alpha(z12, s - 1) * R[s * 3 + 0] + PI[s * C + z1] * sumTmp1(z2)
+                                       + PI[s * C + z2] * sumTmp1(z1) + PI[s * C + z1] * PI[s * C + z2] * constTmp);
                     cs(s) += alpha(z12, s);
                 }
             }
@@ -543,10 +486,8 @@ inline auto get_cluster_likelihood(int ind,
                 for(z2 = 0; z2 < C; z2++)
                 {
                     z12 = z1 * C + z2;
-                    sumTmp1(z1) += beta_mult_emit(z12) * PI[(s + 1) * C + z2]
-                                   * R[(s + 1) * 3 + 1];
-                    constTmp += beta_mult_emit(z12) * PI[(s + 1) * C + z1]
-                                * PI[(s + 1) * C + z2] * R[(s + 1) * 3 + 2];
+                    sumTmp1(z1) += beta_mult_emit(z12) * PI[(s + 1) * C + z2] * R[(s + 1) * 3 + 1];
+                    constTmp += beta_mult_emit(z12) * PI[(s + 1) * C + z1] * PI[(s + 1) * C + z2] * R[(s + 1) * 3 + 2];
                 }
             }
             for(z1 = 0; z1 < C; z1++)
@@ -554,9 +495,8 @@ inline auto get_cluster_likelihood(int ind,
                 for(z2 = 0; z2 < C; z2++)
                 {
                     z12 = z1 * C + z2;
-                    beta(z12, s) = (beta_mult_emit(z12) * R[(s + 1) * 3 + 0]
-                                    + sumTmp1(z1) + sumTmp1(z2) + constTmp)
-                                   * cs(s + 1);
+                    beta(z12, s) =
+                        (beta_mult_emit(z12) * R[(s + 1) * 3 + 0] + sumTmp1(z1) + sumTmp1(z2) + constTmp) * cs(s + 1);
                 }
             }
         }
@@ -564,9 +504,7 @@ inline auto get_cluster_likelihood(int ind,
     return cs;
 }
 
-inline auto get_cluster_pairs_probabity(MyArr2D & ae,
-                                        const MyFloat1D & R_,
-                                        const MyFloat1D & PI_)
+inline auto get_cluster_pairs_probabity(MyArr2D & ae, const MyFloat1D & R_, const MyFloat1D & PI_)
 {
     const int C2 = ae.rows();
     const int M = ae.cols();
@@ -575,8 +513,7 @@ inline auto get_cluster_pairs_probabity(MyArr2D & ae,
     Eigen::Map<const MyArr2D> R(R_.data(), 3, M);
 
     int s{0};
-    ae.col(s) =
-        (PI.col(s).matrix() * PI.col(s).transpose().matrix()).reshaped().array();
+    ae.col(s) = (PI.col(s).matrix() * PI.col(s).transpose().matrix()).reshaped().array();
     // ======== forward recursion ===========
     MyArr1D sumTmp1(C); // store sum over internal loop
     double constTmp;
@@ -590,8 +527,7 @@ inline auto get_cluster_pairs_probabity(MyArr2D & ae,
             for(z2 = 0; z2 < C; z2++)
             {
                 z12 = z1 * C + z2;
-                ae(z12, s) = (ae(z12, s - 1) * R(0, s) + PI(z1, s) * sumTmp1(z2)
-                              + PI(z2, s) * sumTmp1(z1)
+                ae(z12, s) = (ae(z12, s - 1) * R(0, s) + PI(z1, s) * sumTmp1(z2) + PI(z2, s) * sumTmp1(z1)
                               + PI(z1, s) * PI(z2, s) * constTmp);
             }
         }
@@ -601,9 +537,7 @@ inline auto get_cluster_pairs_probabity(MyArr2D & ae,
     ae.rowwise() /= ae.colwise().sum();
 }
 
-inline auto calc_cluster_info(const int N,
-                              const MyArr2D & GZP1,
-                              const MyArr2D & GZP2)
+inline auto calc_cluster_info(const int N, const MyArr2D & GZP1, const MyArr2D & GZP2)
 {
     auto eij = GZP1 + GZP2 * 2;
     auto fij = GZP1 + GZP2 * 4;
@@ -615,11 +549,7 @@ inline auto calc_cluster_info(const int N,
 }
 
 // @params GL genotype likelihoods, N x M x 3
-inline auto estimate_af_by_gl(const MyFloat1D & GL,
-                              int N,
-                              int M,
-                              int niter = 100,
-                              double tol = 1e-4)
+inline auto estimate_af_by_gl(const MyFloat1D & GL, int N, int M, int niter = 100, double tol = 1e-4)
 {
     Arr1D af_est = Arr1D::Constant(M, 0.25);
     Arr1D af_tmp = Arr1D::Zero(M);
@@ -631,10 +561,8 @@ inline auto estimate_af_by_gl(const MyFloat1D & GL,
             double p0, p1, p2, pt = 0.0;
             for(int i = 0; i < N; i++)
             {
-                p0 = GL[i * M * 3 + 0 * M + j] * (1.0 - af_est(j))
-                     * (1.0 - af_est(j));
-                p1 = GL[i * M * 3 + 1 * M + j] * 2 * af_est(j)
-                     * (1.0 - af_est(j));
+                p0 = GL[i * M * 3 + 0 * M + j] * (1.0 - af_est(j)) * (1.0 - af_est(j));
+                p1 = GL[i * M * 3 + 1 * M + j] * 2 * af_est(j) * (1.0 - af_est(j));
                 p2 = GL[i * M * 3 + 2 * M + j] * af_est(j) * af_est(j);
                 pt += (p1 + 2 * p2) / (2 * (p0 + p1 + p2));
             }
@@ -715,9 +643,7 @@ inline auto calc_grid_distance(const Int2D & pos)
 /*
 ** @param E original size of emission, full SNPs x C2
 */
-inline auto collapse_emission_by_grid(const MyArr2D & E,
-                                      const Int2D & grids,
-                                      double minEmission = 1e-6)
+inline auto collapse_emission_by_grid(const MyArr2D & E, const Int2D & grids, double minEmission = 1e-6)
 {
     const int C2 = E.rows();
     const int G = grids.size();
@@ -731,12 +657,21 @@ inline auto collapse_emission_by_grid(const MyArr2D & E,
         snp = e + 1;
         for(c = s; c <= e; c++) EG.col(g) *= E.col(c);
         EG.col(g) /= EG.col(g).maxCoeff(); // rescale by maximum
-        EG.col(g) = (EG.col(g) < minEmission)
-                        .select(minEmission, EG.col(g)); // apply bounding
+        EG.col(g) = (EG.col(g) < minEmission).select(minEmission, EG.col(g)); // apply bounding
     }
     assert(snp == E.cols());
 
     return EG;
+}
+
+inline auto cat_stdvec_of_eigen(const std::vector<MyArr2D> & arr3)
+{
+    int K = arr3.size();
+    int C = arr3[0].rows();
+    int M = arr3[0].cols();
+    MyArr2D out(C * K, M);
+    for(int k = 0; k < K; k++) out.middleRows(k * C, C) = arr3[k];
+    return out;
 }
 
 #endif // COMMON_H_

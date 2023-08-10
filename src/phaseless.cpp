@@ -6,6 +6,7 @@
 
 #include "phaseless.hpp"
 
+#include "common.hpp"
 #include "io.hpp"
 #include "threadpool.hpp"
 #include <alpaca/alpaca.h>
@@ -367,25 +368,112 @@ int run_phaseless_main(Options & opts)
     faith.initRecombination(genome->pos);
     faith.debug = opts.debug;
     double loglike, diff, prevlike{std::numeric_limits<double>::lowest()};
-    for(int it = 0; it <= opts.nimpute; it++)
+    if(opts.noaccel)
     {
-        tim.clock();
-        faith.initIteration();
-        for(int i = 0; i < genome->nsamples; i++)
+        for(int it = 0; it <= opts.nimpute; it++)
         {
-            if(it == opts.nimpute)
-                res.emplace_back(pool.enqueue(&Phaseless::runBigass, &faith, i, std::ref(genome->gls), true));
-            else
-                res.emplace_back(pool.enqueue(&Phaseless::runBigass, &faith, i, std::ref(genome->gls), false));
+            tim.clock();
+            faith.initIteration();
+            for(int i = 0; i < genome->nsamples; i++)
+            {
+                if(it == opts.nimpute)
+                    res.emplace_back(pool.enqueue(&Phaseless::runBigass, &faith, i, std::ref(genome->gls), true));
+                else
+                    res.emplace_back(pool.enqueue(&Phaseless::runBigass, &faith, i, std::ref(genome->gls), false));
+            }
+            loglike = 0;
+            for(auto && ll : res) loglike += ll.get();
+            res.clear(); // clear future and renew
+            faith.updateIteration();
+            diff = it ? loglike - prevlike : 999.999;
+            prevlike = loglike;
+            cao.print(tim.date(), "run whole genome, iteration", it, ", likelihoods =", loglike, ", diff =", diff,
+                      ", time", tim.reltime(), " sec");
+            if(diff < opts.ltol)
+            {
+                cao.print(tim.date(), "hit stopping criteria, diff =", std::scientific, diff, " <", opts.ltol);
+                break;
+            }
         }
-        loglike = 0;
-        for(auto && ll : res) loglike += ll.get();
-        res.clear(); // clear future and renew
-        diff = it ? loglike - prevlike : 0;
-        cao.print(tim.date(), "run whole genome, iteration", it, ", likelihoods =", loglike, ", diff =", diff, ", time",
-                  tim.reltime(), " sec");
-        if(it != opts.nimpute) faith.updateIteration();
-        prevlike = loglike;
+    }
+    else
+    {
+        MyArr2D Q0, Q1;
+        MyArr2D F0, F1;
+        const int istep{4};
+        double alpha{0}, stepMax{4}, alphaMax{1280};
+        for(int it = 0; it < opts.nimpute / 3; it++)
+        {
+            // first normal iter
+            faith.initIteration();
+            Q0 = faith.Q;
+            F0 = cat_stdvec_of_eigen(faith.F);
+            for(int i = 0; i < genome->nsamples; i++)
+            {
+                if(it == opts.nimpute)
+                    res.emplace_back(pool.enqueue(&Phaseless::runBigass, &faith, i, std::ref(genome->gls), true));
+                else
+                    res.emplace_back(pool.enqueue(&Phaseless::runBigass, &faith, i, std::ref(genome->gls), false));
+            }
+            loglike = 0;
+            for(auto && ll : res) loglike += ll.get();
+            res.clear(); // clear future and renew
+            faith.updateIteration();
+            // second normal iter
+            faith.initIteration();
+            Q1 = faith.Q;
+            F1 = cat_stdvec_of_eigen(faith.F);
+            for(int i = 0; i < genome->nsamples; i++)
+            {
+                if(it == opts.nimpute)
+                    res.emplace_back(pool.enqueue(&Phaseless::runBigass, &faith, i, std::ref(genome->gls), true));
+                else
+                    res.emplace_back(pool.enqueue(&Phaseless::runBigass, &faith, i, std::ref(genome->gls), false));
+            }
+            loglike = 0;
+            for(auto && ll : res) loglike += ll.get();
+            res.clear(); // clear future and renew
+            faith.updateIteration();
+            diff = it ? loglike - prevlike : 999.999;
+            prevlike = loglike;
+            cao.print(tim.date(), "SqS3 iteration", it * 3 + 1, ", alpha=", alpha, ", likelihoods =", std::fixed,
+                      loglike, ", diff =", diff, ", time", tim.reltime(), " sec");
+            if(diff < opts.ltol)
+            {
+                cao.print(tim.date(), "hit stopping criteria, diff =", std::scientific, diff, " <", opts.ltol);
+                break;
+            }
+            // third accel iter
+            faith.initIteration();
+            // alpha = ((Q1 - Q0).square().sum()) / ((faith.Q - 2 * Q1 + Q0).square().sum());
+            alpha = ((F1 - F0).square().sum() + (Q1 - Q0).square().sum())
+                    / ((cat_stdvec_of_eigen(faith.F) - 2 * F1 + F0).square().sum()
+                       + (faith.Q - 2 * Q1 + Q0).square().sum());
+            alpha = max(1.0, sqrt(alpha));
+            if(alpha >= stepMax)
+            {
+                alpha = min(stepMax, alphaMax);
+                stepMax = min(stepMax * istep, alphaMax);
+            }
+            faith.Q = Q0 + 2 * alpha * (Q1 - Q0) + alpha * alpha * (faith.Q - 2 * Q1 + Q0);
+            for(int k = 0; k < opts.K; k++)
+                faith.F[k] =
+                    F0.middleRows(k * opts.C, opts.C)
+                    + 2 * alpha * (F1.middleRows(k * opts.C, opts.C) - F0.middleRows(k * opts.C, opts.C))
+                    + alpha * alpha
+                          * (faith.F[k] - 2 * F1.middleRows(k * opts.C, opts.C) + F0.middleRows(k * opts.C, opts.C));
+            for(int i = 0; i < genome->nsamples; i++)
+            {
+                if(it == opts.nimpute)
+                    res.emplace_back(pool.enqueue(&Phaseless::runBigass, &faith, i, std::ref(genome->gls), true));
+                else
+                    res.emplace_back(pool.enqueue(&Phaseless::runBigass, &faith, i, std::ref(genome->gls), false));
+            }
+            loglike = 0;
+            for(auto && ll : res) loglike += ll.get();
+            res.clear(); // clear future and renew
+            faith.updateIteration();
+        }
     }
     faith.Q = (faith.Q * 1e6).round() / 1e6;
     oanc << std::fixed << faith.Q.transpose().format(fmt) << "\n";

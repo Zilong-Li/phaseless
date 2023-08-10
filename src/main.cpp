@@ -31,6 +31,10 @@ int main(int argc, char * argv[])
         .implicit_value(true);
 
     argparse::ArgumentParser cmd_joint("joint", VERSION, default_arguments::help);
+    cmd_joint.add_argument("-a", "--no-accel")
+        .help("disable accelerated EM")
+        .default_value(false)
+        .implicit_value(true);
     cmd_joint.add_argument("-c", "--cluster")
         .help("number of haplotype clusters")
         .default_value(10)
@@ -46,6 +50,10 @@ int main(int argc, char * argv[])
         .help("number of EM iterations")
         .default_value(40)
         .scan<'i', int>();
+    cmd_joint.add_argument("-l", "--ltol")
+        .help("tolerance of stopping criteria for diff(loglikelihood)")
+        .default_value(1e-1)
+        .scan<'g', double>();
     cmd_joint.add_argument("-n", "--threads")
         .help("number of threads")
         .default_value(1)
@@ -222,6 +230,8 @@ int main(int argc, char * argv[])
             opts.seed = cmd_joint.get<int>("--seed");
             opts.chunksize = cmd_joint.get<int>("--chunksize");
             opts.single_chunk = cmd_joint.get<bool>("--single-chunk");
+            opts.noaccel = cmd_joint.get<bool>("--no-accel");
+            opts.ltol = cmd_joint.get<double>("--ltol");
             if(opts.single_chunk) opts.chunksize = INT_MAX;
             if((opts.in_beagle.empty() && opts.in_vcf.empty()) || cmd_joint.get<bool>("--help"))
                 throw std::runtime_error(cmd_joint.help().str());
@@ -257,8 +267,7 @@ int main(int argc, char * argv[])
             opts.qtol = cmd_admix.get<double>("--qtol");
             opts.ltol = cmd_admix.get<double>("--ltol");
             opts.noaccel = cmd_admix.get<bool>("--no-accel");
-            if(opts.in_bin.empty() || cmd_admix.get<bool>("--help"))
-                throw std::runtime_error(cmd_admix.help().str());
+            if(opts.in_bin.empty() || cmd_admix.get<bool>("--help")) throw std::runtime_error(cmd_admix.help().str());
             run_admix_main(opts);
         }
         else if(program.is_subcommand_used(cmd_parse))
@@ -267,8 +276,7 @@ int main(int argc, char * argv[])
             opts.out.assign(cmd_parse.get("--out"));
             opts.samples = cmd_parse.get("--samples");
             opts.ichunk = cmd_parse.get<int>("--chunk");
-            if(opts.in_bin.empty() || cmd_parse.get<bool>("--help"))
-                throw std::runtime_error(cmd_parse.help().str());
+            if(opts.in_bin.empty() || cmd_parse.get<bool>("--help")) throw std::runtime_error(cmd_parse.help().str());
             run_parse_main(opts);
         }
         else if(program.is_subcommand_used(cmd_convert))
