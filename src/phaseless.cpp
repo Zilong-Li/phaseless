@@ -43,6 +43,8 @@ void Phaseless::protectPars()
 {
     // if we accelerate pars, protect them!
     // protect Q
+    Q = (Q < admixtureThreshold).select(admixtureThreshold, Q); // lower bound
+    Q = (Q > 1 - admixtureThreshold).select(1 - admixtureThreshold, Q); // upper bound
     Q.rowwise() /= Q.colwise().sum(); // normalize Q per individual
     if(debug && P.isNaN().any()) cao.warn("NaN in P in Phaseless model. will fill it with AF");
     // protect P
@@ -51,25 +53,27 @@ void Phaseless::protectPars()
     // protect F
     for(int k = 0; k < K; k++)
     {
+        F[k] = (F[k] < clusterFreqThreshold).select(clusterFreqThreshold, F[k]);
+        F[k] = (F[k] > 1 - clusterFreqThreshold).select(1 - clusterFreqThreshold, F[k]);
         F[k].rowwise() /= F[k].colwise().sum(); // normalize F per site
         // could cluster jump be zero?
-        if(F[k].isNaN().any() || (F[k] < clusterFreqThreshold).any())
-        {
-            if(debug && F[k].isNaN().any()) cao.warn("NaN in F in Phaseless model. reset it to the threshold. k =", k);
-            F[k] = (F[k] < clusterFreqThreshold).select(0, F[k]); // reset to 0 first
-            for(auto m = 0; m < F[k].cols(); m++)
-            {
-                if(auto c = (F[k].col(m) == 0).count() > 0)
-                {
-                    // for columns with an entry below 0
-                    // each 0 entry becomes threshold
-                    // then rest re-scaled so whole thing has sum 1
-                    double xsum = 1 - c * clusterFreqThreshold;
-                    double csum = F[k].col(m).sum();
-                    F[k].col(m) = (F[k].col(m) > 0).select(F[k].col(m) * xsum / csum, clusterFreqThreshold);
-                }
-            }
-        }
+        if(debug && F[k].isNaN().any()) cao.warn("NaN in F in Phaseless model. reset it to the threshold. k =", k);
+        // if(F[k].isNaN().any() || (F[k] < clusterFreqThreshold).any())
+        // {
+        //     F[k] = (F[k] < clusterFreqThreshold).select(0, F[k]); // reset to 0 first
+        //     for(auto m = 0; m < F[k].cols(); m++)
+        //     {
+        //         if(auto c = (F[k].col(m) == 0).count() > 0)
+        //         {
+        //             // for columns with an entry below 0
+        //             // each 0 entry becomes threshold
+        //             // then rest re-scaled so whole thing has sum 1
+        //             double xsum = 1 - c * clusterFreqThreshold;
+        //             double csum = F[k].col(m).sum();
+        //             F[k].col(m) = (F[k].col(m) > 0).select(F[k].col(m) * xsum / csum, clusterFreqThreshold);
+        //         }
+        //     }
+        // }
     }
 }
 
