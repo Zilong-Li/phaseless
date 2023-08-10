@@ -221,8 +221,10 @@ void Phaseless::getPosterios(const int ind,
                                    * (gli(s, 1) * (1 - P.row(m)) + gli(s, 2) * P.row(m)).transpose())
                                       .sum();
             if(s == 0)
+            {
                 for(y1 = 0; y1 < K; y1++)
                     ind_post_zy(y1 * C + z1, s) = gamma(Eigen::seqN(z1, C, C), Eigen::seqN(y1, K, K)).sum();
+            }
         }
         if(debug && !(std::abs(1.0 - (ind_post_zg1.col(s) + ind_post_zg2.col(s)).sum()) < 1e-6))
             cao.error(s, ", clusterallele is not approx 1.0 (tol = 1e-6)\n", gamma.sum());
@@ -344,6 +346,7 @@ int run_phaseless_main(Options & opts)
     Phaseless faith(opts.K, opts.C, genome->nsamples, genome->nsnps, opts.seed);
     faith.initRecombination(genome->pos);
     faith.debug = opts.debug;
+    double loglike, diff, prevlike{std::numeric_limits<double>::lowest()};
     for(int it = 0; it <= opts.nimpute; it++)
     {
         tim.clock();
@@ -355,12 +358,14 @@ int run_phaseless_main(Options & opts)
             else
                 res.emplace_back(pool.enqueue(&Phaseless::runBigass, &faith, i, std::ref(genome->gls), false));
         }
-        double loglike = 0;
+        loglike = 0;
         for(auto && ll : res) loglike += ll.get();
         res.clear(); // clear future and renew
-        cao.print(tim.date(), "run whole genome, iteration", it, ", likelihoods =", loglike, ",", tim.reltime(),
-                  " sec");
-        faith.updateIteration();
+        diff = it ? loglike - prevlike : 0;
+        cao.print(tim.date(), "run whole genome, iteration", it, ", likelihoods =", loglike, ", diff =", diff, ", time",
+                  tim.reltime(), " sec");
+        if(it != opts.nimpute) faith.updateIteration();
+        prevlike = loglike;
     }
     faith.Q = (faith.Q * 1e6).round() / 1e6;
     oanc << std::fixed << faith.Q.transpose().format(fmt) << "\n";

@@ -20,17 +20,21 @@ TEST_CASE("phaseless joint single chunk", "[test-joint]")
     faith.debug = 1;
     ThreadPool pool(4);
     vector<future<double>> res;
+    double loglike, diff, prevlike{std::numeric_limits<double>::lowest()};
     for(int it = 0; it <= nimpute; it++)
     {
         tim.clock();
         faith.initIteration();
         for(int i = 0; i < genome->nsamples; i++)
             res.emplace_back(pool.enqueue(&Phaseless::runBigass, &faith, i, std::ref(genome->gls), false));
-        double loglike = 0;
+        loglike = 0;
         for(auto && ll : res) loglike += ll.get();
+        diff = it ? loglike - prevlike : 0;
         res.clear(); // clear future and renew
-        cao.cerr(tim.date(), "run whole genome, iteration", it, ", likelihoods =", loglike, ",", tim.reltime(), " sec");
+        cao.cerr(tim.date(), "run whole genome, iteration", it, ", likelihoods =", loglike, ", diff = ", diff, ", time",
+                 tim.reltime(), " sec");
         faith.updateIteration();
+        prevlike = loglike;
     }
 }
 
@@ -46,16 +50,20 @@ TEST_CASE("phaseless joint multiple chunks", "[test-joint]")
     faith.debug = 1;
     ThreadPool pool(4);
     vector<future<double>> res;
+    double loglike, diff, prevlike{std::numeric_limits<double>::lowest()};
     for(int it = 0; it <= nimpute; it++)
     {
         tim.clock();
         faith.initIteration();
         for(int i = 0; i < genome->nsamples; i++)
             res.emplace_back(pool.enqueue(&Phaseless::runBigass, &faith, i, std::ref(genome->gls), false));
-        double loglike = 0;
+        loglike = 0;
         for(auto && ll : res) loglike += ll.get();
         res.clear(); // clear future and renew
-        cao.cerr(tim.date(), "run whole genome, iteration", it, ", likelihoods =", loglike, ",", tim.reltime(), " sec");
+        diff = it ? loglike - prevlike : 0;
+        cao.cerr(tim.date(), "run whole genome, iteration", it, ", likelihoods =", loglike, ", diff = ", diff, ", time",
+                 tim.reltime(), " sec");
         faith.updateIteration();
+        prevlike = loglike;
     }
 }
