@@ -48,19 +48,39 @@ void Phaseless::initIteration()
 
 void Phaseless::updateIteration()
 {
-    P = (EclusterA2 / (EclusterA1 + EclusterA2)).transpose();
-    if(debug && P.isNaN().any()) cao.warn("NaN in P in Phaseless model. will fill it with AF");
-    // map F to domain but no normalization
-    P = (P < alleleEmitThreshold).select(alleleEmitThreshold, P); // lower bound
-    P = (P > 1 - alleleEmitThreshold).select(1 - alleleEmitThreshold, P); // upper bound
-
-    for(int i = 0; i < K; i++)
-    {
-        F[i] = PclusterK.middleRows(i * C, C);
-        F[i].rowwise() /= F[i].colwise().sum(); // normalize F per site
-    }
+    // update Q
     Q = Eancestry;
     Q.rowwise() /= Q.colwise().sum(); // normalize Q per individual
+    // update P
+    P = (EclusterA2 / (EclusterA1 + EclusterA2)).transpose();
+    if(debug && P.isNaN().any()) cao.warn("NaN in P in Phaseless model. will fill it with AF");
+    // map P to domain but no normalization
+    P = (P < alleleEmitThreshold).select(alleleEmitThreshold, P); // lower bound
+    P = (P > 1 - alleleEmitThreshold).select(1 - alleleEmitThreshold, P); // upper bound
+    // update F
+    for(int k = 0; k < K; k++)
+    {
+        F[k] = PclusterK.middleRows(k * C, C);
+        F[k].rowwise() /= F[k].colwise().sum(); // normalize F per site
+        // could cluster jump be zero?
+        if(F[k].isNaN().any() || (F[k] < clusterFreqThreshold).any())
+        {
+            if(debug && F[k].isNaN().any()) cao.warn("NaN in F in Phaseless model. reset it to the threshold. k =", k);
+            F[k] = (F[k] < clusterFreqThreshold).select(0, F[k]); // reset to 0 first
+            for(auto m = 0; m < F[k].cols(); m++)
+            {
+                if(auto c = (F[k].col(m) == 0).count() > 0)
+                {
+                    // for columns with an entry below 0
+                    // each 0 entry becomes threshold
+                    // then rest re-scaled so whole thing has sum 1
+                    double xsum = 1 - c * clusterFreqThreshold;
+                    double csum = F[k].col(m).sum();
+                    F[k].col(m) = (F[k].col(m) > 0).select(F[k].col(m) * xsum / csum, clusterFreqThreshold);
+                }
+            }
+        }
+    }
 }
 
 void Phaseless::getForwardPrevSums(const MyArr2D & alpha,
@@ -203,6 +223,7 @@ void Phaseless::getPosterios(const int ind,
     MyArr1D prevsum_zzy(K);
     for(s = 0; s < S; s++)
     {
+        m = s + pos_chunk[ic];
         MyArr2D gamma = alpha[s] * beta[s]; // post(z, y)
         if(debug && !(std::abs(1.0 - gamma.sum()) < 1e-6))
             cao.error(s, ", gamma sum is not approx 1.0 (tol = 1e-6)\n", gamma.sum());
@@ -211,7 +232,6 @@ void Phaseless::getPosterios(const int ind,
             cao.error(s, ", zpost is not approx 1.0 (tol = 1e-6)\n", ind_post_zz.col(s).sum());
 
         auto gamma_div_emit = ind_post_zz.col(s) / emit.col(s);
-        m = s + pos_chunk[ic];
         for(z1 = 0; z1 < C; z1++)
         {
             ind_post_zg1(z1, s) = (gamma_div_emit(Eigen::seqN(z1, C, C)) * (1 - P(m, z1))
@@ -261,7 +281,7 @@ void Phaseless::getPosterios(const int ind,
         EclusterA1.middleCols(pos_chunk[ic], S) += ind_post_zg1;
         EclusterA2.middleCols(pos_chunk[ic], S) += ind_post_zg2;
         PclusterK.middleCols(pos_chunk[ic], S) += ind_post_zy; // cluster ancestry allele jump
-        Eancestry.col(ind) += ind_post_y.rowwise().sum(); // FIXME need to take care
+        Eancestry.col(ind) += ind_post_y.rowwise().sum(); // need to take care
     }
 }
 
