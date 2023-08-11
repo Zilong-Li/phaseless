@@ -15,7 +15,6 @@ using namespace std;
 
 void Phaseless::initRecombination(const Int1D & pos, double Ne = 20000, int B = 1)
 {
-    dist = calc_position_distance(pos);
     nGen = 4 * Ne / C;
     er = calc_distRate(pos, C, 1.0);
     et = calc_distRate(pos, C, 0.05);
@@ -31,7 +30,6 @@ void Phaseless::initRecombination(const Int2D & pos, double Ne = 20000, int B = 
     for(i = 0; i < nchunks; i++)
     {
         pos_chunk[i] = ss;
-        dist = calc_position_distance(pos[i]);
         er.segment(ss, pos[i].size()) = calc_distRate(pos[i], C, 1.0);
         et.segment(ss, pos[i].size()) = calc_distRate(pos[i], C, 0.05);
         ss += pos[i].size();
@@ -43,6 +41,8 @@ void Phaseless::protectPars()
 {
     // if we accelerate pars, protect them!
     // protect Q
+    Q.rowwise() /= Q.colwise().sum(); // normalize Q per individual
+    if(debug && Q.isNaN().any()) cao.warn("NaN in Q in Phaseless model. reset it to the threshold");
     Q = (Q < admixtureThreshold).select(admixtureThreshold, Q); // lower bound
     Q = (Q > 1 - admixtureThreshold).select(1 - admixtureThreshold, Q); // upper bound
     Q.rowwise() /= Q.colwise().sum(); // normalize Q per individual
