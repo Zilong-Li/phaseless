@@ -10,6 +10,7 @@
 #include "io.hpp"
 #include "threadpool.hpp"
 #include <alpaca/alpaca.h>
+#include <cmath>
 
 using namespace std;
 
@@ -410,23 +411,18 @@ int run_phaseless_main(Options & opts)
     }
     else
     {
-        MyArr2D Q0, Q1;
-        MyArr2D F0, F1;
+        MyArr2D Q0, Q1, Q2;
+        MyArr2D F0, F1, F2;
         const int istep{4};
-        double alpha{0}, stepMax{4}, alphaMax{1280};
-        for(int it = 0; it < opts.nimpute / 3; it++)
+        double alpha{0}, stepMax{4}, alphaMax{1280}, logcheck{0};
+        for(int it = 0; it < opts.nimpute / 4; it++)
         {
             // first normal iter
             faith.initIteration();
             Q0 = faith.Q;
             F0 = cat_stdvec_of_eigen(faith.F);
             for(int i = 0; i < genome->nsamples; i++)
-            {
-                if(it == opts.nimpute)
-                    res.emplace_back(pool.enqueue(&Phaseless::runBigass, &faith, i, std::ref(genome->gls), true));
-                else
-                    res.emplace_back(pool.enqueue(&Phaseless::runBigass, &faith, i, std::ref(genome->gls), false));
-            }
+                res.emplace_back(pool.enqueue(&Phaseless::runBigass, &faith, i, std::ref(genome->gls), false));
             loglike = 0;
             for(auto && ll : res) loglike += ll.get();
             res.clear(); // clear future and renew
@@ -437,27 +433,21 @@ int run_phaseless_main(Options & opts)
             Q1 = faith.Q;
             F1 = cat_stdvec_of_eigen(faith.F);
             for(int i = 0; i < genome->nsamples; i++)
-            {
-                if(it == opts.nimpute)
-                    res.emplace_back(pool.enqueue(&Phaseless::runBigass, &faith, i, std::ref(genome->gls), true));
-                else
-                    res.emplace_back(pool.enqueue(&Phaseless::runBigass, &faith, i, std::ref(genome->gls), false));
-            }
+                res.emplace_back(pool.enqueue(&Phaseless::runBigass, &faith, i, std::ref(genome->gls), false));
             loglike = 0;
             for(auto && ll : res) loglike += ll.get();
             res.clear(); // clear future and renew
             faith.updateIteration();
             diff = it ? loglike - prevlike : NAN;
             prevlike = loglike;
-            cao.print(tim.date(), "SqS3 iteration", it * 3 + 1, ", alpha=", alpha, ", likelihoods =", std::fixed,
+            cao.print(tim.date(), "SqS3 iteration", it * 4 + 1, ", alpha=", alpha, ", likelihoods =", std::fixed,
                       loglike, ", diff =", diff, ", time", tim.reltime(), " sec");
             if(diff < opts.ltol)
             {
                 cao.print(tim.date(), "hit stopping criteria, diff =", std::scientific, diff, " <", opts.ltol);
                 break;
             }
-            // third accel iter
-            faith.initIteration();
+            // calculate alpha based on first two pars
             // alpha = ((Q1 - Q0).square().sum()) / ((faith.Q - 2 * Q1 + Q0).square().sum());
             alpha = ((F1 - F0).square().sum() + (Q1 - Q0).square().sum())
                     / ((cat_stdvec_of_eigen(faith.F) - 2 * F1 + F0).square().sum()
@@ -468,6 +458,8 @@ int run_phaseless_main(Options & opts)
                 alpha = min(stepMax, alphaMax);
                 stepMax = min(stepMax * istep, alphaMax);
             }
+            // third normal iter
+            // update Q and F using the second em iter
             faith.Q = Q0 + 2 * alpha * (Q1 - Q0) + alpha * alpha * (faith.Q - 2 * Q1 + Q0);
             for(int k = 0; k < opts.K; k++)
                 faith.F[k] =
@@ -475,18 +467,36 @@ int run_phaseless_main(Options & opts)
                     + 2 * alpha * (F1.middleRows(k * opts.C, opts.C) - F0.middleRows(k * opts.C, opts.C))
                     + alpha * alpha
                           * (faith.F[k] - 2 * F1.middleRows(k * opts.C, opts.C) + F0.middleRows(k * opts.C, opts.C));
-            faith.protectPars();
+            faith.initIteration();
             for(int i = 0; i < genome->nsamples; i++)
-            {
-                if(it == opts.nimpute)
-                    res.emplace_back(pool.enqueue(&Phaseless::runBigass, &faith, i, std::ref(genome->gls), true));
-                else
-                    res.emplace_back(pool.enqueue(&Phaseless::runBigass, &faith, i, std::ref(genome->gls), false));
-            }
+                res.emplace_back(pool.enqueue(&Phaseless::runBigass, &faith, i, std::ref(genome->gls), false));
             loglike = 0;
             for(auto && ll : res) loglike += ll.get();
             res.clear(); // clear future and renew
             faith.updateIteration();
+            // save current pars
+            Q2 = faith.Q;
+            F2 = cat_stdvec_of_eigen(faith.F);
+            // check if normal third iter is better
+            faith.Q = Q1;
+            for(int k = 0; k < opts.K; k++) faith.F[k] = F1.middleRows(k * opts.C, opts.C);
+            faith.initIteration();
+            for(int i = 0; i < genome->nsamples; i++)
+                res.emplace_back(pool.enqueue(&Phaseless::runBigass, &faith, i, std::ref(genome->gls), false));
+            logcheck = 0;
+            for(auto && ll : res) logcheck += ll.get();
+            res.clear(); // clear future and renew
+            faith.updateIteration();
+            if(logcheck - loglike > 0.1)
+            {
+                cao.warn(tim.date(), "normal EM yields better likelihoods =", logcheck,
+                         " than accelerated EM likelihoods =", loglike, ", tol=0.1");
+            }
+            else
+            {
+                faith.Q = Q2;
+                for(int k = 0; k < opts.K; k++) faith.F[k] = F2.middleRows(k * opts.C, opts.C);
+            }
         }
     }
     faith.Q = (faith.Q * 1e6).round() / 1e6;
