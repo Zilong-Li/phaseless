@@ -38,6 +38,13 @@ void Phaseless::initRecombination(const Int2D & pos, double Ne = 20000, int B = 
     pos_chunk[nchunks] = ss; // add sentinel
 }
 
+void Phaseless::setBoundaries(double tol_p, double tol_f, double tol_q)
+{
+    alleleEmitThreshold = tol_p;
+    clusterFreqThreshold = tol_f;
+    admixtureThreshold = tol_q;
+}
+
 void Phaseless::protectPars()
 {
     // if we accelerate pars, protect them!
@@ -378,8 +385,9 @@ int run_phaseless_main(Options & opts)
     vector<future<double>> res;
     std::ofstream oanc(opts.out.string() + ".Q");
     Phaseless faith(opts.K, opts.C, genome->nsamples, genome->nsnps, opts.seed);
-    faith.initRecombination(genome->pos);
     faith.debug = opts.debug;
+    faith.setBoundaries(opts.ptol, opts.ftol, opts.qtol);
+    faith.initRecombination(genome->pos);
     double loglike, diff, prevlike{std::numeric_limits<double>::lowest()};
     if(opts.noaccel)
     {
@@ -489,8 +497,9 @@ int run_phaseless_main(Options & opts)
             faith.updateIteration();
             if(logcheck - loglike > 0.1)
             {
-                cao.warn(tim.date(), "normal EM yields better likelihoods =", logcheck,
-                         " than accelerated EM likelihoods =", loglike, ", tol=0.1");
+                if(faith.debug)
+                    cao.warn(tim.date(), "normal EM yields better likelihoods than the accelerated EM.", logcheck, " -",
+                             loglike, "> 0.1");
             }
             else
             {

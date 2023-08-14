@@ -54,6 +54,18 @@ int main(int argc, char * argv[])
         .help("tolerance of stopping criteria for diff(loglikelihood)")
         .default_value(1e-1)
         .scan<'g', double>();
+    cmd_joint.add_argument("-P", "--ptol")
+        .help("lower boundary for P")
+        .default_value(1e-6)
+        .scan<'g', double>();
+    cmd_joint.add_argument("-F", "--ftol")
+        .help("lower boundary for F")
+        .default_value(1e-6)
+        .scan<'g', double>();
+    cmd_joint.add_argument("-Q", "--qtol")
+        .help("lower boundary for Q")
+        .default_value(1e-6)
+        .scan<'g', double>();
     cmd_joint.add_argument("-n", "--threads")
         .help("number of threads")
         .default_value(1)
@@ -232,6 +244,9 @@ int main(int argc, char * argv[])
             opts.single_chunk = cmd_joint.get<bool>("--single-chunk");
             opts.noaccel = cmd_joint.get<bool>("--no-accel");
             opts.ltol = cmd_joint.get<double>("--ltol");
+            opts.ptol = cmd_joint.get<double>("--ptol");
+            opts.ftol = cmd_joint.get<double>("--ftol");
+            opts.qtol = cmd_joint.get<double>("--qtol");
             if(opts.single_chunk) opts.chunksize = INT_MAX;
             if((opts.in_beagle.empty() && opts.in_vcf.empty()) || cmd_joint.get<bool>("--help"))
                 throw std::runtime_error(cmd_joint.help().str());

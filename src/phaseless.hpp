@@ -52,6 +52,7 @@ class Phaseless
 
     void initRecombination(const Int1D & pos, double Ne, int B);
     void initRecombination(const Int2D & pos, double Ne, int B);
+    void setBoundaries(double, double, double);
     void protectPars();
     void initIteration();
     void updateIteration();
