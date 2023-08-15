@@ -54,18 +54,21 @@ void Phaseless::protectPars()
     Q = (Q < admixtureThreshold).select(admixtureThreshold, Q); // lower bound
     Q = (Q > 1 - admixtureThreshold).select(1 - admixtureThreshold, Q); // upper bound
     Q.rowwise() /= Q.colwise().sum(); // normalize Q per individual
-    if(debug && P.isNaN().any()) cao.warn("NaN in P in Phaseless model. will fill it with AF");
+    if(debug && !(1.0 - Q.colwise().sum() == 0).any()) cao.warn("Q colsum is not 1.0");
     // protect P
+    if(P.isNaN().any()) cao.warn("NaN in P in Phaseless model. will fill it with AF");
     P = (P < alleleEmitThreshold).select(alleleEmitThreshold, P); // lower bound
     P = (P > 1 - alleleEmitThreshold).select(1 - alleleEmitThreshold, P); // upper bound
     // protect F
     for(int k = 0; k < K; k++)
     {
-        F[k] = (F[k] < clusterFreqThreshold).select(clusterFreqThreshold, F[k]);
-        F[k] = (F[k] > 1 - clusterFreqThreshold).select(1 - clusterFreqThreshold, F[k]);
         F[k].rowwise() /= F[k].colwise().sum(); // normalize F per site
         // could cluster jump be zero?
-        if(debug && F[k].isNaN().any()) cao.warn("NaN in F in Phaseless model. reset it to the threshold. k =", k);
+        if(F[k].isNaN().any()) cao.warn("NaN in F in Phaseless model. reset it to the threshold. k =", k);
+        F[k] = (F[k] < clusterFreqThreshold).select(clusterFreqThreshold, F[k]);
+        F[k] = (F[k] > 1 - clusterFreqThreshold).select(1 - clusterFreqThreshold, F[k]);
+        // re-normalize F per site. hope should work well. otherwise do the complicated.
+        F[k].rowwise() /= F[k].colwise().sum();
         // if(F[k].isNaN().any() || (F[k] < clusterFreqThreshold).any())
         // {
         //     F[k] = (F[k] < clusterFreqThreshold).select(0, F[k]); // reset to 0 first
@@ -122,7 +125,7 @@ void Phaseless::getForwardPrevSums(const MyArr2D & alpha,
                 {
                     zz = z1 * C + z2;
                     yy = y1 * K + y2;
-                    auto aa = alpha(zz, yy);
+                    double aa = alpha(zz, yy);
                     prevsum_z(z2, yy) += aa;
                     prevsum_zz(y1, y2) += aa;
                     prevsum_zy(z1, y1) += aa;
@@ -252,7 +255,7 @@ void Phaseless::getPosterios(const int ind,
         if(debug && !(std::abs(1.0 - ind_post_zz.col(s).sum()) < 1e-6))
             cao.error(s, ", zpost is not approx 1.0 (tol = 1e-6)\n", ind_post_zz.col(s).sum());
 
-        auto gamma_div_emit = ind_post_zz.col(s) / emit.col(s);
+        MyArr1D gamma_div_emit = ind_post_zz.col(s) / emit.col(s); // what if emit is 0
         for(z1 = 0; z1 < C; z1++)
         {
             ind_post_zg1(z1, s) = (gamma_div_emit(Eigen::seqN(z1, C, C)) * (1 - P(m, z1))
@@ -268,7 +271,8 @@ void Phaseless::getPosterios(const int ind,
             }
         }
         if(debug && !(std::abs(1.0 - (ind_post_zg1.col(s) + ind_post_zg2.col(s)).sum()) < 1e-6))
-            cao.error(s, ", clusterallele is not approx 1.0 (tol = 1e-6)\n", gamma.sum());
+            cao.error(s, ", clusterallele is not approx 1.0 (tol = 1e-6)\n",
+                      (ind_post_zg1.col(s) + ind_post_zg2.col(s)).sum());
         if(s == 0) ind_post_y.col(s) = gamma.colwise().sum().reshaped(K, K).colwise().sum();
         if(s == 0) continue;
         getForwardPrevSums(alpha[s - 1], prevsum_z, prevsum_zz, prevsum_zy, prevsum_zzy);

@@ -31,6 +31,7 @@ int main(int argc, char * argv[])
         .implicit_value(true);
 
     argparse::ArgumentParser cmd_joint("joint", VERSION, default_arguments::help);
+    cmd_joint.add_description("run phasing and admixture inference in one goal");
     cmd_joint.add_argument("-a", "--no-accel")
         .help("disable accelerated EM")
         .default_value(false)

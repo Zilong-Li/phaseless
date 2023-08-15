@@ -70,10 +70,10 @@ template<typename MatrixType, typename RandomEngineType>
 inline MatrixType RandomUniform(const Eigen::Index numRows,
                                 const Eigen::Index numCols,
                                 RandomEngineType & engine,
-                                typename MatrixType::Scalar a,
-                                typename MatrixType::Scalar b)
+                                typename MatrixType::Scalar a = 0.0,
+                                typename MatrixType::Scalar b = 1.0)
 {
-    std::uniform_real_distribution<typename MatrixType::Scalar> uniform_real_distribution{a, b}; // or using 0.05, 0.95
+    std::uniform_real_distribution<typename MatrixType::Scalar> uniform_real_distribution{a, b};
     const auto uniform{[&](typename MatrixType::Scalar) { return uniform_real_distribution(engine); }};
     return MatrixType::NullaryExpr(numRows, numCols, uniform);
 };
@@ -189,7 +189,7 @@ inline auto calc_transRate_diploid(const Int1D & dl, double nGen, double expRate
 ** @param F    cluster-specific allele frequence (M, C)
 ** @return emission probability (M, C2)
 */
-inline auto get_emission_by_gl(const MyArr2D & gli, const MyArr2D & F, double minEmission = 1e-6)
+inline auto get_emission_by_gl(const MyArr2D & gli, const MyArr2D & F, double minEmission = 1e-10)
 {
     int k1, k2, g1, g2;
     const int M = F.rows();
@@ -209,7 +209,7 @@ inline auto get_emission_by_gl(const MyArr2D & gli, const MyArr2D & F, double mi
             }
         }
     // emitDip = emitDip.colwise() / emitDip.rowwise().maxCoeff(); // normalize
-    // it emitDip = (emitDip < minEmission).select(minEmission, emitDip);
+    // emitDip = (emitDip < minEmission).select(minEmission, emitDip);
     return emitDip;
 }
 

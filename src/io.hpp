@@ -439,37 +439,6 @@ inline void chunk_beagle_genotype_likelihoods(const std::unique_ptr<BigAss> & ge
     // now evenly split last two chunks of each chromosome
 }
 
-// inline void thin_bigass_per_chunk(int ic, const IntVec1D & idx2rm, const std::unique_ptr<BigAss> & genome)
-// {
-//     if(!idx2rm.empty())
-//     {
-//         IntVec1D idx2keep;
-//         int M = genome->pos[ic].size();
-//         for(int i = 0, j = 0; i < M; i++)
-//         {
-//             if(idx2rm[j] == i)
-//                 j++;
-//             else
-//                 idx2keep.push_back(i);
-//         }
-//         int im = idx2keep.size();
-//         MyFloat1D gls(genome->nsamples * im * 3);
-//         for(int i = 0; i < genome->nsamples; i++)
-//         {
-//             for(int j = 0; j < im; j++)
-//             {
-//                 gls[i * im * 3 + 0 * im + j] = genome->gls[ic][i * M * 3 + 0 * M + idx2keep[j]];
-//                 gls[i * im * 3 + 1 * im + j] = genome->gls[ic][i * M * 3 + 1 * M + idx2keep[j]];
-//                 gls[i * im * 3 + 2 * im + j] = genome->gls[ic][i * M * 3 + 2 * M + idx2keep[j]];
-//             }
-//         }
-//         genome->gls[ic] = gls;
-//         IntVec1D pos(im);
-//         for(int j = 0; j < im; j++) pos[j] = genome->pos[ic][idx2keep[j]];
-//         genome->pos[ic] = pos;
-//     }
-// }
-
 inline void update_bigass_inplace(const std::unique_ptr<BigAss> & genome)
 {
     int ic, ndiff;

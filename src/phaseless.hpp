@@ -29,7 +29,7 @@ class Phaseless
 
     // BOUNDING
     double minRate{0.1}, maxRate{100}; // threshold for R
-    double alleleEmitThreshold{1e-4}; // threshold for P
+    double alleleEmitThreshold{1e-6}; // threshold for P
     double clusterFreqThreshold{1e-6}; // threshold for F
     double admixtureThreshold{1e-6}; // threshold for Q
 
