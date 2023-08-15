@@ -11,6 +11,7 @@
 #include "threadpool.hpp"
 #include <alpaca/alpaca.h>
 #include <cmath>
+#include <cstddef>
 
 using namespace std;
 
@@ -372,6 +373,25 @@ double Phaseless::runBigass(int ind, const MyFloat2D & GL, bool finalIter)
     return loglike;
 }
 
+struct Pars
+{
+    void init(const MyArr1D & ier,
+              const MyArr1D & iet,
+              const MyArr2D & iP,
+              const MyArr2D & iQ,
+              const vector<MyArr2D> & iF)
+    {
+        P = MyFloat1D(iP.data(), iP.data() + iP.size());
+        Q = MyFloat1D(iQ.data(), iQ.data() + iQ.size());
+        er = MyFloat1D(ier.data(), ier.data() + ier.size());
+        et = MyFloat1D(iet.data(), iet.data() + iet.size());
+        for(size_t k = 0; k < iF.size(); k++) F.emplace_back(MyFloat1D(iF[k].data(), iF[k].data() + iF[k].size()));
+    }
+    MyFloat1D P, Q;
+    MyFloat2D F; // K x C x M, ancestral cluster frequency
+    MyFloat1D er, et; // M, jumping rate
+};
+
 int run_phaseless_main(Options & opts)
 {
     cao.cao.open(opts.out.string() + ".log");
@@ -514,6 +534,15 @@ int run_phaseless_main(Options & opts)
     }
     faith.Q = (faith.Q * 1e6).round() / 1e6;
     oanc << std::fixed << faith.Q.transpose().format(fmt) << "\n";
+    // std::unique_ptr<Pars> par = std::make_unique<Pars>(faith.er, faith.et, faith.P, faith.Q, faith.F);
+    std::unique_ptr<Pars> par = std::make_unique<Pars>();
+    par->init(faith.er, faith.et, faith.P, faith.Q, faith.F);
+    std::ofstream opar(opts.out.string() + ".pars.bin", std::ios::out | std::ios::binary);
+    constexpr auto OPTIONS = alpaca::options::fixed_length_encoding;
+    auto bytes_written = alpaca::serialize<OPTIONS, Pars>(*par, opar);
+    opar.close();
+    assert(std::filesystem::file_size(opts.out.string() + ".pars.bin") == bytes_written);
+    cao.done(tim.date(), "joint model done and outputting.", bytes_written, " bytes written to file");
 
     return 0;
 }
