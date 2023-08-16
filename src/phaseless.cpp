@@ -10,8 +10,6 @@
 #include "io.hpp"
 #include "threadpool.hpp"
 #include <alpaca/alpaca.h>
-#include <cmath>
-#include <cstddef>
 
 using namespace std;
 
@@ -91,7 +89,7 @@ void Phaseless::protectPars()
 
 void Phaseless::initIteration()
 {
-    PclusterK.setZero(C * K, M);
+    EclusterK.setZero(C * K, M);
     EclusterA1.setZero(C, M);
     EclusterA2.setZero(C, M);
     Eancestry.setZero(K, N);
@@ -104,7 +102,7 @@ void Phaseless::updateIteration()
     // update P
     P = (EclusterA2 / (EclusterA1 + EclusterA2)).transpose();
     // update F
-    for(int k = 0; k < K; k++) F[k] = PclusterK.middleRows(k * C, C);
+    for(int k = 0; k < K; k++) F[k] = EclusterK.middleRows(k * C, C);
     protectPars();
 }
 
@@ -306,7 +304,7 @@ void Phaseless::getPosterios(const int ind,
         std::lock_guard<std::mutex> lock(mutex_it);
         EclusterA1.middleCols(pos_chunk[ic], S) += ind_post_zg1;
         EclusterA2.middleCols(pos_chunk[ic], S) += ind_post_zg2;
-        PclusterK.middleCols(pos_chunk[ic], S) += ind_post_zy; // cluster ancestry allele jump
+        EclusterK.middleCols(pos_chunk[ic], S) += ind_post_zy; // cluster ancestry allele jump
         Eancestry.col(ind) += ind_post_y.rowwise().sum(); // need to take care
     }
 }
@@ -397,7 +395,7 @@ int run_phaseless_main(Options & opts)
     cao.cao.open(opts.out.string() + ".log");
     cao.is_screen = !opts.noscreen;
     cao.print(opts.opts_in_effect);
-    cao.warn(tim.date(), "-> running fastphase");
+    cao.warn(tim.date(), "-> running phaseless");
     int allthreads = std::thread::hardware_concurrency();
     opts.nthreads = opts.nthreads < allthreads ? opts.nthreads : allthreads;
     cao.print(tim.date(), allthreads, " concurrent threads are available. use", opts.nthreads, " threads");
@@ -534,7 +532,6 @@ int run_phaseless_main(Options & opts)
     }
     faith.Q = (faith.Q * 1e6).round() / 1e6;
     oanc << std::fixed << faith.Q.transpose().format(fmt) << "\n";
-    // std::unique_ptr<Pars> par = std::make_unique<Pars>(faith.er, faith.et, faith.P, faith.Q, faith.F);
     std::unique_ptr<Pars> par = std::make_unique<Pars>();
     par->init(faith.er, faith.et, faith.P, faith.Q, faith.F);
     std::ofstream opar(opts.out.string() + ".pars.bin", std::ios::out | std::ios::binary);

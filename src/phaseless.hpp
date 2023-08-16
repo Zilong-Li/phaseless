@@ -48,7 +48,7 @@ class Phaseless
     MyArr2D GP; // N x (M x 3), genotype probabilies for all individuals
     MyArr2D EclusterA1, EclusterA2; // C x M
     MyArr2D Eancestry; // K x N
-    MyArr2D PclusterK; // C x K x M
+    MyArr2D EclusterK; // C x K x M
 
     void initRecombination(const Int1D & pos, double Ne, int B);
     void initRecombination(const Int2D & pos, double Ne, int B);

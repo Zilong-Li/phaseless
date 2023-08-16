@@ -82,7 +82,7 @@ int main(int argc, char * argv[])
         .help("treat input as big single chunk")
         .default_value(false)
         .implicit_value(true);
-    cmd_joint.add_argument("--seed")
+    cmd_joint.add_argument("-d","--seed")
         .help("seed for reproducing results")
         .default_value(999)
         .scan<'i', int>();
@@ -130,7 +130,7 @@ int main(int argc, char * argv[])
         .help("treat input as big single chunk")
         .default_value(false)
         .implicit_value(true);
-    cmd_impute.add_argument("--seed")
+    cmd_impute.add_argument("-d","--seed")
         .help("seed for reproducing results")
         .default_value(999)
         .scan<'i', int>();
@@ -172,7 +172,7 @@ int main(int argc, char * argv[])
         .help("tolerance of stopping criteria for diff(loglikelihood)")
         .default_value(1e-1)
         .scan<'g', double>();
-    cmd_admix.add_argument("-s","--seed")
+    cmd_admix.add_argument("-d","--seed")
         .help("seed for reproducing results")
         .default_value(999)
         .scan<'i', int>();
