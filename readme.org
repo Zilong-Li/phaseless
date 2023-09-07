@@ -65,7 +65,6 @@ Now, we can do some interesting plotting.
 ./misc/plot_haplotype_cluster.R
 #+end_src
 
-[[file:misc/haplike.png]]
 [[file:misc/hapfreq.png]]
 
 * Output
