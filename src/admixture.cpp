@@ -76,8 +76,7 @@ double Admixture::runNativeWithBigAss(int ind, const std::unique_ptr<BigAss> & g
         const int nGrids = genome->B > 1 ? (nsnps + genome->B - 1) / genome->B : nsnps;
         alpha.setZero(C * C, nGrids);
         beta.setZero(C * C, nGrids);
-        get_cluster_likelihood(ind, nsnps, alpha, beta, genome->gls[ic], genome->R[ic], genome->PI[ic],
-                               genome->F[ic]);
+        get_cluster_likelihood(ind, nsnps, alpha, beta, genome->gls[ic], genome->R[ic], genome->PI[ic], genome->F[ic]);
         ae.setZero(C * C, nGrids);
         get_cluster_pairs_probabity(ae, genome->R[ic], genome->PI[ic]);
         iEkc.setZero(C * K, nGrids);
@@ -137,19 +136,8 @@ double Admixture::runNativeWithBigAss(int ind, const std::unique_ptr<BigAss> & g
     return llike;
 }
 
-void Admixture::initIteration(double tol)
+void Admixture::initIteration()
 {
-    if(Q.isNaN().any()) cao.error("NaN in Q\n");
-    Q = (Q < tol).select(tol, Q); // lower bound
-    Q = (Q > 1 - tol).select(1 - tol, Q); // upper bound
-    Q.rowwise() /= Q.colwise().sum(); // normalize Q per individual
-
-    if(F.isNaN().any()) cao.error("NaN in F\n");
-    F = (F < tol).select(tol, F); // lower bound
-    F = (F > 1 - tol).select(1 - tol, F); // upper bound
-    for(int k = 0; k < K; k++) // normalize F per snp per k
-        F.middleRows(k * C, C).rowwise() /= F.middleRows(k * C, C).colwise().sum();
-
     Ekc.setZero(C * K, M);
     NormF.setZero(K, M);
 }
@@ -157,6 +145,26 @@ void Admixture::initIteration(double tol)
 void Admixture::updateIteration()
 {
     for(int k = 0; k < K; k++) F.middleRows(k * C, C) = Ekc.middleRows(k * C, C).rowwise() / NormF.row(k);
+    protectPars();
+}
+
+void Admixture::protectPars()
+{
+    if(Q.isNaN().any()) cao.error("NaN in Q\n");
+    Q = (Q < admixtureThreshold).select(admixtureThreshold, Q); // lower bound
+    Q = (Q > 1 - admixtureThreshold).select(1 - admixtureThreshold, Q); // upper bound
+    Q.rowwise() /= Q.colwise().sum(); // normalize Q per individual
+
+    if(F.isNaN().any()) cao.error("NaN in F\n");
+    F = (F < clusterFreqThreshold).select(clusterFreqThreshold, F); // lower bound
+    F = (F > 1 - clusterFreqThreshold).select(1 - clusterFreqThreshold, F); // upper bound
+    normalizeF();
+}
+
+void Admixture::normalizeF()
+{
+    for(int k = 0; k < K; k++) // normalize F per snp per k
+        F.middleRows(k * C, C).rowwise() /= F.middleRows(k * C, C).colwise().sum();
 }
 
 void Admixture::writeQ(std::string out)
@@ -183,13 +191,12 @@ int run_admix_main(Options & opts)
     std::error_code ec;
     std::ifstream ifs(opts.in_bin, std::ios::in | std::ios::binary);
     constexpr auto OPTIONS = alpaca::options::fixed_length_encoding;
-    std::unique_ptr<BigAss> genome =
-        std::make_unique<BigAss>(alpaca::deserialize<OPTIONS, BigAss>(ifs, filesize, ec));
+    std::unique_ptr<BigAss> genome = std::make_unique<BigAss>(alpaca::deserialize<OPTIONS, BigAss>(ifs, filesize, ec));
     ifs.close();
     assert((bool)ec == false);
     cao.done(tim.date(), filesize, " bytes deserialized from file. skip imputation, ec", ec);
-    cao.print(tim.date(), "parsing input -> C =", genome->C, ", N =", genome->nsamples,
-              ", M =", genome->nsnps, ", nchunks =", genome->nchunks, ", B =", genome->B, ", G =", genome->G);
+    cao.print(tim.date(), "parsing input -> C =", genome->C, ", N =", genome->nsamples, ", M =", genome->nsnps,
+              ", nchunks =", genome->nchunks, ", B =", genome->B, ", G =", genome->G);
     assert(opts.K < genome->C);
 
     cao.warn(tim.date(), "-> running admixture with seed =", opts.seed);
@@ -208,20 +215,18 @@ int run_admix_main(Options & opts)
             F0 = admixer.F;
             Q0 = admixer.Q;
             for(int i = 0; i < genome->nsamples; i++)
-                llike.emplace_back(
-                    poolit.enqueue(&Admixture::runOptimalWithBigAss, &admixer, i, std::ref(genome)));
+                llike.emplace_back(poolit.enqueue(&Admixture::runOptimalWithBigAss, &admixer, i, std::ref(genome)));
             for(auto && ll : llike) ll.get();
             llike.clear(); // clear future and renew
             admixer.updateIteration();
             // second accel iteration
-            admixer.initIteration();
             F1 = admixer.F;
             Q1 = admixer.Q;
             qdiff = (Q1 - Q0).square().sum();
             tim.clock();
+            admixer.initIteration();
             for(int i = 0; i < genome->nsamples; i++)
-                llike.emplace_back(
-                    poolit.enqueue(&Admixture::runOptimalWithBigAss, &admixer, i, std::ref(genome)));
+                llike.emplace_back(poolit.enqueue(&Admixture::runOptimalWithBigAss, &admixer, i, std::ref(genome)));
             double loglike = 0;
             for(auto && ll : llike) loglike += ll.get();
             llike.clear(); // clear future and renew
@@ -229,21 +234,20 @@ int run_admix_main(Options & opts)
             ldiff = loglike - prevlike;
             prevlike = loglike;
             cao.print(tim.date(), "SqS3 iteration", it * 3 + 1, ", diff(Q) =", std::scientific, qdiff,
-                      ", alpha=", alpha, ", likelihoods =", std::fixed, loglike, ",", tim.reltime(), " sec");
+                      ", alpha=", alpha, ", likelihoods =", std::fixed, loglike, ", diff(likelihoods)=", ldiff,
+                      ", elapsed", tim.reltime(), " sec");
             if(qdiff < opts.qtol)
             {
-                cao.print(tim.date(), "hit stopping criteria, diff(Q) =", std::scientific, qdiff, " <",
-                          opts.qtol);
+                cao.print(tim.date(), "hit stopping criteria, diff(Q) =", std::scientific, qdiff, " <", opts.qtol);
                 break;
             }
             if(ldiff < opts.ltol)
             {
-                cao.print(tim.date(), "hit stopping criteria, diff(loglikelihood) =", std::scientific, ldiff,
-                          " <", opts.ltol);
+                cao.print(tim.date(), "hit stopping criteria, diff(loglikelihood) =", std::scientific, ldiff, " <",
+                          opts.ltol);
                 break;
             }
             // accel iteration with steplen
-            admixer.initIteration();
             alpha = ((F1 - F0).square().sum() + (Q1 - Q0).square().sum())
                     / ((admixer.F - 2 * F1 + F0).square().sum() + (admixer.Q - 2 * Q1 + Q0).square().sum());
             // alpha = ((Q1 - Q0).square().sum()) / ((admixer.Q - 2 * Q1 + Q0).square().sum());
@@ -257,8 +261,7 @@ int run_admix_main(Options & opts)
             admixer.Q = Q0 + 2 * alpha * (Q1 - Q0) + alpha * alpha * (admixer.Q - 2 * Q1 + Q0);
             admixer.initIteration();
             for(int i = 0; i < genome->nsamples; i++)
-                llike.emplace_back(
-                    poolit.enqueue(&Admixture::runOptimalWithBigAss, &admixer, i, std::ref(genome)));
+                llike.emplace_back(poolit.enqueue(&Admixture::runOptimalWithBigAss, &admixer, i, std::ref(genome)));
             for(auto && ll : llike) ll.get();
             llike.clear(); // clear future and renew
             admixer.updateIteration();
@@ -275,8 +278,7 @@ int run_admix_main(Options & opts)
             admixer.initIteration();
             Q0 = admixer.Q;
             for(int i = 0; i < genome->nsamples; i++)
-                llike.emplace_back(
-                    poolit.enqueue(&Admixture::runOptimalWithBigAss, &admixer, i, std::ref(genome)));
+                llike.emplace_back(poolit.enqueue(&Admixture::runOptimalWithBigAss, &admixer, i, std::ref(genome)));
 
             loglike = 0;
             for(auto && ll : llike) loglike += ll.get();
@@ -286,7 +288,8 @@ int run_admix_main(Options & opts)
             prevlike = loglike;
             qdiff = (admixer.Q - Q0).square().sum();
             cao.print(tim.date(), "normal iteration", it, ", diff(Q) =", std::scientific, qdiff,
-                      ", likelihoods =", std::fixed, loglike, ",", tim.reltime(), " sec");
+                      ", likelihoods =", std::fixed, loglike, ", diff(likelihoods)=", ldiff, ", elapsed", tim.reltime(),
+                      " sec");
             if(qdiff < opts.qtol) break;
             if(ldiff < opts.ltol) break;
         }

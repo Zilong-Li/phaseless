@@ -19,20 +19,42 @@ class Admixture
     {
         auto rng = std::default_random_engine{};
         rng.seed(seed);
-        F = RandomUniform<MyArr2D, std::default_random_engine>(C * K, M, rng, 0.05, 0.95);
-        Q = RandomUniform<MyArr2D, std::default_random_engine>(K, N, rng, 0.05, 0.95);
+        Q = RandomUniform<MyArr2D, std::default_random_engine>(K, N, rng, admixtureThreshold, 1 - admixtureThreshold);
+        Q.rowwise() /= Q.colwise().sum(); // normalize Q per individual
+        F = RandomUniform<MyArr2D, std::default_random_engine>(C * K, M, rng, clusterFreqThreshold,
+                                                               1 - clusterFreqThreshold);
+        normalizeF();
     }
+
+    Admixture(int n, int m, int c, int k, int seed, const std::string & qfile) : N(n), M(m), C(c), K(k)
+    {
+        auto rng = std::default_random_engine{};
+        rng.seed(seed);
+        // read Q file
+        Q = MyArr2D(K, N);
+        load_csv(qfile, Q);
+        F = RandomUniform<MyArr2D, std::default_random_engine>(C * K, M, rng, clusterFreqThreshold,
+                                                               1 - clusterFreqThreshold);
+        normalizeF();
+    }
+
     ~Admixture() {}
 
+    // BOUNDING
+    double clusterFreqThreshold{1e-6}; // threshold for F
+    double admixtureThreshold{1e-6}; // threshold for Q
     bool debug = false;
+
     const int N, M, C, K; // M: number of grids in total,  C2 = C x C
     MyArr2D F; // (C x K) x M
     MyArr2D Q; // K x N
     MyArr2D Ekc; // (C * K) x M, expected number of alleles per c per k
     MyArr2D NormF; // K x M
 
-    void initIteration(double tol = 1e-6);
+    void initIteration();
     void updateIteration();
+    void protectPars();
+    void normalizeF();
     void writeQ(std::string out);
     double runNativeWithBigAss(int ind, const std::unique_ptr<BigAss> & genome);
     double runOptimalWithBigAss(int ind, const std::unique_ptr<BigAss> & genome);

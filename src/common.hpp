@@ -538,6 +538,10 @@ inline auto get_cluster_pairs_probabity(MyArr2D & ae, const MyFloat1D & R_, cons
     }
     // (1.0 - ae.colwise().sum()).abs() < 1e-2 is OK. this may be due to
     // rounding error if we want to colsum equals 1.0. then normlize it
+    // TODO: cluster frequency can be zero for certain cluster.
+    const double tol = 1e-6;
+    ae = (ae < tol).select(tol, ae);
+    ae = (ae > 1 - tol).select(1 - tol, ae);
     ae.rowwise() /= ae.colwise().sum();
 }
 
@@ -676,6 +680,28 @@ inline auto cat_stdvec_of_eigen(const std::vector<MyArr2D> & arr3)
     MyArr2D out(C * K, M);
     for(int k = 0; k < K; k++) out.middleRows(k * C, C) = arr3[k];
     return out;
+}
+
+inline void load_csv(const std::string & path, MyArr2D & Q, char sep = ' ')
+{
+    std::ifstream fin(path);
+    std::string line;
+    std::vector<double> values;
+    int i{0}, j{0};
+    while(std::getline(fin, line))
+    {
+        std::stringstream lineStream(line);
+        std::string tok;
+        j = 0;
+        while(std::getline(lineStream, tok, sep))
+        {
+            Q(j, i) = std::stof(tok);
+            ++j;
+        }
+        assert(j == Q.rows());
+        ++i;
+    }
+    assert(i == Q.cols());
 }
 
 #endif // COMMON_H_
