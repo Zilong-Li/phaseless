@@ -150,10 +150,13 @@ void Admixture::updateIteration()
 
 void Admixture::protectPars()
 {
-    if(Q.isNaN().any()) cao.error("NaN in Q\n");
-    Q = (Q < admixtureThreshold).select(admixtureThreshold, Q); // lower bound
-    Q = (Q > 1 - admixtureThreshold).select(1 - admixtureThreshold, Q); // upper bound
-    Q.rowwise() /= Q.colwise().sum(); // normalize Q per individual
+    if(!nonewQ)
+    {
+        if(Q.isNaN().any()) cao.error("NaN in Q\n");
+        Q = (Q < admixtureThreshold).select(admixtureThreshold, Q); // lower bound
+        Q = (Q > 1 - admixtureThreshold).select(1 - admixtureThreshold, Q); // upper bound
+        Q.rowwise() /= Q.colwise().sum(); // normalize Q per individual
+    }
 
     if(F.isNaN().any()) cao.error("NaN in F\n");
     F = (F < clusterFreqThreshold).select(clusterFreqThreshold, F); // lower bound
