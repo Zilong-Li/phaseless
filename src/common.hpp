@@ -87,7 +87,7 @@ struct Options
     double ptol{1e-6}; // threshold for P
     double ftol{1e-6}; // threshold for F
     double qtol{1e-6}; // threshold for Q
-    bool noaccel{0}, noscreen{0}, single_chunk{0}, debug{0}, collapse{0};
+    bool nonewQ{0}, noaccel{0}, noscreen{0}, single_chunk{0}, debug{0}, collapse{0};
     std::filesystem::path out, in_beagle, in_vcf, in_bin;
     std::string samples{""}, region{""}, in_plink{""};
     std::string opts_in_effect{"Options in effect:\n   "};

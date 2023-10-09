@@ -55,8 +55,8 @@ double Admixture::runOptimalWithBigAss(int ind, const std::unique_ptr<BigAss> & 
             NormF.middleCols(m - nGrids, nGrids) += Ekg;
         }
     }
-
-    Q.col(ind) = iQ / (2 * M); // update Q, iQ.sum() should be 2M
+    // update Q, iQ.sum() should be 2M
+    if(!nonewQ) Q.col(ind) = iQ / (2 * M);
 
     return llike;
 }
@@ -131,7 +131,7 @@ double Admixture::runNativeWithBigAss(int ind, const std::unique_ptr<BigAss> & g
         }
     }
     // update Q, iQ.sum() should be 2M
-    Q.col(ind) = iQ / (2 * M);
+    if(!nonewQ) Q.col(ind) = iQ / (2 * M);
 
     return llike;
 }
@@ -176,6 +176,12 @@ void Admixture::writeQ(std::string out)
     ofs.close();
 }
 
+void Admixture::setFlags(bool debug_, bool nonewQ_)
+{
+    debug = debug_;
+    nonewQ = nonewQ_;
+}
+
 int run_admix_main(Options & opts)
 {
     cao.cao.open(opts.out.string() + ".log");
@@ -201,6 +207,7 @@ int run_admix_main(Options & opts)
 
     cao.warn(tim.date(), "-> running admixture with seed =", opts.seed);
     Admixture admixer(genome->nsamples, genome->G, genome->C, opts.K, opts.seed);
+    admixer.setFlags(opts.debug, opts.nonewQ);
     vector<future<double>> llike;
     if(!opts.noaccel)
     {

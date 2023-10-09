@@ -149,6 +149,13 @@ int main(int argc, char * argv[])
     cmd_admix.add_argument("-b", "--bin")
         .help("binary format from impute command as input")
         .default_value(std::string{""});
+    cmd_admix.add_argument("--qfile")
+        .help("read Q file as the start point")
+        .default_value(std::string{""});
+    cmd_admix.add_argument("--no-newQ")
+        .help("disable updating Q")
+        .default_value(false)
+        .implicit_value(true);
     cmd_admix.add_argument("-k", "--ancestry")
         .help("number of ancestry in admixture assumption")
         .default_value(2)
@@ -283,6 +290,7 @@ int main(int argc, char * argv[])
             opts.qtol = cmd_admix.get<double>("--qtol");
             opts.ltol = cmd_admix.get<double>("--ltol");
             opts.noaccel = cmd_admix.get<bool>("--no-accel");
+            opts.nonewQ = cmd_admix.get<bool>("--no-newQ");
             if(opts.in_bin.empty() || cmd_admix.get<bool>("--help")) throw std::runtime_error(cmd_admix.help().str());
             run_admix_main(opts);
         }

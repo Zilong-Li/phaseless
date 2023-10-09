@@ -44,6 +44,7 @@ class Admixture
     double clusterFreqThreshold{1e-6}; // threshold for F
     double admixtureThreshold{1e-6}; // threshold for Q
     bool debug = false;
+    bool nonewQ = false;
 
     const int N, M, C, K; // M: number of grids in total,  C2 = C x C
     MyArr2D F; // (C x K) x M
@@ -55,6 +56,7 @@ class Admixture
     void updateIteration();
     void protectPars();
     void normalizeF();
+    void setFlags(bool, bool);
     void writeQ(std::string out);
     double runNativeWithBigAss(int ind, const std::unique_ptr<BigAss> & genome);
     double runOptimalWithBigAss(int ind, const std::unique_ptr<BigAss> & genome);
