@@ -167,6 +167,16 @@ void Admixture::normalizeF()
         F.middleRows(k * C, C).rowwise() /= F.middleRows(k * C, C).colwise().sum();
 }
 
+void Admixture::setStartPoint(std::string qfile)
+{
+    F = RandomUniform<MyArr2D, std::default_random_engine>(C * K, M, rng, clusterFreqThreshold,
+                                                           1 - clusterFreqThreshold);
+    normalizeF();
+    Q = RandomUniform<MyArr2D, std::default_random_engine>(K, N, rng, admixtureThreshold, 1 - admixtureThreshold);
+    Q.rowwise() /= Q.colwise().sum(); // normalize Q per individual
+    if(!qfile.empty()) load_csv(qfile, Q);
+}
+
 void Admixture::writeQ(std::string out)
 {
     std::ofstream ofs(out);
@@ -208,6 +218,7 @@ int run_admix_main(Options & opts)
     cao.warn(tim.date(), "-> running admixture with seed =", opts.seed);
     Admixture admixer(genome->nsamples, genome->G, genome->C, opts.K, opts.seed);
     admixer.setFlags(opts.debug, opts.nonewQ);
+    admixer.setStartPoint(opts.in_qfile);
     vector<future<double>> llike;
     if(!opts.noaccel)
     {

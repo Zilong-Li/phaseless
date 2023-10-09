@@ -17,7 +17,6 @@ class Admixture
   public:
     Admixture(int n, int m, int c, int k, int seed) : N(n), M(m), C(c), K(k)
     {
-        auto rng = std::default_random_engine{};
         rng.seed(seed);
         Q = RandomUniform<MyArr2D, std::default_random_engine>(K, N, rng, admixtureThreshold, 1 - admixtureThreshold);
         Q.rowwise() /= Q.colwise().sum(); // normalize Q per individual
@@ -26,19 +25,10 @@ class Admixture
         normalizeF();
     }
 
-    Admixture(int n, int m, int c, int k, int seed, const std::string & qfile) : N(n), M(m), C(c), K(k)
-    {
-        auto rng = std::default_random_engine{};
-        rng.seed(seed);
-        // read Q file
-        Q = MyArr2D(K, N);
-        load_csv(qfile, Q);
-        F = RandomUniform<MyArr2D, std::default_random_engine>(C * K, M, rng, clusterFreqThreshold,
-                                                               1 - clusterFreqThreshold);
-        normalizeF();
-    }
-
     ~Admixture() {}
+
+    // randon engine
+    std::default_random_engine rng = std::default_random_engine{};
 
     // BOUNDING
     double clusterFreqThreshold{1e-6}; // threshold for F
@@ -57,6 +47,7 @@ class Admixture
     void protectPars();
     void normalizeF();
     void setFlags(bool, bool);
+    void setStartPoint(std::string qfile);
     void writeQ(std::string out);
     double runNativeWithBigAss(int ind, const std::unique_ptr<BigAss> & genome);
     double runOptimalWithBigAss(int ind, const std::unique_ptr<BigAss> & genome);

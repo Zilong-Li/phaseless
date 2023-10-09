@@ -149,13 +149,6 @@ int main(int argc, char * argv[])
     cmd_admix.add_argument("-b", "--bin")
         .help("binary format from impute command as input")
         .default_value(std::string{""});
-    cmd_admix.add_argument("--qfile")
-        .help("read Q file as the start point")
-        .default_value(std::string{""});
-    cmd_admix.add_argument("--no-newQ")
-        .help("disable updating Q")
-        .default_value(false)
-        .implicit_value(true);
     cmd_admix.add_argument("-k", "--ancestry")
         .help("number of ancestry in admixture assumption")
         .default_value(2)
@@ -183,6 +176,13 @@ int main(int argc, char * argv[])
         .help("seed for reproducing results")
         .default_value(999)
         .scan<'i', int>();
+    cmd_admix.add_argument("--qfile")
+        .help("read Q file as the start point")
+        .default_value(std::string{""});
+    cmd_admix.add_argument("--no-newQ")
+        .help("disable updating Q")
+        .default_value(false)
+        .implicit_value(true);
     // cmd_admix.add_parents(program);
 
     argparse::ArgumentParser cmd_convert("convert", VERSION, default_arguments::help);
@@ -282,6 +282,7 @@ int main(int argc, char * argv[])
         else if(program.is_subcommand_used(cmd_admix))
         {
             opts.in_bin.assign(cmd_admix.get("--bin"));
+            opts.in_qfile.assign(cmd_admix.get("--qfile"));
             opts.out.assign(cmd_admix.get("--out"));
             opts.seed = cmd_admix.get<int>("--seed");
             opts.K = cmd_admix.get<int>("-k");
