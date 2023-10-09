@@ -280,6 +280,7 @@ int run_admix_main(Options & opts)
             }
             admixer.F = F0 + 2 * alpha * (F1 - F0) + alpha * alpha * (admixer.F - 2 * F1 + F0);
             admixer.Q = Q0 + 2 * alpha * (Q1 - Q0) + alpha * alpha * (admixer.Q - 2 * Q1 + Q0);
+            admixer.protectPars();
             admixer.initIteration();
             for(int i = 0; i < genome->nsamples; i++)
                 llike.emplace_back(poolit.enqueue(&Admixture::runOptimalWithBigAss, &admixer, i, std::ref(genome)));
