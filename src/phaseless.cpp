@@ -413,7 +413,7 @@ int run_phaseless_main(Options & opts)
     double loglike, diff, prevlike{std::numeric_limits<double>::lowest()};
     if(opts.noaccel)
     {
-        for(int it = 0; it <= opts.nimpute; it++)
+        for(int it = 0; SIG_COND && it <= opts.nimpute; it++)
         {
             tim.clock();
             faith.initIteration();
@@ -445,7 +445,7 @@ int run_phaseless_main(Options & opts)
         MyArr2D F0, F1, F2;
         const int istep{4};
         double alpha{0}, stepMax{4}, alphaMax{1280}, logcheck{0};
-        for(int it = 0; it < opts.nimpute / 4; it++)
+        for(int it = 0; SIG_COND && (it < opts.nimpute / 4); it++)
         {
             // first normal iter
             faith.initIteration();

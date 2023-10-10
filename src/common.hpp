@@ -34,6 +34,14 @@ extern Timer tim;
 extern Logger cao;
 #endif
 
+inline int SIG_COND = 1; // if we catch signal then quit program nicely
+
+inline void handler(int s)
+{
+    SIG_COND = 0;
+    cao.warn("Caught SIGNAL: ", s, ". will try to exit nicely. wait for current threads to finish");
+}
+
 // STD TYPES
 using Bool1D = std::vector<bool>;
 using Int1D = std::vector<int>;

@@ -229,7 +229,7 @@ int run_admix_main(Options & opts)
         const int istep{4};
         double alpha{std::numeric_limits<double>::lowest()}, qdiff, ldiff, stepMax{4}, alphaMax{1280};
         double prevlike{std::numeric_limits<double>::lowest()};
-        for(int it = 0; it < opts.nadmix / 3; it++)
+        for(int it = 0; SIG_COND && (it < opts.nadmix / 3); it++)
         {
             // first accel iteration
             admixer.initIteration();
@@ -294,7 +294,7 @@ int run_admix_main(Options & opts)
         MyArr2D Q0;
         double qdiff, ldiff, loglike;
         double prevlike{std::numeric_limits<double>::lowest()};
-        for(int it = 0; it < opts.nadmix; it++)
+        for(int it = 0; SIG_COND && it < opts.nadmix; it++)
         {
             tim.clock();
             admixer.initIteration();

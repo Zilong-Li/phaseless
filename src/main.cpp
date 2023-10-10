@@ -10,6 +10,7 @@
 #include "phaseless.hpp"
 #include "utils.hpp"
 #include <argparse/argparse.hpp>
+#include <signal.h>
 
 using namespace argparse;
 
@@ -18,6 +19,14 @@ int main(int argc, char * argv[])
     // ========= helper message and parameters parsing ===========================
 
     const std::string VERSION{"0.2.5"};
+
+    // below for catching ctrl+c, and dumping files
+    struct sigaction sa;
+    sigemptyset(&sa.sa_mask);
+    sa.sa_flags = 0;
+    sa.sa_handler = handler;
+    sigaction(SIGPIPE, &sa, 0);
+    sigaction(SIGINT, &sa, 0);
 
     // clang-format off
     ArgumentParser program("phaseless", VERSION, default_arguments::version);

@@ -108,7 +108,7 @@ void FastPhaseK2::updateIteration()
 double FastPhaseK2::runWithOneThread(int niters, const MyFloat1D & GL)
 {
     double diff{-1}, loglike, prevlike;
-    for(int it = 0; it <= niters; it++)
+    for(int it = 0; SIG_COND && it <= niters; it++)
     {
         initIteration();
         loglike = 0;
@@ -630,7 +630,7 @@ int run_impute_main(Options & opts)
             faith.debug = opts.debug;
             faith.AF =
                 estimate_af_by_gl(genome->gls[ic], genome->nsamples, genome->pos[ic].size()).cast<MyFloat>();
-            for(int it = 0; it <= opts.nimpute; it++)
+            for(int it = 0; SIG_COND && it <= opts.nimpute; it++)
             {
                 tim.clock();
                 faith.initIteration();
