@@ -52,8 +52,8 @@ class Phaseless
 
     void setStartPoint(std::string qfile);
     void setStartPoint(const std::unique_ptr<Pars> &);
-    void initRecombination(const Int1D & pos, double Ne, int B);
-    void initRecombination(const Int2D & pos, double Ne, int B);
+    void initRecombination(const Int1D & pos, double Ne = 20000, int B = 1);
+    void initRecombination(const Int2D & pos, double Ne = 20000, int B = 1);
     void setFlags(double, double, double, bool);
     void protectPars();
     void initIteration();

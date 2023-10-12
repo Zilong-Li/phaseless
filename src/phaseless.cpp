@@ -13,14 +13,14 @@
 
 using namespace std;
 
-void Phaseless::initRecombination(const Int1D & pos, double Ne = 20000, int B = 1)
+void Phaseless::initRecombination(const Int1D & pos, double Ne, int B)
 {
     nGen = 4 * Ne / C;
     er = calc_distRate(pos, C, 1.0);
     et = calc_distRate(pos, C, 0.05);
 }
 
-void Phaseless::initRecombination(const Int2D & pos, double Ne = 20000, int B = 1)
+void Phaseless::initRecombination(const Int2D & pos, double Ne, int B)
 {
     int nchunks = pos.size();
     pos_chunk.resize(nchunks + 1);

@@ -38,8 +38,14 @@ int run_parse_main(Options & opts)
         ifs.close();
         assert((bool)ec == false);
         Phaseless faith(par->K, par->C, par->N, par->M, opts.seed);
+        faith.initRecombination(par->pos);
         faith.setStartPoint(par);
         faith.initIteration();
+        faith.local = true;
+        faith.post = true;
+        int ic = opts.ichunk;
+        faith.runForwardBackwards(1, ic, par->gls[ic], true);
+        for(int s = 0; s < faith.LA.size(); s++) cao.print(faith.LA[s]);
         return 0;
     }
     if(!opts.in_impute.empty())
