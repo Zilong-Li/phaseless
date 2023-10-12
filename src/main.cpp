@@ -95,6 +95,9 @@ int main(int argc, char * argv[])
         .help("seed for reproducing results")
         .default_value(999)
         .scan<'i', int>();
+    cmd_joint.add_argument("--qfile")
+        .help("read Q file as the start point")
+        .default_value(std::string{""});
     // cmd_joint.add_parents(program);
 
     argparse::ArgumentParser cmd_impute("impute", VERSION, default_arguments::help);
@@ -251,6 +254,7 @@ int main(int argc, char * argv[])
         if(program.is_subcommand_used(cmd_joint))
         {
             opts.in_beagle.assign(cmd_joint.get("--beagle"));
+            opts.in_qfile.assign(cmd_admix.get("--qfile"));
             opts.out.assign(cmd_joint.get("--out"));
             opts.C = cmd_joint.get<int>("--cluster");
             opts.K = cmd_joint.get<int>("--ancestry");

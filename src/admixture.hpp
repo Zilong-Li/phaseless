@@ -13,6 +13,13 @@ class Admixture
 {
   private:
     std::mutex mutex_it; // in case of race condition
+    // randon engine
+    std::default_random_engine rng = std::default_random_engine{};
+    // BOUNDING
+    double clusterFreqThreshold{1e-6}; // threshold for F
+    double admixtureThreshold{1e-6}; // threshold for Q
+    bool debug = false;
+    bool nonewQ = false;
 
   public:
     Admixture(int n, int m, int c, int k, int seed) : N(n), M(m), C(c), K(k)
@@ -27,15 +34,7 @@ class Admixture
 
     ~Admixture() {}
 
-    // randon engine
-    std::default_random_engine rng = std::default_random_engine{};
-
-    // BOUNDING
-    double clusterFreqThreshold{1e-6}; // threshold for F
-    double admixtureThreshold{1e-6}; // threshold for Q
-    bool debug = false;
-    bool nonewQ = false;
-
+    // SHARED VARIBALES
     const int N, M, C, K; // M: number of grids in total,  C2 = C x C
     MyArr2D F; // (C x K) x M
     MyArr2D Q; // K x N

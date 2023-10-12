@@ -113,6 +113,26 @@ struct BigAss
     MyFloat2D gls; // store gl(N, M*3) of each chunk
 };
 
+// joint parameters
+struct Pars
+{
+    void init(const MyArr1D & ier,
+              const MyArr1D & iet,
+              const MyArr2D & iP,
+              const MyArr2D & iQ,
+              const std::vector<MyArr2D> & iF)
+    {
+        P = MyFloat1D(iP.data(), iP.data() + iP.size());
+        Q = MyFloat1D(iQ.data(), iQ.data() + iQ.size());
+        er = MyFloat1D(ier.data(), ier.data() + ier.size());
+        et = MyFloat1D(iet.data(), iet.data() + iet.size());
+        for(size_t k = 0; k < iF.size(); k++) F.emplace_back(MyFloat1D(iF[k].data(), iF[k].data() + iF[k].size()));
+    }
+    MyFloat1D P, Q;
+    MyFloat2D F; // K x C x M, ancestral cluster frequency
+    MyFloat1D er, et; // M, jumping rate
+};
+
 inline auto calc_position_distance(const Int1D & markers)
 {
     Int1D dl(markers.size());

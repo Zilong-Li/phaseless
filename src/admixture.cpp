@@ -172,11 +172,6 @@ void Admixture::normalizeF()
 
 void Admixture::setStartPoint(std::string qfile)
 {
-    F = RandomUniform<MyArr2D, std::default_random_engine>(C * K, M, rng, clusterFreqThreshold,
-                                                           1 - clusterFreqThreshold);
-    normalizeF();
-    Q = RandomUniform<MyArr2D, std::default_random_engine>(K, N, rng, admixtureThreshold, 1 - admixtureThreshold);
-    Q.rowwise() /= Q.colwise().sum(); // normalize Q per individual
     if(!qfile.empty()) load_csv(qfile, Q);
 }
 
@@ -252,7 +247,7 @@ int run_admix_main(Options & opts)
             for(auto && ll : llike) loglike += ll.get();
             llike.clear(); // clear future and renew
             admixer.updateIteration();
-            ldiff = loglike - prevlike;
+            ldiff = it ? loglike - prevlike : NAN;
             prevlike = loglike;
             cao.print(tim.date(), "SqS3 iteration", it * 3 + 1, ", diff(Q) =", std::scientific, qdiff,
                       ", alpha=", alpha, ", likelihoods =", std::fixed, loglike, ", diff(likelihoods)=", ldiff,
@@ -306,7 +301,7 @@ int run_admix_main(Options & opts)
             for(auto && ll : llike) loglike += ll.get();
             llike.clear(); // clear future and renew
             admixer.updateIteration();
-            ldiff = loglike - prevlike;
+            ldiff = it ? loglike - prevlike : NAN;
             prevlike = loglike;
             qdiff = (admixer.Q - Q0).square().sum();
             cao.print(tim.date(), "normal iteration", it, ", diff(Q) =", std::scientific, qdiff,

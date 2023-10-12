@@ -37,11 +37,17 @@ void Phaseless::initRecombination(const Int2D & pos, double Ne = 20000, int B = 
     pos_chunk[nchunks] = ss; // add sentinel
 }
 
-void Phaseless::setBoundaries(double tol_p, double tol_f, double tol_q)
+void Phaseless::setFlags(double tol_p, double tol_f, double tol_q, bool debug_)
 {
     alleleEmitThreshold = tol_p;
     clusterFreqThreshold = tol_f;
     admixtureThreshold = tol_q;
+    debug = debug_;
+}
+
+void Phaseless::setStartPoint(std::string qfile)
+{
+    if(!qfile.empty()) load_csv(qfile, Q);
 }
 
 void Phaseless::protectPars()
@@ -68,22 +74,6 @@ void Phaseless::protectPars()
         F[k] = (F[k] > 1 - clusterFreqThreshold).select(1 - clusterFreqThreshold, F[k]);
         // re-normalize F per site. hope should work well. otherwise do the complicated.
         F[k].rowwise() /= F[k].colwise().sum();
-        // if(F[k].isNaN().any() || (F[k] < clusterFreqThreshold).any())
-        // {
-        //     F[k] = (F[k] < clusterFreqThreshold).select(0, F[k]); // reset to 0 first
-        //     for(auto m = 0; m < F[k].cols(); m++)
-        //     {
-        //         if(auto c = (F[k].col(m) == 0).count() > 0)
-        //         {
-        //             // for columns with an entry below 0
-        //             // each 0 entry becomes threshold
-        //             // then rest re-scaled so whole thing has sum 1
-        //             double xsum = 1 - c * clusterFreqThreshold;
-        //             double csum = F[k].col(m).sum();
-        //             F[k].col(m) = (F[k].col(m) > 0).select(F[k].col(m) * xsum / csum, clusterFreqThreshold);
-        //         }
-        //     }
-        // }
     }
 }
 
@@ -371,25 +361,6 @@ double Phaseless::runBigass(int ind, const MyFloat2D & GL, bool finalIter)
     return loglike;
 }
 
-struct Pars
-{
-    void init(const MyArr1D & ier,
-              const MyArr1D & iet,
-              const MyArr2D & iP,
-              const MyArr2D & iQ,
-              const vector<MyArr2D> & iF)
-    {
-        P = MyFloat1D(iP.data(), iP.data() + iP.size());
-        Q = MyFloat1D(iQ.data(), iQ.data() + iQ.size());
-        er = MyFloat1D(ier.data(), ier.data() + ier.size());
-        et = MyFloat1D(iet.data(), iet.data() + iet.size());
-        for(size_t k = 0; k < iF.size(); k++) F.emplace_back(MyFloat1D(iF[k].data(), iF[k].data() + iF[k].size()));
-    }
-    MyFloat1D P, Q;
-    MyFloat2D F; // K x C x M, ancestral cluster frequency
-    MyFloat1D er, et; // M, jumping rate
-};
-
 int run_phaseless_main(Options & opts)
 {
     cao.cao.open(opts.out.string() + ".log");
@@ -407,8 +378,8 @@ int run_phaseless_main(Options & opts)
     vector<future<double>> res;
     std::ofstream oanc(opts.out.string() + ".Q");
     Phaseless faith(opts.K, opts.C, genome->nsamples, genome->nsnps, opts.seed);
-    faith.debug = opts.debug;
-    faith.setBoundaries(opts.ptol, opts.ftol, opts.qtol);
+    faith.setFlags(opts.ptol, opts.ftol, opts.qtol, opts.debug);
+    faith.setStartPoint(opts.in_qfile);
     faith.initRecombination(genome->pos);
     double loglike, diff, prevlike{std::numeric_limits<double>::lowest()};
     if(opts.noaccel)
@@ -441,8 +412,8 @@ int run_phaseless_main(Options & opts)
     }
     else
     {
-        MyArr2D Q0, Q1, Q2;
-        MyArr2D F0, F1, F2;
+        MyArr2D Q0, Q1, Q2, Qt;
+        MyArr2D F0, F1, F2, Ft;
         const int istep{4};
         double alpha{0}, stepMax{4}, alphaMax{1280}, logcheck{0};
         for(int it = 0; SIG_COND && (it < opts.nimpute / 4); it++)
@@ -477,6 +448,9 @@ int run_phaseless_main(Options & opts)
                 cao.print(tim.date(), "hit stopping criteria, diff =", std::scientific, diff, " <", opts.ltol);
                 break;
             }
+            // save for later comparison
+            Qt = faith.Q;
+            Ft = cat_stdvec_of_eigen(faith.F);
             // calculate alpha based on first two pars
             // alpha = ((Q1 - Q0).square().sum()) / ((faith.Q - 2 * Q1 + Q0).square().sum());
             alpha = ((F1 - F0).square().sum() + (Q1 - Q0).square().sum())
@@ -488,7 +462,7 @@ int run_phaseless_main(Options & opts)
                 alpha = min(stepMax, alphaMax);
                 stepMax = min(stepMax * istep, alphaMax);
             }
-            // third normal iter
+            // third accel iter
             // update Q and F using the second em iter
             faith.Q = Q0 + 2 * alpha * (Q1 - Q0) + alpha * alpha * (faith.Q - 2 * Q1 + Q0);
             for(int k = 0; k < opts.K; k++)
@@ -497,6 +471,7 @@ int run_phaseless_main(Options & opts)
                     + 2 * alpha * (F1.middleRows(k * opts.C, opts.C) - F0.middleRows(k * opts.C, opts.C))
                     + alpha * alpha
                           * (faith.F[k] - 2 * F1.middleRows(k * opts.C, opts.C) + F0.middleRows(k * opts.C, opts.C));
+            faith.protectPars();
             faith.initIteration();
             for(int i = 0; i < genome->nsamples; i++)
                 res.emplace_back(pool.enqueue(&Phaseless::runBigass, &faith, i, std::ref(genome->gls), false));
@@ -508,8 +483,8 @@ int run_phaseless_main(Options & opts)
             Q2 = faith.Q;
             F2 = cat_stdvec_of_eigen(faith.F);
             // check if normal third iter is better
-            faith.Q = Q1;
-            for(int k = 0; k < opts.K; k++) faith.F[k] = F1.middleRows(k * opts.C, opts.C);
+            faith.Q = Qt;
+            for(int k = 0; k < opts.K; k++) faith.F[k] = Ft.middleRows(k * opts.C, opts.C);
             faith.initIteration();
             for(int i = 0; i < genome->nsamples; i++)
                 res.emplace_back(pool.enqueue(&Phaseless::runBigass, &faith, i, std::ref(genome->gls), false));
@@ -519,7 +494,7 @@ int run_phaseless_main(Options & opts)
             faith.updateIteration();
             if(logcheck - loglike > 0.1)
             {
-                if(faith.debug)
+                if(opts.debug)
                     cao.warn(tim.date(), "normal EM yields better likelihoods than the accelerated EM.", logcheck, " -",
                              loglike, "> 0.1");
             }

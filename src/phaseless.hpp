@@ -8,11 +8,19 @@ class Phaseless
 {
   private:
     std::mutex mutex_it; // in case of race condition
+    // randon engine
+    std::default_random_engine rng = std::default_random_engine{};
+    // FLAGS
+    bool debug{0};
+    // BOUNDING
+    double minRate{0.1}, maxRate{100}; // threshold for R
+    double alleleEmitThreshold{1e-6}; // threshold for P
+    double clusterFreqThreshold{1e-6}; // threshold for F
+    double admixtureThreshold{1e-6}; // threshold for Q
 
   public:
     Phaseless(int k, int c, int n, int m, int seed) : K(k), C(c), N(n), M(m), KK(k * k), CC(c * c)
     {
-        auto rng = std::default_random_engine{};
         rng.seed(seed);
         P = RandomUniform<MyArr2D, std::default_random_engine>(M, C, rng, alleleEmitThreshold, 1 - alleleEmitThreshold);
         Q = RandomUniform<MyArr2D, std::default_random_engine>(K, N, rng, admixtureThreshold, 1 - admixtureThreshold);
@@ -27,14 +35,7 @@ class Phaseless
     }
     ~Phaseless() {}
 
-    // BOUNDING
-    double minRate{0.1}, maxRate{100}; // threshold for R
-    double alleleEmitThreshold{1e-6}; // threshold for P
-    double clusterFreqThreshold{1e-6}; // threshold for F
-    double admixtureThreshold{1e-6}; // threshold for Q
 
-    // FLAGS
-    bool debug{0};
 
     // SHARED VARIBALES
     const int K, C, N, M, KK, CC; // CC = C x C, KK = K x K
@@ -50,9 +51,10 @@ class Phaseless
     MyArr2D Eancestry; // K x N
     MyArr2D EclusterK; // C x K x M
 
+    void setStartPoint(std::string qfile);
     void initRecombination(const Int1D & pos, double Ne, int B);
     void initRecombination(const Int2D & pos, double Ne, int B);
-    void setBoundaries(double, double, double);
+    void setFlags(double, double, double, bool);
     void protectPars();
     void initIteration();
     void updateIteration();
