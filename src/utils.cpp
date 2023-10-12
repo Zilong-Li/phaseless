@@ -1,6 +1,7 @@
 #include "utils.hpp"
 
 #include "io.hpp"
+#include "phaseless.hpp"
 #include "threadpool.hpp"
 #include <alpaca/alpaca.h>
 
@@ -36,6 +37,9 @@ int run_parse_main(Options & opts)
         std::unique_ptr<Pars> par = std::make_unique<Pars>(alpaca::deserialize<OPTIONS, Pars>(ifs, filesize, ec));
         ifs.close();
         assert((bool)ec == false);
+        Phaseless faith(par->K, par->C, par->N, par->M, opts.seed);
+        faith.setStartPoint(par);
+        faith.initIteration();
         return 0;
     }
     if(!opts.in_impute.empty())

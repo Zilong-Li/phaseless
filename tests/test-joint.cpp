@@ -17,7 +17,6 @@ TEST_CASE("phaseless joint single chunk", "[test-joint]")
     chunk_beagle_genotype_likelihoods(genome, "../data/bgl.gz");
     Phaseless faith(K, C, genome->nsamples, genome->nsnps, seed);
     faith.initRecombination(genome->pos, 20000, 1);
-    faith.debug = 1;
     ThreadPool pool(4);
     vector<future<double>> res;
     double loglike, diff, prevlike{std::numeric_limits<double>::lowest()};
@@ -47,7 +46,6 @@ TEST_CASE("phaseless joint multiple chunks", "[test-joint]")
     chunk_beagle_genotype_likelihoods(genome, "../data/all.bgl.gz");
     Phaseless faith(K, C, genome->nsamples, genome->nsnps, seed);
     faith.initRecombination(genome->pos, 20000, 1);
-    faith.debug = 1;
     ThreadPool pool(4);
     vector<future<double>> res;
     double loglike, diff, prevlike{std::numeric_limits<double>::lowest()};

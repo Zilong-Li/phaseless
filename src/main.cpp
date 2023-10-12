@@ -92,7 +92,7 @@ int main(int argc, char * argv[])
         .default_value(false)
         .implicit_value(true);
     cmd_joint.add_argument("-d","--seed")
-        .help("seed for reproducing results")
+        .help("seed for reproducibility")
         .default_value(999)
         .scan<'i', int>();
     cmd_joint.add_argument("--qfile")
@@ -143,7 +143,7 @@ int main(int argc, char * argv[])
         .default_value(false)
         .implicit_value(true);
     cmd_impute.add_argument("-d","--seed")
-        .help("seed for reproducing results")
+        .help("seed for reproducibility")
         .default_value(999)
         .scan<'i', int>();
     cmd_impute.add_argument("--minRecombRate")
@@ -185,7 +185,7 @@ int main(int argc, char * argv[])
         .default_value(1e-1)
         .scan<'g', double>();
     cmd_admix.add_argument("-d","--seed")
-        .help("seed for reproducing results")
+        .help("seed for reproducibility")
         .default_value(999)
         .scan<'i', int>();
     cmd_admix.add_argument("--qfile")
@@ -237,6 +237,10 @@ int main(int argc, char * argv[])
     cmd_parse.add_argument("-o", "--out")
         .help("output prefix")
         .default_value(std::string{"parse"});
+    cmd_parse.add_argument("-d","--seed")
+        .help("seed for reproducibility")
+        .default_value(999)
+        .scan<'i', int>();
     // cmd_parse.add_parents(program);
 
     program.add_subparser(cmd_impute);
@@ -316,6 +320,7 @@ int main(int argc, char * argv[])
             opts.in_impute.assign(cmd_parse.get("--impute"));
             opts.in_joint.assign(cmd_parse.get("--joint"));
             opts.out.assign(cmd_parse.get("--out"));
+            opts.seed = cmd_parse.get<int>("--seed");
             opts.samples = cmd_parse.get("--samples");
             opts.ichunk = cmd_parse.get<int>("--chunk");
             if((opts.in_impute.empty() && opts.in_joint.empty()) || cmd_parse.get<bool>("--help"))

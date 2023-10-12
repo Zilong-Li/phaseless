@@ -50,6 +50,15 @@ void Phaseless::setStartPoint(std::string qfile)
     if(!qfile.empty()) load_csv(qfile, Q);
 }
 
+void Phaseless::setStartPoint(const std::unique_ptr<Pars> & par)
+{
+    er = Eigen::Map<MyArr1D>(par->er.data(), M);
+    et = Eigen::Map<MyArr1D>(par->et.data(), M);
+    Q = Eigen::Map<MyArr2D>(par->Q.data(), K, N);
+    P = Eigen::Map<MyArr2D>(par->P.data(), M, C);
+    for(int i = 0; i < K; i++) F[i] = Eigen::Map<MyArr2D>(par->F[i].data(), C, M);
+}
+
 void Phaseless::protectPars()
 {
     // if we accelerate pars, protect them!
@@ -218,6 +227,18 @@ void Phaseless::moveBackward(int ind,
                 }
 }
 
+void Phaseless::getLocalAncestry(const std::vector<MyArr2D> & alpha, const std::vector<MyArr2D> & beta)
+{
+    int S = alpha.size();
+    LA.resize(S);
+    for(int s = 0; s < S; s++)
+    {
+        MyArr2D gamma = alpha[s] * beta[s]; // post(z, y)
+        MyArr2D la = gamma.colwise().sum().reshaped(K, K);
+        LA[s] = la;
+    }
+}
+
 void Phaseless::getPosterios(const int ind,
                              const int ic,
                              const MyArr2D & gli,
@@ -344,8 +365,10 @@ double Phaseless::runForwardBackwards(const int ind, const int ic, const MyFloat
         moveBackward(ind, m, cs(s + 1), beta[s], beta_mult_emit, prevsum_z, prevsum_zz, prevsum_zy, prevsum_zzy,
                      prevsum_zzyy);
     }
+    // get local ancestry
+    if(local) getLocalAncestry(alpha, beta);
     // get posterios
-    getPosterios(ind, ic, gli, emit, cs, alpha, beta);
+    if(post) getPosterios(ind, ic, gli, emit, cs, alpha, beta);
     return cs.log().sum();
 }
 
@@ -508,7 +531,9 @@ int run_phaseless_main(Options & opts)
     faith.Q = (faith.Q * 1e6).round() / 1e6;
     oanc << std::fixed << faith.Q.transpose().format(fmt) << "\n";
     std::unique_ptr<Pars> par = std::make_unique<Pars>();
-    par->init(faith.er, faith.et, faith.P, faith.Q, faith.F);
+    par->init(faith.K, faith.C, faith.M, faith.N, faith.er, faith.et, faith.P, faith.Q, faith.F);
+    par->pos = genome->pos;
+    par->gls = genome->gls;
     std::ofstream opar(opts.out.string() + ".pars.bin", std::ios::out | std::ios::binary);
     constexpr auto OPTIONS = alpaca::options::fixed_length_encoding;
     auto bytes_written = alpaca::serialize<OPTIONS, Pars>(*par, opar);

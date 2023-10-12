@@ -10,8 +10,6 @@ class Phaseless
     std::mutex mutex_it; // in case of race condition
     // randon engine
     std::default_random_engine rng = std::default_random_engine{};
-    // FLAGS
-    bool debug{0};
     // BOUNDING
     double minRate{0.1}, maxRate{100}; // threshold for R
     double alleleEmitThreshold{1e-6}; // threshold for P
@@ -35,14 +33,15 @@ class Phaseless
     }
     ~Phaseless() {}
 
-
-
     // SHARED VARIBALES
+    // FLAGS
+    bool debug{0}, local{0}, post{1};
     const int K, C, N, M, KK, CC; // CC = C x C, KK = K x K
     double nGen;
     Int1D pos_chunk; // store the start pos of each chunk in the full scale
     Int1D dist; // physical position distance between two markers
     MyArr1D er, et; // M, jumping rate
+    std::vector<MyArr2D> LA; // M x K x K, local ancestry of the sample
     std::vector<MyArr2D> F; // K x C x M, ancestral cluster frequency
     MyArr2D P; // M x C, ancestral cluster-specific allele frequence
     MyArr2D Q; // K x N, admixture proportions for all individuals
@@ -52,6 +51,7 @@ class Phaseless
     MyArr2D EclusterK; // C x K x M
 
     void setStartPoint(std::string qfile);
+    void setStartPoint(const std::unique_ptr<Pars> &);
     void initRecombination(const Int1D & pos, double Ne, int B);
     void initRecombination(const Int2D & pos, double Ne, int B);
     void setFlags(double, double, double, bool);
@@ -60,6 +60,7 @@ class Phaseless
     void updateIteration();
     double runForwardBackwards(const int, const int, const MyFloat1D &, bool);
     double runBigass(int, const MyFloat2D &, bool);
+
     void getForwardPrevSums(const MyArr2D &, MyArr2D &, MyArr2D &, MyArr2D &, MyArr1D &);
     void getBackwardPrevSums(const MyArr2D &, MyArr2D &, MyArr2D &, MyArr2D &, MyArr1D &, double &, int, int);
     void moveForward(int,
@@ -88,6 +89,7 @@ class Phaseless
                       const MyArr1D &,
                       const std::vector<MyArr2D> &,
                       const std::vector<MyArr2D> &);
+    void getLocalAncestry(const std::vector<MyArr2D> &, const std::vector<MyArr2D> &);
 };
 
 int run_phaseless_main(Options & opts);

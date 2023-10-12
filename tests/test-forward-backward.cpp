@@ -22,7 +22,6 @@ TEST_CASE("reconstruct alpha and beta from saved pars.bin", "[test-forward-backw
         faith.initRecombination(genome->pos[ic]);
         faith.AF =
             estimate_af_by_gl(genome->gls[ic], genome->nsamples, genome->pos[ic].size()).cast<MyFloat>();
-        faith.debug = true;
         double prevlike{std::numeric_limits<double>::lowest()}, loglike;
         for(int it = 0; it <= niters; it++)
         {
