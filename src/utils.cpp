@@ -14,8 +14,7 @@ std::string make_beagle_header(std::string fam)
     while(getline(ifs, line))
     {
         std::stringstream ss(line);
-        std::vector<std::string> token(std::istream_iterator<std::string>{ss},
-                                       std::istream_iterator<std::string>{});
+        std::vector<std::string> token(std::istream_iterator<std::string>{ss}, std::istream_iterator<std::string>{});
         hdr += "\t" + token[1] + "\t" + token[1] + "\t" + token[1];
     }
     hdr += "\n";
@@ -27,94 +26,108 @@ int run_parse_main(Options & opts)
     cao.cao.open(opts.out.string() + ".log");
     cao.is_screen = !opts.noscreen;
     cao.print(opts.opts_in_effect);
-    auto filesize = std::filesystem::file_size(opts.in_bin);
-    std::error_code ec;
-    std::ifstream ifs(opts.in_bin, std::ios::in | std::ios::binary);
-    constexpr auto OPTIONS = alpaca::options::fixed_length_encoding;
-    std::unique_ptr<BigAss> genome =
-        std::make_unique<BigAss>(alpaca::deserialize<OPTIONS, BigAss>(ifs, filesize, ec));
-    ifs.close();
-    assert((bool)ec == false);
-    int ic = opts.ichunk;
-    if(ic >= genome->nchunks)
+    if(!opts.in_joint.empty())
     {
-        cao.error("the chunk ", ic, " (0-based) to be extracted is not less than total chunks",
-                  genome->nchunks);
-        return 1;
+        opts.in_bin = opts.in_joint;
+        auto filesize = std::filesystem::file_size(opts.in_bin);
+        std::error_code ec;
+        std::ifstream ifs(opts.in_bin, std::ios::in | std::ios::binary);
+        constexpr auto OPTIONS = alpaca::options::fixed_length_encoding;
+        std::unique_ptr<Pars> par = std::make_unique<Pars>(alpaca::deserialize<OPTIONS, Pars>(ifs, filesize, ec));
+        ifs.close();
+        assert((bool)ec == false);
+        return 0;
     }
-    else if(ic < 0)
+    if(!opts.in_impute.empty())
     {
-        cao.warn("the chunk ", ic, " to be extracted is less than 0. all chunks will be extracted!");
-    }
-    Int1D ids;
-    if(!opts.samples.empty())
-    {
-        UMapStringInt ids_m;
-        int i = 0;
-        for(auto & id : genome->sampleids) ids_m[id] = i++;
-        std::ifstream ifs(opts.samples);
-        if(!ifs.is_open()) cao.error("can not open the file: ", opts.samples);
-        std::string line;
-        while(getline(ifs, line)) ids.push_back(ids_m[line]);
-    }
-    else
-    {
-        for(int ind = 0; ind < genome->nsamples; ind++) ids.push_back(ind);
-    }
-    // haplike is p(Z_is |X_is , theta) = alpha * beta / p(X|theta) = gamma
-    std::ofstream ofs_alpha(opts.out.string() + ".alpha.bin", std::ios::binary);
-    std::ofstream ofs_beta(opts.out.string() + ".beta.bin", std::ios::binary);
-    int nsamples = ids.size();
-    ofs_alpha.write((char *)&genome->C, 4);
-    ofs_alpha.write((char *)&nsamples, 4);
-    ofs_beta.write((char *)&genome->C, 4);
-    ofs_beta.write((char *)&nsamples, 4);
-    MyArr2D alpha, beta;
-    if(ic < 0)
-    {
-        ofs_alpha.write((char *)&genome->G, 4);
-        ofs_beta.write((char *)&genome->G, 4);
-        for(auto ind : ids)
+        opts.in_bin = opts.in_impute;
+        auto filesize = std::filesystem::file_size(opts.in_bin);
+        std::error_code ec;
+        std::ifstream ifs(opts.in_bin, std::ios::in | std::ios::binary);
+        constexpr auto OPTIONS = alpaca::options::fixed_length_encoding;
+        std::unique_ptr<BigAss> genome =
+            std::make_unique<BigAss>(alpaca::deserialize<OPTIONS, BigAss>(ifs, filesize, ec));
+        ifs.close();
+        assert((bool)ec == false);
+        int ic = opts.ichunk;
+        if(ic >= genome->nchunks)
         {
-            for(ic = 0; ic < genome->nchunks; ic++)
+            cao.error("the chunk ", ic, " (0-based) to be extracted is not less than total chunks", genome->nchunks);
+            return 1;
+        }
+        else if(ic < 0)
+        {
+            cao.warn("the chunk ", ic, " to be extracted is less than 0. all chunks will be extracted!");
+        }
+        Int1D ids;
+        if(!opts.samples.empty())
+        {
+            UMapStringInt ids_m;
+            int i = 0;
+            for(auto & id : genome->sampleids) ids_m[id] = i++;
+            std::ifstream ifs(opts.samples);
+            if(!ifs.is_open()) cao.error("can not open the file: ", opts.samples);
+            std::string line;
+            while(getline(ifs, line)) ids.push_back(ids_m[line]);
+        }
+        else
+        {
+            for(int ind = 0; ind < genome->nsamples; ind++) ids.push_back(ind);
+        }
+        // haplike is p(Z_is |X_is , theta) = alpha * beta / p(X|theta) = gamma
+        std::ofstream ofs_alpha(opts.out.string() + ".alpha.bin", std::ios::binary);
+        std::ofstream ofs_beta(opts.out.string() + ".beta.bin", std::ios::binary);
+        int nsamples = ids.size();
+        ofs_alpha.write((char *)&genome->C, 4);
+        ofs_alpha.write((char *)&nsamples, 4);
+        ofs_beta.write((char *)&genome->C, 4);
+        ofs_beta.write((char *)&nsamples, 4);
+        MyArr2D alpha, beta;
+        if(ic < 0)
+        {
+            ofs_alpha.write((char *)&genome->G, 4);
+            ofs_beta.write((char *)&genome->G, 4);
+            for(auto ind : ids)
             {
-                const int iM = genome->pos[ic].size();
-                const int nGrids = genome->B > 1 ? (iM + genome->B - 1) / genome->B : iM;
+                for(ic = 0; ic < genome->nchunks; ic++)
+                {
+                    const int iM = genome->pos[ic].size();
+                    const int nGrids = genome->B > 1 ? (iM + genome->B - 1) / genome->B : iM;
+                    alpha.setZero(genome->C * genome->C, nGrids);
+                    beta.setZero(genome->C * genome->C, nGrids);
+                    get_cluster_likelihood(ind, iM, alpha, beta, genome->gls[ic], genome->R[ic], genome->PI[ic],
+                                           genome->F[ic]);
+                    if(!((1 - (alpha * beta).colwise().sum()).abs() < 1e-6).all()) cao.error("gamma sum is not 1.0!\n");
+                    ofs_alpha.write((char *)alpha.data(), genome->C * genome->C * nGrids * sizeof(MyFloat));
+                    ofs_beta.write((char *)beta.data(), genome->C * genome->C * nGrids * sizeof(MyFloat));
+                }
+            }
+        }
+        else
+        {
+            const int iM = genome->pos[ic].size();
+            const int nGrids = genome->B > 1 ? (iM + genome->B - 1) / genome->B : iM;
+            ofs_alpha.write((char *)&nGrids, 4);
+            ofs_beta.write((char *)&nGrids, 4);
+            std::ofstream ofs_ae(opts.out.string() + ".cluster.freq");
+            Eigen::IOFormat fmt(6, Eigen::DontAlignCols, "\t", "\n");
+            MyArr2D ae = MyArr2D::Zero(genome->C, nGrids);
+            for(auto ind : ids)
+            {
                 alpha.setZero(genome->C * genome->C, nGrids);
                 beta.setZero(genome->C * genome->C, nGrids);
                 get_cluster_likelihood(ind, iM, alpha, beta, genome->gls[ic], genome->R[ic], genome->PI[ic],
                                        genome->F[ic]);
-                if(!((1 - (alpha * beta).colwise().sum()).abs() < 1e-6).all())
-                    cao.error("gamma sum is not 1.0!\n");
+                if(!((1 - (alpha * beta).colwise().sum()).abs() < 1e-6).all()) cao.error("gamma sum is not 1.0!\n");
                 ofs_alpha.write((char *)alpha.data(), genome->C * genome->C * nGrids * sizeof(MyFloat));
                 ofs_beta.write((char *)beta.data(), genome->C * genome->C * nGrids * sizeof(MyFloat));
+                for(int i = 0; i < nGrids; i++)
+                    ae.col(i) += (alpha.col(i) * beta.col(i)).reshaped(genome->C, genome->C).colwise().sum();
             }
+            ae.rowwise() /= ae.colwise().sum();
+            ofs_ae << ae.transpose().format(fmt) << "\n";
         }
-    }
-    else
-    {
-        const int iM = genome->pos[ic].size();
-        const int nGrids = genome->B > 1 ? (iM + genome->B - 1) / genome->B : iM;
-        ofs_alpha.write((char *)&nGrids, 4);
-        ofs_beta.write((char *)&nGrids, 4);
-        std::ofstream ofs_ae(opts.out.string() + ".cluster.freq");
-        Eigen::IOFormat fmt(6, Eigen::DontAlignCols, "\t", "\n");
-        MyArr2D ae = MyArr2D::Zero(genome->C, nGrids);
-        for(auto ind : ids)
-        {
-            alpha.setZero(genome->C * genome->C, nGrids);
-            beta.setZero(genome->C * genome->C, nGrids);
-            get_cluster_likelihood(ind, iM, alpha, beta, genome->gls[ic], genome->R[ic], genome->PI[ic],
-                                   genome->F[ic]);
-            if(!((1 - (alpha * beta).colwise().sum()).abs() < 1e-6).all())
-                cao.error("gamma sum is not 1.0!\n");
-            ofs_alpha.write((char *)alpha.data(), genome->C * genome->C * nGrids * sizeof(MyFloat));
-            ofs_beta.write((char *)beta.data(), genome->C * genome->C * nGrids * sizeof(MyFloat));
-            for(int i = 0; i < nGrids; i++)
-                ae.col(i) += (alpha.col(i) * beta.col(i)).reshaped(genome->C, genome->C).colwise().sum();
-        }
-        ae.rowwise() /= ae.colwise().sum();
-        ofs_ae << ae.transpose().format(fmt) << "\n";
+        return 0;
     }
     return 0;
 }

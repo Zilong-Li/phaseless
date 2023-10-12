@@ -220,9 +220,12 @@ int main(int argc, char * argv[])
     // cmd_convert.add_parents(program);
 
     argparse::ArgumentParser cmd_parse("parse", VERSION, default_arguments::help);
-    cmd_parse.add_description("manipulate pars.bin file outputted by impute command");
-    cmd_parse.add_argument("-b", "--bin")
+    cmd_parse.add_description("manipulate pars.bin file");
+    cmd_parse.add_argument("-i", "--impute")
         .help("binary format from impute command as input")
+        .default_value(std::string{""});
+    cmd_parse.add_argument("-j", "--joint")
+        .help("binary format from joint command as input")
         .default_value(std::string{""});
     cmd_parse.add_argument("-c", "--chunk")
         .help("which chunk to extract (0-based), negative means all chunks")
@@ -254,7 +257,7 @@ int main(int argc, char * argv[])
         if(program.is_subcommand_used(cmd_joint))
         {
             opts.in_beagle.assign(cmd_joint.get("--beagle"));
-            opts.in_qfile.assign(cmd_admix.get("--qfile"));
+            opts.in_qfile.assign(cmd_joint.get("--qfile"));
             opts.out.assign(cmd_joint.get("--out"));
             opts.C = cmd_joint.get<int>("--cluster");
             opts.K = cmd_joint.get<int>("--ancestry");
@@ -310,11 +313,13 @@ int main(int argc, char * argv[])
         }
         else if(program.is_subcommand_used(cmd_parse))
         {
-            opts.in_bin.assign(cmd_parse.get("--bin"));
+            opts.in_impute.assign(cmd_parse.get("--impute"));
+            opts.in_joint.assign(cmd_parse.get("--joint"));
             opts.out.assign(cmd_parse.get("--out"));
             opts.samples = cmd_parse.get("--samples");
             opts.ichunk = cmd_parse.get<int>("--chunk");
-            if(opts.in_bin.empty() || cmd_parse.get<bool>("--help")) throw std::runtime_error(cmd_parse.help().str());
+            if((opts.in_impute.empty() && opts.in_joint.empty()) || cmd_parse.get<bool>("--help"))
+                throw std::runtime_error(cmd_parse.help().str());
             run_parse_main(opts);
         }
         else if(program.is_subcommand_used(cmd_convert))

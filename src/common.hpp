@@ -96,7 +96,7 @@ struct Options
     double ftol{1e-6}; // threshold for F
     double qtol{1e-6}; // threshold for Q
     bool nonewQ{0}, noaccel{0}, noscreen{0}, single_chunk{0}, debug{0}, collapse{0};
-    std::filesystem::path out, in_beagle, in_vcf, in_bin;
+    std::filesystem::path out, in_beagle, in_vcf, in_bin, in_impute, in_joint;
     std::string samples{""}, region{""}, in_plink{""}, in_qfile{""};
     std::string opts_in_effect{"Options in effect:\n   "};
 };
