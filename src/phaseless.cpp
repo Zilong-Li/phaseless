@@ -37,12 +37,13 @@ void Phaseless::initRecombination(const Int2D & pos, double Ne, int B)
     pos_chunk[nchunks] = ss; // add sentinel
 }
 
-void Phaseless::setFlags(double tol_p, double tol_f, double tol_q, bool debug_)
+void Phaseless::setFlags(double tol_p, double tol_f, double tol_q, bool debug_, bool nonewQ_)
 {
     alleleEmitThreshold = tol_p;
     clusterFreqThreshold = tol_f;
     admixtureThreshold = tol_q;
     debug = debug_;
+    nonewQ = nonewQ_;
 }
 
 void Phaseless::setStartPoint(std::string qfile)
@@ -62,13 +63,16 @@ void Phaseless::setStartPoint(const std::unique_ptr<Pars> & par)
 void Phaseless::protectPars()
 {
     // if we accelerate pars, protect them!
-    // protect Q
-    Q.rowwise() /= Q.colwise().sum(); // normalize Q per individual
-    if(debug && Q.isNaN().any()) cao.warn("NaN in Q in Phaseless model. reset it to the threshold");
-    Q = (Q < admixtureThreshold).select(admixtureThreshold, Q); // lower bound
-    Q = (Q > 1 - admixtureThreshold).select(1 - admixtureThreshold, Q); // upper bound
-    Q.rowwise() /= Q.colwise().sum(); // normalize Q per individual
-    if(debug && !(1.0 - Q.colwise().sum() == 0).any()) cao.warn("Q colsum is not 1.0");
+    if(!nonewQ)
+    {
+        // protect Q
+        Q.rowwise() /= Q.colwise().sum(); // normalize Q per individual
+        if(debug && Q.isNaN().any()) cao.warn("NaN in Q in Phaseless model. reset it to the threshold");
+        Q = (Q < admixtureThreshold).select(admixtureThreshold, Q); // lower bound
+        Q = (Q > 1 - admixtureThreshold).select(1 - admixtureThreshold, Q); // upper bound
+        Q.rowwise() /= Q.colwise().sum(); // normalize Q per individual
+        if(debug && !(1.0 - Q.colwise().sum() == 0).any()) cao.warn("Q colsum is not 1.0");
+    }
     // protect P
     if(P.isNaN().any()) cao.warn("NaN in P in Phaseless model. will fill it with AF");
     P = (P < alleleEmitThreshold).select(alleleEmitThreshold, P); // lower bound
@@ -97,7 +101,7 @@ void Phaseless::initIteration()
 void Phaseless::updateIteration()
 {
     // update Q
-    Q = Eancestry;
+    if(!nonewQ) Q = Eancestry;
     // update P
     P = (EclusterA2 / (EclusterA1 + EclusterA2)).transpose();
     // update F
@@ -400,7 +404,7 @@ int run_phaseless_main(Options & opts)
     vector<future<double>> res;
     std::ofstream oanc(opts.out.string() + ".Q");
     Phaseless faith(opts.K, opts.C, genome->nsamples, genome->nsnps, opts.seed);
-    faith.setFlags(opts.ptol, opts.ftol, opts.qtol, opts.debug);
+    faith.setFlags(opts.ptol, opts.ftol, opts.qtol, opts.debug, opts.nonewQ);
     faith.setStartPoint(opts.in_qfile);
     faith.initRecombination(genome->pos);
     double loglike, diff, prevlike{std::numeric_limits<double>::lowest()};

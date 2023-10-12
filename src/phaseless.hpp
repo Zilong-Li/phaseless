@@ -35,7 +35,7 @@ class Phaseless
 
     // SHARED VARIBALES
     // FLAGS
-    bool debug{0}, local{0}, post{1};
+    bool debug{0}, local{0}, post{1}, nonewQ{0};
     const int K, C, N, M, KK, CC; // CC = C x C, KK = K x K
     double nGen;
     Int1D pos_chunk; // store the start pos of each chunk in the full scale
@@ -54,7 +54,7 @@ class Phaseless
     void setStartPoint(const std::unique_ptr<Pars> &);
     void initRecombination(const Int1D & pos, double Ne = 20000, int B = 1);
     void initRecombination(const Int2D & pos, double Ne = 20000, int B = 1);
-    void setFlags(double, double, double, bool);
+    void setFlags(double, double, double, bool, bool);
     void protectPars();
     void initIteration();
     void updateIteration();

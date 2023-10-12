@@ -98,6 +98,10 @@ int main(int argc, char * argv[])
     cmd_joint.add_argument("--qfile")
         .help("read Q file as the start point")
         .default_value(std::string{""});
+    cmd_joint.add_argument("--no-newQ")
+        .help("disable updating Q")
+        .default_value(false)
+        .implicit_value(true);
     // cmd_joint.add_parents(program);
 
     argparse::ArgumentParser cmd_impute("impute", VERSION, default_arguments::help);
@@ -275,6 +279,7 @@ int main(int argc, char * argv[])
             opts.ptol = cmd_joint.get<double>("--ptol");
             opts.ftol = cmd_joint.get<double>("--ftol");
             opts.qtol = cmd_joint.get<double>("--qtol");
+            opts.nonewQ = cmd_joint.get<bool>("--no-newQ");
             if(opts.single_chunk) opts.chunksize = INT_MAX;
             if((opts.in_beagle.empty() && opts.in_vcf.empty()) || cmd_joint.get<bool>("--help"))
                 throw std::runtime_error(cmd_joint.help().str());
