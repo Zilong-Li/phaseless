@@ -66,7 +66,6 @@ void Phaseless::protectPars()
     if(!nonewQ)
     {
         // protect Q
-        Q.rowwise() /= Q.colwise().sum(); // normalize Q per individual
         if(debug && Q.isNaN().any()) cao.warn("NaN in Q in Phaseless model. reset it to the threshold");
         Q = (Q < admixtureThreshold).select(admixtureThreshold, Q); // lower bound
         Q = (Q > 1 - admixtureThreshold).select(1 - admixtureThreshold, Q); // upper bound
@@ -80,7 +79,6 @@ void Phaseless::protectPars()
     // protect F
     for(int k = 0; k < K; k++)
     {
-        F[k].rowwise() /= F[k].colwise().sum(); // normalize F per site
         // could cluster jump be zero?
         if(F[k].isNaN().any()) cao.warn("NaN in F in Phaseless model. reset it to the threshold. k =", k);
         F[k] = (F[k] < clusterFreqThreshold).select(clusterFreqThreshold, F[k]);
@@ -100,12 +98,20 @@ void Phaseless::initIteration()
 
 void Phaseless::updateIteration()
 {
-    // update Q
-    if(!nonewQ) Q = Eancestry;
     // update P
     P = (EclusterA2 / (EclusterA1 + EclusterA2)).transpose();
+    // update Q
+    if(!nonewQ)
+    {
+        Q = Eancestry;
+        Q.rowwise() /= Q.colwise().sum(); // normalize Q per individual
+    }
     // update F
-    for(int k = 0; k < K; k++) F[k] = EclusterK.middleRows(k * C, C);
+    for(int k = 0; k < K; k++)
+    {
+        F[k] = EclusterK.middleRows(k * C, C);
+        F[k].rowwise() /= F[k].colwise().sum(); // normalize F per site
+    }
     protectPars();
 }
 
