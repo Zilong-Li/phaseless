@@ -230,12 +230,11 @@ void Phaseless::moveBackward(int ind,
 void Phaseless::getLocalAncestry(const std::vector<MyArr2D> & alpha, const std::vector<MyArr2D> & beta)
 {
     int S = alpha.size();
-    LA.resize(S);
+    LA = MyArr2D(KK, S);
     for(int s = 0; s < S; s++)
     {
         MyArr2D gamma = alpha[s] * beta[s]; // post(z, y)
-        MyArr2D la = gamma.colwise().sum().reshaped(K, K);
-        LA[s] = la;
+        LA.col(s) = gamma.colwise().sum();
     }
 }
 

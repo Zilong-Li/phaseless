@@ -41,11 +41,29 @@ int run_parse_main(Options & opts)
         faith.initRecombination(par->pos);
         faith.setStartPoint(par);
         faith.initIteration();
-        faith.local = true;
-        faith.post = true;
+        faith.local = true, faith.post = false;
+        Int1D ids;
+        if(opts.samples.empty())
+        {
+            for(int ind = 0; ind < par->N; ind++) ids.push_back(ind);
+        }
+        else
+        {
+            UMapStringInt ids_m;
+            int i = 0;
+            for(auto & id : par->sampleids) ids_m[id] = i++;
+            std::ifstream ifs(opts.samples);
+            if(!ifs.is_open()) cao.error("can not open the file: ", opts.samples);
+            std::string line;
+            while(getline(ifs, line)) ids.push_back(ids_m[line]);
+        }
         int ic = opts.ichunk;
-        faith.runForwardBackwards(1, ic, par->gls[ic], true);
-        for(int s = 0; s < faith.LA.size(); s++) cao.print(faith.LA[s]);
+        for(auto ind : ids)
+        {
+            faith.runForwardBackwards(ind, ic, par->gls[ic], true);
+            std::ofstream ofs(opts.out.string() + ".sample_" + to_string(ind) + ".la");
+            ofs << std::fixed << faith.LA.transpose() << "\n";
+        }
         return 0;
     }
     if(!opts.in_impute.empty())
@@ -70,7 +88,11 @@ int run_parse_main(Options & opts)
             cao.warn("the chunk ", ic, " to be extracted is less than 0. all chunks will be extracted!");
         }
         Int1D ids;
-        if(!opts.samples.empty())
+        if(opts.samples.empty())
+        {
+            for(int ind = 0; ind < genome->nsamples; ind++) ids.push_back(ind);
+        }
+        else
         {
             UMapStringInt ids_m;
             int i = 0;
@@ -79,10 +101,6 @@ int run_parse_main(Options & opts)
             if(!ifs.is_open()) cao.error("can not open the file: ", opts.samples);
             std::string line;
             while(getline(ifs, line)) ids.push_back(ids_m[line]);
-        }
-        else
-        {
-            for(int ind = 0; ind < genome->nsamples; ind++) ids.push_back(ind);
         }
         // haplike is p(Z_is |X_is , theta) = alpha * beta / p(X|theta) = gamma
         std::ofstream ofs_alpha(opts.out.string() + ".alpha.bin", std::ios::binary);
@@ -159,13 +177,13 @@ int run_convert_main(Options & opts)
     ifs_bed.read(reinterpret_cast<char *>(&header[0]), 3);
     if((header[0] != 0x6c) || (header[1] != 0x1b) || (header[2] != 0x01))
         cao.error("Incorrect magic number in plink bed file.\n");
-    ThreadPool poolit(opts.nthreads);
+    ThreadPool pool(opts.nthreads);
     vector<future<string>> res;
     std::ifstream ifs_bim(opts.in_plink + ".bim", std::ios::in);
     for(int ic = 0; ic < nchunks; ic++)
     {
         const auto [bed, marker] = read_plink_bed(ifs_bed, ifs_bim, nsamples, opts.chunksize);
-        res.emplace_back(poolit.enqueue(convert_geno2like, bed, marker, nsamples));
+        res.emplace_back(pool.enqueue(convert_geno2like, bed, marker, nsamples));
     }
     string out{opts.out.string() + ".gz"};
     gzFile gzfp = gzopen(out.c_str(), "wb");

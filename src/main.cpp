@@ -231,7 +231,7 @@ int main(int argc, char * argv[])
         .help("which chunk to extract (0-based), negative means all chunks")
         .default_value(0)
         .scan<'i', int>();
-    cmd_parse.add_argument("-s", "--samples")
+    cmd_parse.add_argument("-S", "--samples-file")
         .help("extract samples in the file, one sample id per line")
         .default_value(std::string{""});
     cmd_parse.add_argument("-o", "--out")
@@ -321,7 +321,7 @@ int main(int argc, char * argv[])
             opts.in_joint.assign(cmd_parse.get("--joint"));
             opts.out.assign(cmd_parse.get("--out"));
             opts.seed = cmd_parse.get<int>("--seed");
-            opts.samples = cmd_parse.get("--samples");
+            opts.samples = cmd_parse.get("--samples-file");
             opts.ichunk = cmd_parse.get<int>("--chunk");
             if((opts.in_impute.empty() && opts.in_joint.empty()) || cmd_parse.get<bool>("--help"))
                 throw std::runtime_error(cmd_parse.help().str());

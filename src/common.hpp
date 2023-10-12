@@ -142,6 +142,7 @@ struct Pars
     MyFloat1D er, et; // M, jumping rate
     Int2D pos; // store position of markers of each chunk
     MyFloat2D gls; // store gl(N, M*3) of each chunk
+    String1D sampleids;
 };
 
 inline auto calc_position_distance(const Int1D & markers)
