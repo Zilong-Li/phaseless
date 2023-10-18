@@ -17,6 +17,10 @@ void Phaseless::initRecombination(const Int1D & pos, double Ne, int B)
 {
     nGen = 4 * Ne / C;
     er = calc_distRate(pos, C, 1.0);
+    R = MyArr2D(3, M);
+    R.row(0) = er.square();
+    R.row(1) = er * (1 - er);
+    R.row(2) = (1 - er).square();
 }
 
 void Phaseless::initRecombination(const Int2D & pos, double Ne, int B)
@@ -32,6 +36,10 @@ void Phaseless::initRecombination(const Int2D & pos, double Ne, int B)
         ss += pos[i].size();
     }
     pos_chunk[nchunks] = ss; // add sentinel
+    R = MyArr2D(3, M);
+    R.row(0) = er.square();
+    R.row(1) = er * (1 - er);
+    R.row(2) = (1 - er).square();
 }
 
 void Phaseless::setFlags(double tol_p, double tol_f, double tol_q, bool debug_, bool nQ, bool nP, bool nF)
@@ -156,8 +164,8 @@ void Phaseless::getPosterios(const int ind,
             }
         }
         if(s == 0) continue;
-        MyArr1D alphatmp(C); // previous alpha colsums
-        for(z1 = 0; z1 < C; z1++) alphatmp(z1) = alpha(Eigen::seqN(z1, C, C), s - 1).sum();
+        MyArr1D alphaprev(C); // previous alpha colsums
+        for(z1 = 0; z1 < C; z1++) alphaprev(z1) = alpha(Eigen::seqN(z1, C, C), s - 1).sum();
         for(z1 = 0; z1 < C; z1++)
         {
             double tmp{0};
@@ -165,13 +173,13 @@ void Phaseless::getPosterios(const int ind,
             {
                 zz = z1 * C + z2;
                 double eb = emit(zz, s) * beta(zz, s);
-                tmp += eb * ((1 - er(m)) * er(m) * alphatmp(z2) + (1 - er(m)) * (1 - er(m)) * H(z2, s));
+                tmp += eb * ((1 - er(m)) * er(m) * alphaprev(z2) + (1 - er(m)) * (1 - er(m)) * H(z2, s));
                 for(y1 = 0; y1 < K; y1++)
                 {
                     ind_post_y(y1, s) +=
-                        (eb * cs(s)) * Q(y1, ind)
+                        eb * cs(s) * Q(y1, ind)
                         * (er(m) * er(m) * alpha(zz, s - 1)
-                           + er(m) * (1 - er(m)) * (alphatmp(z2) * F[y1](z1, m) + alphatmp(z1) * H(z2, s))
+                           + er(m) * (1 - er(m)) * (alphaprev(z2) * F[y1](z1, m) + alphaprev(z1) * H(z2, s))
                            + (1 - er(m)) * (1 - er(m)) * F[y1](z1, m) * H(z2, s));
                 }
             }
@@ -198,12 +206,9 @@ double Phaseless::runForwardBackwards(const int ind, const int ic, const MyFloat
     int z1, y1, s;
     for(s = 0; s < S; s++)
         for(z1 = 0; z1 < C; z1++)
-            for(y1 = 0; y1 < K; y1++) H(z1, s) += Q(y1, ind) * F[y1](z1, s);
-    MyArr2D R(3, S);
-    R.row(0) = er.segment(pos_chunk[ic], S).square();
-    R.row(1) = er.segment(pos_chunk[ic], S) * (1 - er.segment(pos_chunk[ic], S));
-    R.row(2) = (1 - er.segment(pos_chunk[ic], S)).square();
-    auto cs = forward_backwards_diploid(alpha, beta, emit, R, H); // cs is 1 / colsum(alpha)
+            for(y1 = 0; y1 < K; y1++) H(z1, s) += Q(y1, ind) * F[y1](z1, s + pos_chunk[ic]);
+    auto cs =
+        forward_backwards_diploid(alpha, beta, emit, R.middleCols(pos_chunk[ic], S), H); // cs is 1 / colsum(alpha)
     // get posterios
     getPosterios(ind, ic, gli, emit, H, cs, alpha, beta);
     return (1 / cs).log().sum();

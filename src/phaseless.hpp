@@ -41,6 +41,7 @@ class Phaseless
     Int1D pos_chunk; // store the start pos of each chunk in the full scale
     Int1D dist; // physical position distance between two markers
     MyArr1D er; // M, jumping rate
+    MyArr2D R; // 3 x M, jumping rate
     std::vector<MyArr2D> F; // K x C x M, ancestral cluster frequency
     MyArr2D P; // M x C, ancestral cluster-specific allele frequence
     MyArr2D Q; // K x N, admixture proportions for all individuals
