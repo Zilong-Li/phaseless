@@ -70,7 +70,7 @@ void FastPhaseK2::updateIteration()
 
     // update PI(C, M) except the first snp
     // first we normalize Ezj so that each col sum to 1
-    Ezj = (Ezj < clusterFreqThreshold).select(clusterFreqThreshold, Ezj); // reset to 
+    Ezj = (Ezj < clusterFreqThreshold).select(clusterFreqThreshold, Ezj); // reset to
     Ezj.rowwise() /= Ezj.colwise().sum();
     Ezj.col(0) = pi / pi.sum(); // now update the first SNP
 
@@ -206,8 +206,7 @@ double FastPhaseK2::forwardAndBackwardsLowRamNormal(int ind, const MyFloat1D & G
             }
             alphatmp += PI.col(s) * R(2, s) * 1.0; // inner alpha.col(s-1).sum == 1
             for(z1 = 0; z1 < C; z1++)
-                ind_post_zj(z1) =
-                    cs(s) * PI(z1, s) * (alphatmp * beta_mult_emit(Eigen::seqN(z1, C, C))).sum();
+                ind_post_zj(z1) = cs(s) * PI(z1, s) * (alphatmp * beta_mult_emit(Eigen::seqN(z1, C, C))).sum();
             { // sum over all samples for updates
                 std::lock_guard<std::mutex> lock(mutex_it);
                 Ezj.col(s) += ind_post_zj;
@@ -232,8 +231,7 @@ double FastPhaseK2::forwardAndBackwardsLowRamNormal(int ind, const MyFloat1D & G
                     for(g2 = 0; g2 < 2; g2++)
                     {
                         g12 = g1 * 2 + g2;
-                        ind_post_z_g.col(g12) = gli.col(g1 + g2)
-                                                * (g1 * F.col(z1) + (1 - g1) * (1 - F.col(z1)))
+                        ind_post_z_g.col(g12) = gli.col(g1 + g2) * (g1 * F.col(z1) + (1 - g1) * (1 - F.col(z1)))
                                                 * (g2 * F.col(z2) + (1 - g2) * (1 - F.col(z2)));
                     }
                 }
@@ -432,8 +430,7 @@ fbd_res1 FastPhaseK2::forwardAndBackwardsHighRamCollapse(int ind, const MyFloat1
             }
             alphatmp += PI.col(g) * R(2, g) * 1.0;
             for(z1 = 0; z1 < C; z1++)
-                ind_post_zj(z1, g) =
-                    cs(g) * (PI(z1, g) * alphatmp * beta_mult_emit(Eigen::seqN(z1, C, C))).sum();
+                ind_post_zj(z1, g) = cs(g) * (PI(z1, g) * alphatmp * beta_mult_emit(Eigen::seqN(z1, C, C))).sum();
         }
     }
     else
@@ -501,8 +498,7 @@ fbd_res1 FastPhaseK2::forwardAndBackwardsHighRamNormal(int ind, const MyFloat1D 
             }
             alphatmp += PI.col(s) * R(2, s) * 1.0;
             for(z1 = 0; z1 < C; z1++)
-                ind_post_zj(z1, s) =
-                    cs(s) * (PI(z1, s) * alphatmp * beta_mult_emit(Eigen::seqN(z1, C, C))).sum();
+                ind_post_zj(z1, s) = cs(s) * (PI(z1, s) * alphatmp * beta_mult_emit(Eigen::seqN(z1, C, C))).sum();
         }
     }
     else
@@ -521,8 +517,7 @@ fbd_res1 FastPhaseK2::forwardAndBackwardsHighRamNormal(int ind, const MyFloat1D 
                     for(g2 = 0; g2 < 2; g2++)
                     {
                         g12 = g1 * 2 + g2;
-                        ind_post_z_g.col(g12) = gli.col(g1 + g2)
-                                                * (g1 * F.col(z1) + (1 - g1) * (1 - F.col(z1)))
+                        ind_post_z_g.col(g12) = gli.col(g1 + g2) * (g1 * F.col(z1) + (1 - g1) * (1 - F.col(z1)))
                                                 * (g2 * F.col(z2) + (1 - g2) * (1 - F.col(z2)));
                     }
                 }
@@ -598,8 +593,8 @@ fbd_res2 make_input_per_chunk(const std::unique_ptr<BigAss> & genome,
         faith.collapse_and_resize(genome->pos[ic], tol_r);
         faith.runWithOneThread(2, genome->gls[ic]); // FIXME update iterations
     }
-    return std::tuple(MyFloat1D(faith.GP.data(), faith.GP.data() + faith.GP.size()), faith.R, faith.PI,
-                      faith.F, faith.Ezj);
+    return std::tuple(MyFloat1D(faith.GP.data(), faith.GP.data() + faith.GP.size()), faith.R, faith.PI, faith.F,
+                      faith.Ezj);
 }
 
 int run_impute_main(Options & opts)
@@ -619,7 +614,8 @@ int run_impute_main(Options & opts)
     std::ofstream orecomb(opts.out.string() + ".recomb");
     std::ofstream opi(opts.out.string() + ".pi");
     std::ofstream oae(opts.out.string() + ".cluster.freq");
-    Eigen::IOFormat fmt(6, Eigen::DontAlignCols, "\t", "\n");
+    std::ofstream op(opts.out.string() + ".P");
+    Eigen::IOFormat fmt(6, Eigen::DontAlignCols, " ", "\n");
     if(opts.single_chunk)
     {
         vector<future<fbd_res1>> res;
@@ -628,8 +624,7 @@ int run_impute_main(Options & opts)
             FastPhaseK2 faith(genome->pos[ic].size(), genome->nsamples, opts.C, opts.seed);
             faith.initRecombination(genome->pos[ic], genome->B);
             faith.debug = opts.debug;
-            faith.AF =
-                estimate_af_by_gl(genome->gls[ic], genome->nsamples, genome->pos[ic].size()).cast<MyFloat>();
+            faith.AF = estimate_af_by_gl(genome->gls[ic], genome->nsamples, genome->pos[ic].size()).cast<MyFloat>();
             for(int it = 0; SIG_COND && it <= opts.nimpute; it++)
             {
                 tim.clock();
@@ -654,8 +649,8 @@ int run_impute_main(Options & opts)
                     faith.pi += gamma1_ae;
                 }
                 res.clear(); // clear future and renew
-                cao.print(tim.date(), "run single chunk", ic, ", iteration", it, ", likelihoods =", loglike,
-                          ",", tim.reltime(), " sec");
+                cao.print(tim.date(), "run single chunk", ic, ", iteration", it, ", likelihoods =", loglike, ",",
+                          tim.reltime(), " sec");
                 if(it != opts.nimpute) faith.updateIteration();
             }
             tim.clock();
@@ -664,6 +659,7 @@ int run_impute_main(Options & opts)
             genome->PI.emplace_back(MyFloat1D(faith.PI.data(), faith.PI.data() + faith.PI.size()));
             genome->F.emplace_back(MyFloat1D(faith.F.data(), faith.F.data() + faith.F.size()));
             opi << faith.PI.transpose().format(fmt) << "\n";
+            op << faith.F.transpose().format(fmt) << "\n";
             orecomb << faith.R.transpose().format(fmt) << "\n";
             faith.Ezj.rowwise() /= faith.Ezj.colwise().sum(); // norm gamma ae
             oae << faith.Ezj.transpose().format(fmt) << "\n";
@@ -685,11 +681,11 @@ int run_impute_main(Options & opts)
                     for(int i = 0; i < genome->nsamples; i++)
                     {
                         if(it == opts.nimpute)
-                            res.emplace_back(poolit.enqueue(&FastPhaseK2::forwardAndBackwardsHighRam, &faith,
-                                                            i, std::ref(genome->gls[ic]), true));
+                            res.emplace_back(poolit.enqueue(&FastPhaseK2::forwardAndBackwardsHighRam, &faith, i,
+                                                            std::ref(genome->gls[ic]), true));
                         else
-                            res.emplace_back(poolit.enqueue(&FastPhaseK2::forwardAndBackwardsHighRam, &faith,
-                                                            i, std::ref(genome->gls[ic]), false));
+                            res.emplace_back(poolit.enqueue(&FastPhaseK2::forwardAndBackwardsHighRam, &faith, i,
+                                                            std::ref(genome->gls[ic]), false));
                     }
                     double loglike = 0;
                     for(auto && ll : res)
@@ -702,8 +698,8 @@ int run_impute_main(Options & opts)
                         faith.pi += gamma1;
                     }
                     res.clear(); // clear future and renew
-                    cao.print(tim.date(), "run single chunk", ic, ", iteration", it,
-                              ", likelihoods =", loglike, ",", tim.reltime(), " sec");
+                    cao.print(tim.date(), "run single chunk", ic, ", iteration", it, ", likelihoods =", loglike, ",",
+                              tim.reltime(), " sec");
                     if(it != opts.nimpute) faith.updateIteration();
                 }
                 orecomb2 << faith.R.transpose().format(fmt) << "\n";
@@ -720,8 +716,8 @@ int run_impute_main(Options & opts)
             cao.warn(tim.date(), "nchunks < nthreads. only", genome->nchunks, " threads will be working");
         vector<future<fbd_res2>> res;
         for(int ic = 0; ic < genome->nchunks; ic++)
-            res.emplace_back(poolit.enqueue(make_input_per_chunk, std::ref(genome), ic, opts.nimpute,
-                                            opts.seed, opts.collapse, opts.tol_pi, opts.tol_r));
+            res.emplace_back(poolit.enqueue(make_input_per_chunk, std::ref(genome), ic, opts.nimpute, opts.seed,
+                                            opts.collapse, opts.tol_pi, opts.tol_r));
         int ic = 0;
         for(auto && ll : res)
         {
