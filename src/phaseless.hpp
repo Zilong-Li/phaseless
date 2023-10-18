@@ -60,10 +60,8 @@ class Phaseless
     double runForwardBackwards(const int, const int, const MyFloat1D &, bool);
     double runBigass(int, const MyFloat2D &, bool);
 
-    void getForwardPrevSums(const MyArr2D &, MyArr2D &, MyArr2D &, MyArr2D &, MyArr1D &);
-    void getBackwardPrevSums(const MyArr2D &, MyArr2D &, MyArr2D &, MyArr2D &, MyArr1D &, double &, int, int);
     void getPosterios(const int,
-                     const int,
+                      const int,
                       const MyArr2D &,
                       const MyArr2D &,
                       const MyArr2D &,

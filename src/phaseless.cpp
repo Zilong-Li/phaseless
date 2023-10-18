@@ -48,7 +48,7 @@ void Phaseless::setFlags(double tol_p, double tol_f, double tol_q, bool debug_, 
 void Phaseless::setStartPoint(std::string qfile, std::string pfile)
 {
     if(!qfile.empty()) load_csv(qfile, Q);
-    if(!pfile.empty()) load_csv(pfile, P);
+    if(!pfile.empty()) load_csv2(pfile, P);
 }
 
 void Phaseless::setStartPoint(const std::unique_ptr<Pars> & par)
@@ -368,7 +368,7 @@ int run_phaseless_main(Options & opts)
     }
     faith.Q = (faith.Q * 1e6).round() / 1e6;
     oanc << std::fixed << faith.Q.transpose().format(fmt) << "\n";
-    op << std::fixed << faith.P.transpose().format(fmt) << "\n";
+    op << std::fixed << faith.P.format(fmt) << "\n";
     std::unique_ptr<Pars> par = std::make_unique<Pars>();
     par->init(faith.K, faith.C, faith.M, faith.N, faith.er, faith.P, faith.Q, faith.F);
     par->pos = genome->pos;

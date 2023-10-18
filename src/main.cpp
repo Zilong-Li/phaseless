@@ -277,6 +277,7 @@ int main(int argc, char * argv[])
         {
             opts.in_beagle.assign(cmd_joint.get("--beagle"));
             opts.in_qfile.assign(cmd_joint.get("--qfile"));
+            opts.in_pfile.assign(cmd_joint.get("--pfile"));
             opts.out.assign(cmd_joint.get("--out"));
             opts.C = cmd_joint.get<int>("--cluster");
             opts.K = cmd_joint.get<int>("--ancestry");

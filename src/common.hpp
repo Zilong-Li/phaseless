@@ -743,4 +743,26 @@ inline void load_csv(const std::string & path, MyArr2D & Q, char sep = ' ')
     assert(i == Q.cols());
 }
 
+inline void load_csv2(const std::string & path, MyArr2D & P, char sep = ' ')
+{
+    std::ifstream fin(path);
+    std::string line;
+    std::vector<double> values;
+    int i{0}, j{0};
+    while(std::getline(fin, line))
+    {
+        std::stringstream lineStream(line);
+        std::string tok;
+        j = 0;
+        while(std::getline(lineStream, tok, sep))
+        {
+            P(i, j) = std::stof(tok);
+            ++j;
+        }
+        assert(j == P.cols());
+        ++i;
+    }
+    assert(i == P.rows());
+}
+
 #endif // COMMON_H_

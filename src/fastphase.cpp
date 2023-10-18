@@ -659,7 +659,7 @@ int run_impute_main(Options & opts)
             genome->PI.emplace_back(MyFloat1D(faith.PI.data(), faith.PI.data() + faith.PI.size()));
             genome->F.emplace_back(MyFloat1D(faith.F.data(), faith.F.data() + faith.F.size()));
             opi << faith.PI.transpose().format(fmt) << "\n";
-            op << faith.F.transpose().format(fmt) << "\n";
+            op << faith.F.format(fmt) << "\n";
             orecomb << faith.R.transpose().format(fmt) << "\n";
             faith.Ezj.rowwise() /= faith.Ezj.colwise().sum(); // norm gamma ae
             oae << faith.Ezj.transpose().format(fmt) << "\n";
@@ -730,6 +730,7 @@ int run_impute_main(Options & opts)
             genome->GammaAE.emplace_back(MyFloat1D(faithAE.data(), faithAE.data() + faithAE.size()));
             orecomb << faithR.transpose().format(fmt) << "\n";
             opi << faithPI.transpose().format(fmt) << "\n";
+            op << faithF.format(fmt) << "\n";
             oae << faithAE.transpose().format(fmt) << "\n";
             cao.print(tim.date(), "chunk", ic++, " imputation done and outputting");
         }
