@@ -1,5 +1,9 @@
 #+title: News and Changes
 
+* v0.2.6
+- add LA utilts
+* v0.2.5
+- add first joint model
 * v0.2.4
 - update admixture with collapsed and normalized gamma ae
 * v0.2.3
