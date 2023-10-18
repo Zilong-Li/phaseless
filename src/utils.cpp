@@ -62,7 +62,6 @@ int run_parse_main(Options & opts)
         {
             faith.runForwardBackwards(ind, ic, par->gls[ic], true);
             std::ofstream ofs(opts.out.string() + ".sample_" + to_string(ind) + ".la");
-            ofs << std::fixed << faith.LA.transpose() << "\n";
         }
         return 0;
     }

@@ -17,7 +17,6 @@ void Phaseless::initRecombination(const Int1D & pos, double Ne, int B)
 {
     nGen = 4 * Ne / C;
     er = calc_distRate(pos, C, 1.0);
-    et = calc_distRate(pos, C, 0.05);
 }
 
 void Phaseless::initRecombination(const Int2D & pos, double Ne, int B)
@@ -25,36 +24,36 @@ void Phaseless::initRecombination(const Int2D & pos, double Ne, int B)
     int nchunks = pos.size();
     pos_chunk.resize(nchunks + 1);
     er = MyArr1D::Ones(M);
-    et = MyArr1D::Ones(M);
     int i{0}, ss{0};
     for(i = 0; i < nchunks; i++)
     {
         pos_chunk[i] = ss;
         er.segment(ss, pos[i].size()) = calc_distRate(pos[i], C, 1.0);
-        et.segment(ss, pos[i].size()) = calc_distRate(pos[i], C, 0.05);
         ss += pos[i].size();
     }
     pos_chunk[nchunks] = ss; // add sentinel
 }
 
-void Phaseless::setFlags(double tol_p, double tol_f, double tol_q, bool debug_, bool nonewQ_)
+void Phaseless::setFlags(double tol_p, double tol_f, double tol_q, bool debug_, bool nQ, bool nP, bool nF)
 {
     alleleEmitThreshold = tol_p;
     clusterFreqThreshold = tol_f;
     admixtureThreshold = tol_q;
     debug = debug_;
-    nonewQ = nonewQ_;
+    NQ = nQ;
+    NP = nP;
+    NF = nF;
 }
 
-void Phaseless::setStartPoint(std::string qfile)
+void Phaseless::setStartPoint(std::string qfile, std::string pfile)
 {
     if(!qfile.empty()) load_csv(qfile, Q);
+    if(!pfile.empty()) load_csv(pfile, P);
 }
 
 void Phaseless::setStartPoint(const std::unique_ptr<Pars> & par)
 {
     er = Eigen::Map<MyArr1D>(par->er.data(), M);
-    et = Eigen::Map<MyArr1D>(par->et.data(), M);
     Q = Eigen::Map<MyArr2D>(par->Q.data(), K, N);
     P = Eigen::Map<MyArr2D>(par->P.data(), M, C);
     for(int i = 0; i < K; i++) F[i] = Eigen::Map<MyArr2D>(par->F[i].data(), C, M);
@@ -63,28 +62,31 @@ void Phaseless::setStartPoint(const std::unique_ptr<Pars> & par)
 void Phaseless::protectPars()
 {
     // if we accelerate pars, protect them!
-    if(!nonewQ)
-    {
-        // protect Q
+    if(!NQ)
+    { // protect Q
         if(debug && Q.isNaN().any()) cao.warn("NaN in Q in Phaseless model. reset it to the threshold");
         Q = (Q < admixtureThreshold).select(admixtureThreshold, Q); // lower bound
         Q = (Q > 1 - admixtureThreshold).select(1 - admixtureThreshold, Q); // upper bound
         Q.rowwise() /= Q.colwise().sum(); // normalize Q per individual
         if(debug && !(1.0 - Q.colwise().sum() == 0).any()) cao.warn("Q colsum is not 1.0");
     }
-    // protect P
-    if(P.isNaN().any()) cao.warn("NaN in P in Phaseless model. will fill it with AF");
-    P = (P < alleleEmitThreshold).select(alleleEmitThreshold, P); // lower bound
-    P = (P > 1 - alleleEmitThreshold).select(1 - alleleEmitThreshold, P); // upper bound
-    // protect F
-    for(int k = 0; k < K; k++)
-    {
-        // could cluster jump be zero?
-        if(F[k].isNaN().any()) cao.warn("NaN in F in Phaseless model. reset it to the threshold. k =", k);
-        F[k] = (F[k] < clusterFreqThreshold).select(clusterFreqThreshold, F[k]);
-        F[k] = (F[k] > 1 - clusterFreqThreshold).select(1 - clusterFreqThreshold, F[k]);
-        // re-normalize F per site. hope should work well. otherwise do the complicated.
-        F[k].rowwise() /= F[k].colwise().sum();
+    if(!NP)
+    { // protect P
+        if(P.isNaN().any()) cao.warn("NaN in P in Phaseless model. will fill it with AF");
+        P = (P < alleleEmitThreshold).select(alleleEmitThreshold, P); // lower bound
+        P = (P > 1 - alleleEmitThreshold).select(1 - alleleEmitThreshold, P); // upper bound
+    }
+    if(!NF)
+    { // protect F
+        for(int k = 0; k < K; k++)
+        {
+            // could cluster jump be zero?
+            if(F[k].isNaN().any()) cao.warn("NaN in F in Phaseless model. reset it to the threshold. k =", k);
+            F[k] = (F[k] < clusterFreqThreshold).select(clusterFreqThreshold, F[k]);
+            F[k] = (F[k] > 1 - clusterFreqThreshold).select(1 - clusterFreqThreshold, F[k]);
+            // re-normalize F per site. hope should work well. otherwise do the complicated.
+            F[k].rowwise() /= F[k].colwise().sum();
+        }
     }
 }
 
@@ -99,182 +101,42 @@ void Phaseless::initIteration()
 void Phaseless::updateIteration()
 {
     // update P
-    P = (EclusterA2 / (EclusterA1 + EclusterA2)).transpose();
-    // update Q
-    if(!nonewQ)
-    {
+    if(!NP) P = (EclusterA2 / (EclusterA1 + EclusterA2)).transpose();
+    if(!NQ)
+    { // update Q
         Q = Eancestry;
         Q.rowwise() /= Q.colwise().sum(); // normalize Q per individual
     }
-    // update F
-    for(int k = 0; k < K; k++)
-    {
-        F[k] = EclusterK.middleRows(k * C, C);
-        F[k].rowwise() /= F[k].colwise().sum(); // normalize F per site
+    if(!NF)
+    { // update F
+        for(int k = 0; k < K; k++)
+        {
+            F[k] = EclusterK.middleRows(k * C, C);
+            F[k].rowwise() /= F[k].colwise().sum(); // normalize F per site
+        }
     }
     protectPars();
-}
-
-void Phaseless::getForwardPrevSums(const MyArr2D & alpha,
-                                   MyArr2D & prevsum_z,
-                                   MyArr2D & prevsum_zz,
-                                   MyArr2D & prevsum_zy,
-                                   MyArr1D & prevsum_zzy)
-{
-    int z1{0}, z2{0}, y1{0}, y2{0}, zz{0}, yy{0};
-    prevsum_z.setZero();
-    prevsum_zz.setZero();
-    prevsum_zy.setZero();
-    prevsum_zzy.setZero();
-    for(z1 = 0; z1 < C; z1++)
-        for(z2 = 0; z2 < C; z2++)
-            for(y1 = 0; y1 < K; y1++)
-                for(y2 = 0; y2 < K; y2++)
-                {
-                    zz = z1 * C + z2;
-                    yy = y1 * K + y2;
-                    double aa = alpha(zz, yy);
-                    prevsum_z(z2, yy) += aa;
-                    prevsum_zz(y1, y2) += aa;
-                    prevsum_zy(z1, y1) += aa;
-                    prevsum_zzy(y1) += aa;
-                }
-}
-
-void Phaseless::getBackwardPrevSums(const MyArr2D & beta_mult_emit,
-                                    MyArr2D & prevsum_z,
-                                    MyArr2D & prevsum_zz,
-                                    MyArr2D & prevsum_zy,
-                                    MyArr1D & prevsum_zzy,
-                                    double & prevsum_zzyy,
-                                    int ind,
-                                    int s)
-{
-    int z1{0}, z2{0}, y1{0}, y2{0}, zz{0}, yy{0};
-    prevsum_z.setZero();
-    prevsum_zz.setZero();
-    prevsum_zy.setZero();
-    prevsum_zzy.setZero();
-    prevsum_zzyy = 0.0;
-    for(z1 = 0; z1 < C; z1++)
-        for(z2 = 0; z2 < C; z2++)
-            for(y1 = 0; y1 < K; y1++)
-                for(y2 = 0; y2 < K; y2++)
-                {
-                    zz = z1 * C + z2;
-                    yy = y1 * K + y2;
-                    prevsum_z(z1, yy) += beta_mult_emit(zz, yy) * F[y2](z2, s);
-                    prevsum_zz(y1, y2) += beta_mult_emit(zz, yy) * F[y1](z1, s) * F[y2](z2, s);
-                    prevsum_zy(z1, y1) += beta_mult_emit(zz, yy) * F[y2](z2, s) * Q(y2, ind);
-                    prevsum_zzy(y1) += beta_mult_emit(zz, yy) * F[y1](z1, s) * F[y2](z2, s) * Q(y2, ind);
-                    prevsum_zzyy += beta_mult_emit(zz, yy) * F[y1](z1, s) * F[y2](z2, s) * Q(y1, ind) * Q(y2, ind);
-                }
-}
-
-void Phaseless::moveForward(int ind,
-                            int s,
-                            MyArr2D & curr,
-                            const MyArr1D & emit,
-                            const MyArr2D & prev,
-                            const MyArr2D & prevsum_z,
-                            const MyArr2D & prevsum_zz,
-                            const MyArr2D & prevsum_zy,
-                            const MyArr1D & prevsum_zzy)
-{
-    int z1{0}, z2{0}, y1{0}, y2{0}, zz{0}, yy{0};
-    for(z1 = 0; z1 < C; z1++)
-        for(z2 = 0; z2 < C; z2++)
-            for(y1 = 0; y1 < K; y1++)
-                for(y2 = 0; y2 < K; y2++)
-                {
-                    zz = z1 * C + z2;
-                    yy = y1 * K + y2;
-                    int yy2 = y2 * K + y1;
-                    double ss = et(s) * et(s)
-                                * (er(s) * er(s) * prev(zz, yy)
-                                   + er(s) * (1 - er(s))
-                                         * (F[y2](z2, s) * prevsum_z(z1, yy2) + F[y1](z1, s) * prevsum_z(z2, yy))
-                                   + (1 - er(s)) * (1 - er(s)) * (F[y1](z1, s) * F[y2](z2, s) * prevsum_zz(y1, y2)));
-                    double sj = et(s) * (1 - et(s))
-                                * (Q(y2, ind) * F[y2](z2, s)
-                                       * (er(s) * prevsum_zy(z1, y1) + (1 - er(s)) * prevsum_zzy(y1) * F[y1](z1, s))
-                                   + Q(y1, ind) * F[y1](z1, s)
-                                         * (er(s) * prevsum_zy(z2, y2) + (1 - er(s)) * prevsum_zzy(y2) * F[y2](z2, s)));
-                    double jj = (1 - et(s)) * (1 - et(s)) * Q(y1, ind) * F[y1](z1, s) * Q(y2, ind) * F[y2](z2, s);
-                    curr(zz, yy) = emit(zz) * (ss + sj + jj);
-                }
-}
-
-void Phaseless::moveBackward(int ind,
-                             int s,
-                             MyFloat cs,
-                             MyArr2D & curr,
-                             const MyArr2D & beta_mult_emit,
-                             const MyArr2D & prevsum_z,
-                             const MyArr2D & prevsum_zz,
-                             const MyArr2D & prevsum_zy,
-                             const MyArr1D & prevsum_zzy,
-                             const double prevsum_zzyy)
-{
-    int z1{0}, z2{0}, y1{0}, y2{0}, zz{0}, yy{0};
-    for(z1 = 0; z1 < C; z1++)
-        for(z2 = 0; z2 < C; z2++)
-            for(y1 = 0; y1 < K; y1++)
-                for(y2 = 0; y2 < K; y2++)
-                {
-                    zz = z1 * C + z2;
-                    yy = y1 * K + y2;
-                    int yy2 = y2 * K + y1;
-                    double ss = et(s) * et(s)
-                                * (er(s) * er(s) * beta_mult_emit(zz, yy)
-                                   + er(s) * (1 - er(s)) * (prevsum_z(z1, yy) + prevsum_z(z2, yy2))
-                                   + (1 - er(s)) * (1 - er(s)) * prevsum_zz(y1, y2));
-                    double sj = (1 - et(s)) * et(s)
-                                * (er(s) * (prevsum_zy(z1, y1) + prevsum_zy(z2, y2))
-                                   + (1 - er(s)) * (prevsum_zzy(y1) + prevsum_zzy(y2)));
-                    double jj = (1 - et(s)) * (1 - et(s)) * prevsum_zzyy;
-                    curr(zz, yy) = (ss + sj + jj) / cs;
-                }
-}
-
-void Phaseless::getLocalAncestry(const std::vector<MyArr2D> & alpha, const std::vector<MyArr2D> & beta)
-{
-    int S = alpha.size();
-    LA = MyArr2D(KK, S);
-    for(int s = 0; s < S; s++)
-    {
-        MyArr2D gamma = alpha[s] * beta[s]; // post(z, y)
-        LA.col(s) = gamma.colwise().sum();
-    }
 }
 
 void Phaseless::getPosterios(const int ind,
                              const int ic,
                              const MyArr2D & gli,
                              const MyArr2D & emit,
+                             const MyArr2D & H,
                              const MyArr1D & cs,
-                             const std::vector<MyArr2D> & alpha,
-                             const std::vector<MyArr2D> & beta)
+                             const MyArr2D & alpha,
+                             const MyArr2D & beta)
 {
     const int S = pos_chunk[ic + 1] - pos_chunk[ic];
-    assert(S == alpha.size());
-    int m{0}, s{0}, z1{0}, z2{0}, y1{0}, y2{0}, zz{0}, yy{0};
-    MyArr2D ind_post_zg1(C, S), ind_post_zg2(C, S), ind_post_zz(CC, S);
+    int m{0}, s{0}, z1{0}, z2{0}, y1{0}, zz{0};
+    MyArr2D ind_post_zg1(C, S), ind_post_zg2(C, S);
+    MyArr2D ind_post_zy(C * K, S);
+    MyArr1D gamma_div_emit(CC);
     MyArr2D ind_post_y = MyArr2D::Zero(K, S);
-    MyArr2D ind_post_zy = MyArr2D::Zero(C * K, S);
-    MyArr2D prevsum_z(C, KK), prevsum_zz(K, K), prevsum_zy(C, K);
-    MyArr1D prevsum_zzy(K);
     for(s = 0; s < S; s++)
     {
         m = s + pos_chunk[ic];
-        MyArr2D gamma = alpha[s] * beta[s]; // post(z, y)
-        if(debug && !(std::abs(1.0 - gamma.sum()) < 1e-6))
-            cao.error(s, ", gamma sum is not approx 1.0 (tol = 1e-6)\n", gamma.sum());
-        ind_post_zz.col(s) = gamma.rowwise().sum();
-        if(debug && !(std::abs(1.0 - ind_post_zz.col(s).sum()) < 1e-6))
-            cao.error(s, ", zpost is not approx 1.0 (tol = 1e-6)\n", ind_post_zz.col(s).sum());
-
-        MyArr1D gamma_div_emit = ind_post_zz.col(s) / emit.col(s); // what if emit is 0
+        gamma_div_emit = (alpha.col(s) * beta.col(s)) / emit.col(s); // what if emit is 0
         for(z1 = 0; z1 < C; z1++)
         {
             ind_post_zg1(z1, s) = (gamma_div_emit(Eigen::seqN(z1, C, C)) * (1 - P(m, z1))
@@ -285,40 +147,36 @@ void Phaseless::getPosterios(const int ind,
                                       .sum();
             if(s == 0)
             {
+                auto tmp = (alpha.col(0) * beta.col(0)).segment(z1 * C, C).sum();
                 for(y1 = 0; y1 < K; y1++)
-                    ind_post_zy(y1 * C + z1, s) = gamma(Eigen::seqN(z1, C, C), Eigen::seqN(y1, K, K)).sum();
+                {
+                    ind_post_zy(y1 * C + z1, 0) = tmp * Q(y1, ind);
+                    ind_post_y(y1, 0) += ind_post_zy(y1 * C + z1, 0);
+                }
             }
         }
-        if(debug && !(std::abs(1.0 - (ind_post_zg1.col(s) + ind_post_zg2.col(s)).sum()) < 1e-6))
-            cao.error(s, ", clusterallele is not approx 1.0 (tol = 1e-6)\n",
-                      (ind_post_zg1.col(s) + ind_post_zg2.col(s)).sum());
-        if(s == 0) ind_post_y.col(s) = gamma.colwise().sum().reshaped(K, K).colwise().sum();
         if(s == 0) continue;
-        getForwardPrevSums(alpha[s - 1], prevsum_z, prevsum_zz, prevsum_zy, prevsum_zzy);
+        MyArr1D alphatmp(C); // previous alpha colsums
+        for(z1 = 0; z1 < C; z1++) alphatmp(z1) = alpha(Eigen::seqN(z1, C, C), s - 1).sum();
         for(z1 = 0; z1 < C; z1++)
+        {
+            double tmp{0};
             for(z2 = 0; z2 < C; z2++)
+            {
+                zz = z1 * C + z2;
+                double eb = emit(zz, s) * beta(zz, s);
+                tmp += eb * ((1 - er(m)) * er(m) * alphatmp(z2) + (1 - er(m)) * (1 - er(m)) * H(z2, s));
                 for(y1 = 0; y1 < K; y1++)
-                    for(y2 = 0; y2 < K; y2++)
-                    {
-                        zz = z1 * C + z2;
-                        yy = y1 * K + y2;
-                        double ebc = emit(zz, s) * beta[s](zz, yy) / cs(s);
-                        ind_post_y(y1, s) +=
-                            ebc
-                            * ((1 - et(m)) * (1 - et(m)) * F[y1](z1, m) * Q(y1, ind) * F[y2](z2, m) * Q(y2, ind)
-                               + et(m) * (1 - et(m)) * Q(y1, ind) * F[y1](z1, m)
-                                     * (er(m) * prevsum_zy(z2, y2) + (1 - er(m)) * F[y2](z2, m) * prevsum_zzy(y2)));
-                        ind_post_zy(y1 * C + z1, s) +=
-                            ebc
-                            * ((1 - et(m)) * Q(y1, ind) * F[y1](z1, m)
-                                   * ((1 - et(m)) * F[y2](z2, m) * Q(y2, ind)
-                                      + et(m) * (1 - er(m)) * F[y2](z2, m) * prevsum_zzy(y2)
-                                      + et(m) * er(m) * prevsum_zy(z2, y2))
-                               + et(m) * (1 - er(m)) * F[y1](z1, m)
-                                     * ((1 - et(m)) * F[y2](z2, m) * Q(y2, ind) * prevsum_zzy(y1)
-                                        + et(m) * (1 - er(m)) * F[y2](z2, m) * prevsum_zz(y1, y2)
-                                        + et(m) * er(m) * prevsum_z(z2, yy)));
-                    }
+                {
+                    ind_post_y(y1, s) +=
+                        (eb * cs(s)) * Q(y1, ind)
+                        * (er(m) * er(m) * alpha(zz, s - 1)
+                           + er(m) * (1 - er(m)) * (alphatmp(z2) * F[y1](z1, m) + alphatmp(z1) * H(z2, s))
+                           + (1 - er(m)) * (1 - er(m)) * F[y1](z1, m) * H(z2, s));
+                }
+            }
+            for(y1 = 0; y1 < K; y1++) ind_post_zy(y1 * C + z1, s) = tmp * Q(y1, ind) * F[y1](z1, m) * cs(s);
+        }
     }
     { // sum over all samples for updates
         std::lock_guard<std::mutex> lock(mutex_it);
@@ -334,51 +192,21 @@ double Phaseless::runForwardBackwards(const int ind, const int ic, const MyFloat
     const int S = pos_chunk[ic + 1] - pos_chunk[ic];
     Eigen::Map<const MyArr2D> gli(GL.data() + ind * S * 3, S, 3);
     MyArr2D emit = get_emission_by_gl(gli, P.middleRows(pos_chunk[ic], S)).transpose(); // CC x S
-    std::vector<MyArr2D> alpha(S, MyArr2D(CC, KK));
-    std::vector<MyArr2D> beta(S, MyArr2D(CC, KK));
-    MyArr2D prevsum_z(C, KK), prevsum_zz(K, K), prevsum_zy(C, K);
-    MyArr1D cs(S), prevsum_zzy(K);
-    // init
-    int m{0}, s{0}, z1{0}, z2{0}, y1{0}, y2{0}, zz{0}, yy{0};
-    m = s + pos_chunk[ic];
-    for(z1 = 0; z1 < C; z1++)
-        for(z2 = 0; z2 < C; z2++)
-            for(y1 = 0; y1 < K; y1++)
-                for(y2 = 0; y2 < K; y2++)
-                {
-                    zz = z1 * C + z2;
-                    yy = y1 * K + y2;
-                    alpha[s](zz, yy) = emit(zz, s) * Q(y1, ind) * F[y1](z1, m) * Q(y2, ind) * F[y2](z2, m);
-                }
-    cs(s) = alpha[s].sum();
-    alpha[s] /= cs(s); // norm alpha
-    // forward recursion
-    for(s = 1; s < S; s++)
-    {
-        getForwardPrevSums(alpha[s - 1], prevsum_z, prevsum_zz, prevsum_zy, prevsum_zzy);
-        m = s + pos_chunk[ic];
-        moveForward(ind, m, alpha[s], emit.col(s), alpha[s - 1], prevsum_z, prevsum_zz, prevsum_zy, prevsum_zzy);
-        cs(s) = alpha[s].sum();
-        alpha[s] /= cs(s); // norm alpha
-    }
-    // backwards recursion
-    s = S - 1;
-    beta[s].setConstant(1.0);
-    MyArr2D beta_mult_emit(CC, KK);
-    double prevsum_zzyy{0};
-    for(s = S - 2; s >= 0; s--)
-    {
-        for(int yy = 0; yy < KK; yy++) beta_mult_emit.col(yy) = beta[s + 1].col(yy) * emit.col(s + 1);
-        m = s + 1 + pos_chunk[ic];
-        getBackwardPrevSums(beta_mult_emit, prevsum_z, prevsum_zz, prevsum_zy, prevsum_zzy, prevsum_zzyy, ind, m);
-        moveBackward(ind, m, cs(s + 1), beta[s], beta_mult_emit, prevsum_z, prevsum_zz, prevsum_zy, prevsum_zzy,
-                     prevsum_zzyy);
-    }
-    // get local ancestry
-    if(local) getLocalAncestry(alpha, beta);
+    MyArr2D alpha(CC, S), beta(CC, S);
+    // first get H ie old PI in fastphase
+    MyArr2D H = MyArr2D::Zero(C, S);
+    int z1, y1, s;
+    for(s = 0; s < S; s++)
+        for(z1 = 0; z1 < C; z1++)
+            for(y1 = 0; y1 < K; y1++) H(z1, s) += Q(y1, ind) * F[y1](z1, s);
+    MyArr2D R(3, S);
+    R.row(0) = er.segment(pos_chunk[ic], S).square();
+    R.row(1) = er.segment(pos_chunk[ic], S) * (1 - er.segment(pos_chunk[ic], S));
+    R.row(2) = (1 - er.segment(pos_chunk[ic], S)).square();
+    auto cs = forward_backwards_diploid(alpha, beta, emit, R, H); // cs is 1 / colsum(alpha)
     // get posterios
-    if(post) getPosterios(ind, ic, gli, emit, cs, alpha, beta);
-    return cs.log().sum();
+    getPosterios(ind, ic, gli, emit, H, cs, alpha, beta);
+    return (1 / cs).log().sum();
 }
 
 double Phaseless::runBigass(int ind, const MyFloat2D & GL, bool finalIter)
@@ -410,8 +238,8 @@ int run_phaseless_main(Options & opts)
     vector<future<double>> res;
     std::ofstream oanc(opts.out.string() + ".Q");
     Phaseless faith(opts.K, opts.C, genome->nsamples, genome->nsnps, opts.seed);
-    faith.setFlags(opts.ptol, opts.ftol, opts.qtol, opts.debug, opts.nonewQ);
-    faith.setStartPoint(opts.in_qfile);
+    faith.setFlags(opts.ptol, opts.ftol, opts.qtol, opts.debug, opts.nQ, opts.nP, opts.nF);
+    faith.setStartPoint(opts.in_qfile, opts.in_pfile);
     faith.initRecombination(genome->pos);
     double loglike, diff, prevlike{std::numeric_limits<double>::lowest()};
     if(opts.noaccel)
@@ -540,7 +368,7 @@ int run_phaseless_main(Options & opts)
     faith.Q = (faith.Q * 1e6).round() / 1e6;
     oanc << std::fixed << faith.Q.transpose().format(fmt) << "\n";
     std::unique_ptr<Pars> par = std::make_unique<Pars>();
-    par->init(faith.K, faith.C, faith.M, faith.N, faith.er, faith.et, faith.P, faith.Q, faith.F);
+    par->init(faith.K, faith.C, faith.M, faith.N, faith.er, faith.P, faith.Q, faith.F);
     par->pos = genome->pos;
     par->gls = genome->gls;
     std::ofstream opar(opts.out.string() + ".pars.bin", std::ios::out | std::ios::binary);

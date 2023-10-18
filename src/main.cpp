@@ -58,7 +58,7 @@ int main(int argc, char * argv[])
         .default_value(std::string{""});
     cmd_joint.add_argument("-i", "--iterations")
         .help("number of EM iterations")
-        .default_value(40)
+        .default_value(1000)
         .scan<'i', int>();
     cmd_joint.add_argument("-l", "--ltol")
         .help("tolerance of stopping criteria for diff(loglikelihood)")
@@ -98,8 +98,19 @@ int main(int argc, char * argv[])
     cmd_joint.add_argument("--qfile")
         .help("read Q file as the start point")
         .default_value(std::string{""});
-    cmd_joint.add_argument("--no-newQ")
+    cmd_joint.add_argument("--pfile")
+        .help("read P file as the start point")
+        .default_value(std::string{""});
+    cmd_joint.add_argument("--NQ")
         .help("disable updating Q")
+        .default_value(false)
+        .implicit_value(true);
+    cmd_joint.add_argument("--NP")
+        .help("disable updating P")
+        .default_value(false)
+        .implicit_value(true);
+    cmd_joint.add_argument("--NF")
+        .help("disable updating F")
         .default_value(false)
         .implicit_value(true);
     // cmd_joint.add_parents(program);
@@ -279,7 +290,9 @@ int main(int argc, char * argv[])
             opts.ptol = cmd_joint.get<double>("--ptol");
             opts.ftol = cmd_joint.get<double>("--ftol");
             opts.qtol = cmd_joint.get<double>("--qtol");
-            opts.nonewQ = cmd_joint.get<bool>("--no-newQ");
+            opts.nQ = cmd_joint.get<bool>("--NQ");
+            opts.nP = cmd_joint.get<bool>("--NP");
+            opts.nF = cmd_joint.get<bool>("--NF");
             if(opts.single_chunk) opts.chunksize = INT_MAX;
             if((opts.in_beagle.empty() && opts.in_vcf.empty()) || cmd_joint.get<bool>("--help"))
                 throw std::runtime_error(cmd_joint.help().str());
@@ -316,7 +329,7 @@ int main(int argc, char * argv[])
             opts.qtol = cmd_admix.get<double>("--qtol");
             opts.ltol = cmd_admix.get<double>("--ltol");
             opts.noaccel = cmd_admix.get<bool>("--no-accel");
-            opts.nonewQ = cmd_admix.get<bool>("--no-newQ");
+            opts.nQ = cmd_admix.get<bool>("--no-NQ");
             if(opts.in_bin.empty() || cmd_admix.get<bool>("--help")) throw std::runtime_error(cmd_admix.help().str());
             run_admix_main(opts);
         }

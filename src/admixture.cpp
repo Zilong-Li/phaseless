@@ -215,7 +215,7 @@ int run_admix_main(Options & opts)
 
     cao.warn(tim.date(), "-> running admixture with seed =", opts.seed);
     Admixture admixer(genome->nsamples, genome->G, genome->C, opts.K, opts.seed);
-    admixer.setFlags(opts.debug, opts.nonewQ);
+    admixer.setFlags(opts.debug, opts.nQ);
     admixer.setStartPoint(opts.in_qfile);
     vector<future<double>> llike;
     if(!opts.noaccel)

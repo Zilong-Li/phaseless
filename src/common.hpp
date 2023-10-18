@@ -95,9 +95,10 @@ struct Options
     double ptol{1e-6}; // threshold for P
     double ftol{1e-6}; // threshold for F
     double qtol{1e-6}; // threshold for Q
-    bool nonewQ{0}, noaccel{0}, noscreen{0}, single_chunk{0}, debug{0}, collapse{0};
+    bool noaccel{0}, noscreen{0}, single_chunk{0}, debug{0}, collapse{0};
+    bool nQ{0}, nP{0}, nF{0};
     std::filesystem::path out, in_beagle, in_vcf, in_bin, in_impute, in_joint;
-    std::string samples{""}, region{""}, in_plink{""}, in_qfile{""};
+    std::string samples{""}, region{""}, in_plink{""}, in_qfile{""}, in_pfile{""};
     std::string opts_in_effect{"Options in effect:\n   "};
 };
 
@@ -121,7 +122,6 @@ struct Pars
               int M_,
               int N_,
               const MyArr1D & ier,
-              const MyArr1D & iet,
               const MyArr2D & iP,
               const MyArr2D & iQ,
               const std::vector<MyArr2D> & iF)
@@ -133,13 +133,12 @@ struct Pars
         P = MyFloat1D(iP.data(), iP.data() + iP.size());
         Q = MyFloat1D(iQ.data(), iQ.data() + iQ.size());
         er = MyFloat1D(ier.data(), ier.data() + ier.size());
-        et = MyFloat1D(iet.data(), iet.data() + iet.size());
         for(size_t k = 0; k < iF.size(); k++) F.emplace_back(MyFloat1D(iF[k].data(), iF[k].data() + iF[k].size()));
     }
     int K, C, M, N;
     MyFloat1D P, Q;
     MyFloat2D F; // K x C x M, ancestral cluster frequency
-    MyFloat1D er, et; // M, jumping rate
+    MyFloat1D er; // M, jumping rate
     Int2D pos; // store position of markers of each chunk
     MyFloat2D gls; // store gl(N, M*3) of each chunk
     String1D sampleids;
