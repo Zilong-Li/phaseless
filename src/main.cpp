@@ -256,6 +256,24 @@ int main(int argc, char * argv[])
         .help("seed for reproducibility")
         .default_value(999)
         .scan<'i', int>();
+    cmd_parse.add_argument("--qfile")
+        .help("read Q file as the start point")
+        .default_value(std::string{""});
+    cmd_parse.add_argument("--pfile")
+        .help("read P file as the start point")
+        .default_value(std::string{""});
+    cmd_parse.add_argument("--NQ")
+        .help("disable updating Q")
+        .default_value(false)
+        .implicit_value(true);
+    cmd_parse.add_argument("--NP")
+        .help("disable updating P")
+        .default_value(false)
+        .implicit_value(true);
+    cmd_parse.add_argument("--NF")
+        .help("disable updating F")
+        .default_value(false)
+        .implicit_value(true);
     // cmd_parse.add_parents(program);
 
     program.add_subparser(cmd_impute);
@@ -338,10 +356,15 @@ int main(int argc, char * argv[])
         {
             opts.in_impute.assign(cmd_parse.get("--impute"));
             opts.in_joint.assign(cmd_parse.get("--joint"));
+            opts.in_qfile.assign(cmd_parse.get("--qfile"));
+            opts.in_pfile.assign(cmd_parse.get("--pfile"));
             opts.out.assign(cmd_parse.get("--out"));
             opts.seed = cmd_parse.get<int>("--seed");
             opts.samples = cmd_parse.get("--samples-file");
             opts.ichunk = cmd_parse.get<int>("--chunk");
+            opts.nQ = cmd_parse.get<bool>("--NQ");
+            opts.nP = cmd_parse.get<bool>("--NP");
+            opts.nF = cmd_parse.get<bool>("--NF");
             if((opts.in_impute.empty() && opts.in_joint.empty()) || cmd_parse.get<bool>("--help"))
                 throw std::runtime_error(cmd_parse.help().str());
             run_parse_main(opts);

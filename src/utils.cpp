@@ -38,30 +38,37 @@ int run_parse_main(Options & opts)
         ifs.close();
         assert((bool)ec == false);
         Phaseless faith(par->K, par->C, par->N, par->M, opts.seed);
+        faith.setFlags(opts.ptol, opts.ftol, opts.qtol, opts.debug, opts.nQ, opts.nP, opts.nF);
         faith.initRecombination(par->pos);
         faith.setStartPoint(par);
-        faith.initIteration();
-        faith.local = true, faith.post = false;
-        Int1D ids;
-        if(opts.samples.empty())
+        faith.setStartPoint(opts.in_qfile, opts.in_pfile);
+        double loglike, diff, prevlike{std::numeric_limits<double>::lowest()};
+        vector<future<double>> res;
+        ThreadPool pool(opts.nthreads);
+        for(int it = 0; SIG_COND && it <= opts.nimpute; it++)
         {
-            for(int ind = 0; ind < par->N; ind++) ids.push_back(ind);
-        }
-        else
-        {
-            UMapStringInt ids_m;
-            int i = 0;
-            for(auto & id : par->sampleids) ids_m[id] = i++;
-            std::ifstream ifs(opts.samples);
-            if(!ifs.is_open()) cao.error("can not open the file: ", opts.samples);
-            std::string line;
-            while(getline(ifs, line)) ids.push_back(ids_m[line]);
-        }
-        int ic = opts.ichunk;
-        for(auto ind : ids)
-        {
-            faith.runForwardBackwards(ind, ic, par->gls[ic], true);
-            std::ofstream ofs(opts.out.string() + ".sample_" + to_string(ind) + ".la");
+            tim.clock();
+            faith.initIteration();
+            for(int i = 0; i < par->N; i++)
+            {
+                if(it == opts.nimpute)
+                    res.emplace_back(pool.enqueue(&Phaseless::runBigass, &faith, i, std::ref(par->gls), true));
+                else
+                    res.emplace_back(pool.enqueue(&Phaseless::runBigass, &faith, i, std::ref(par->gls), false));
+            }
+            loglike = 0;
+            for(auto && ll : res) loglike += ll.get();
+            res.clear(); // clear future and renew
+            faith.updateIteration();
+            diff = it ? loglike - prevlike : NAN;
+            prevlike = loglike;
+            cao.print(tim.date(), "run whole genome, iteration", it, ", likelihoods =", loglike, ", diff =", diff,
+                      ", time", tim.reltime(), " sec");
+            if(diff < opts.ltol)
+            {
+                cao.print(tim.date(), "hit stopping criteria, diff =", std::scientific, diff, " <", opts.ltol);
+                break;
+            }
         }
         return 0;
     }
