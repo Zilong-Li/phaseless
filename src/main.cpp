@@ -242,6 +242,10 @@ int main(int argc, char * argv[])
     cmd_parse.add_argument("-j", "--joint")
         .help("binary format from joint command as input")
         .default_value(std::string{""});
+    cmd_parse.add_argument("-i", "--iterations")
+        .help("number of EM iterations")
+        .default_value(1000)
+        .scan<'i', int>();
     cmd_parse.add_argument("-n", "--threads")
         .help("number of threads")
         .default_value(10)
@@ -363,6 +367,7 @@ int main(int argc, char * argv[])
             opts.in_qfile.assign(cmd_parse.get("--qfile"));
             opts.in_pfile.assign(cmd_parse.get("--pfile"));
             opts.out.assign(cmd_parse.get("--out"));
+            opts.nimpute = cmd_parse.get<int>("--iterations");
             opts.nthreads = cmd_parse.get<int>("--threads");
             opts.seed = cmd_parse.get<int>("--seed");
             opts.samples = cmd_parse.get("--samples-file");

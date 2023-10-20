@@ -100,12 +100,12 @@ int run_parse_main(Options & opts)
             // third accel iter
             // update Q and F using the second em iter
             faith.Q = Q0 + 2 * alpha * (Q1 - Q0) + alpha * alpha * (faith.Q - 2 * Q1 + Q0);
-            for(int k = 0; k < opts.K; k++)
+            for(int k = 0; k < faith.K; k++)
                 faith.F[k] =
-                    F0.middleRows(k * opts.C, opts.C)
-                    + 2 * alpha * (F1.middleRows(k * opts.C, opts.C) - F0.middleRows(k * opts.C, opts.C))
+                    F0.middleRows(k * faith.C, faith.C)
+                    + 2 * alpha * (F1.middleRows(k * faith.C, faith.C) - F0.middleRows(k * faith.C, faith.C))
                     + alpha * alpha
-                          * (faith.F[k] - 2 * F1.middleRows(k * opts.C, opts.C) + F0.middleRows(k * opts.C, opts.C));
+                          * (faith.F[k] - 2 * F1.middleRows(k * faith.C, faith.C) + F0.middleRows(k * faith.C, faith.C));
             faith.protectPars();
             faith.initIteration();
             for(int i = 0; i < par->N; i++)
@@ -119,7 +119,7 @@ int run_parse_main(Options & opts)
             F2 = cat_stdvec_of_eigen(faith.F);
             // check if normal third iter is better
             faith.Q = Qt;
-            for(int k = 0; k < opts.K; k++) faith.F[k] = Ft.middleRows(k * opts.C, opts.C);
+            for(int k = 0; k < faith.K; k++) faith.F[k] = Ft.middleRows(k * faith.C, faith.C);
             faith.initIteration();
             for(int i = 0; i < par->N; i++)
                 res.emplace_back(pool.enqueue(&Phaseless::runBigass, &faith, i, std::ref(par->gls), false));
@@ -129,14 +129,14 @@ int run_parse_main(Options & opts)
             faith.updateIteration();
             if(logcheck - loglike > 0.1)
             {
-                if(opts.debug)
+                if(faith.debug)
                     cao.warn(tim.date(), "normal EM yields better likelihoods than the accelerated EM.", logcheck, " -",
                              loglike, "> 0.1");
             }
             else
             {
                 faith.Q = Q2;
-                for(int k = 0; k < opts.K; k++) faith.F[k] = F2.middleRows(k * opts.C, opts.C);
+                for(int k = 0; k < faith.K; k++) faith.F[k] = F2.middleRows(k * faith.C, faith.C);
             }
         }
         faith.Q = (faith.Q * 1e6).round() / 1e6;
