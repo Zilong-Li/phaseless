@@ -64,11 +64,6 @@ int run_parse_main(Options & opts)
             prevlike = loglike;
             cao.print(tim.date(), "run whole genome, iteration", it, ", likelihoods =", loglike, ", diff =", diff,
                       ", time", tim.reltime(), " sec");
-            if(diff < opts.ltol)
-            {
-                cao.print(tim.date(), "hit stopping criteria, diff =", std::scientific, diff, " <", opts.ltol);
-                break;
-            }
         }
         return 0;
     }
