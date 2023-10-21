@@ -35,7 +35,7 @@ class Phaseless
     ~Phaseless() {}
 
     // FLAGS
-    bool debug{0}, local{0}, post{1}, NQ{0}, NF{0}, NP{0}, NR{0};
+    bool debug{0}, local{0}, post{1}, NQ{0}, NF{0}, NP{1}, NR{1};
     // SHARED VARIBALES
     const int K, C, N, M, KK, CC; // CC = C x C, KK = K x K
     double nGen;

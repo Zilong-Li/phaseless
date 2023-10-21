@@ -24,7 +24,7 @@ std::string make_beagle_header(std::string fam)
 
 int run_parse_main(Options & opts)
 {
-    cao.cao.open(opts.out.string() + ".log");
+    cao.cao.open(opts.out + ".log");
     cao.is_screen = !opts.noscreen;
     cao.print(opts.opts_in_effect);
     if(!opts.in_joint.empty())
@@ -45,7 +45,7 @@ int run_parse_main(Options & opts)
         double loglike, diff, prevlike{std::numeric_limits<double>::lowest()};
         Eigen::IOFormat fmt(6, Eigen::DontAlignCols, " ", "\n");
         vector<future<double>> res;
-        std::ofstream oanc(opts.out.string() + ".Q");
+        std::ofstream oanc(opts.out + ".Q");
         ThreadPool pool(opts.nthreads);
         if(opts.noaccel)
         {
@@ -212,8 +212,8 @@ int run_parse_main(Options & opts)
             while(getline(ifs, line)) ids.push_back(ids_m[line]);
         }
         // haplike is p(Z_is |X_is , theta) = alpha * beta / p(X|theta) = gamma
-        std::ofstream ofs_alpha(opts.out.string() + ".alpha.bin", std::ios::binary);
-        std::ofstream ofs_beta(opts.out.string() + ".beta.bin", std::ios::binary);
+        std::ofstream ofs_alpha(opts.out + ".alpha.bin", std::ios::binary);
+        std::ofstream ofs_beta(opts.out + ".beta.bin", std::ios::binary);
         int nsamples = ids.size();
         ofs_alpha.write((char *)&genome->C, 4);
         ofs_alpha.write((char *)&nsamples, 4);
@@ -246,7 +246,7 @@ int run_parse_main(Options & opts)
             const int nGrids = genome->B > 1 ? (iM + genome->B - 1) / genome->B : iM;
             ofs_alpha.write((char *)&nGrids, 4);
             ofs_beta.write((char *)&nGrids, 4);
-            std::ofstream ofs_ae(opts.out.string() + ".cluster.freq");
+            std::ofstream ofs_ae(opts.out + ".cluster.freq");
             Eigen::IOFormat fmt(6, Eigen::DontAlignCols, "\t", "\n");
             MyArr2D ae = MyArr2D::Zero(genome->C, nGrids);
             for(auto ind : ids)
@@ -271,7 +271,7 @@ int run_parse_main(Options & opts)
 
 int run_convert_main(Options & opts)
 {
-    cao.cao.open(opts.out.string() + ".log");
+    cao.cao.open(opts.out + ".log");
     cao.is_screen = !opts.noscreen;
     cao.print(opts.opts_in_effect);
     std::setlocale(LC_ALL, "C"); // use minial locale
@@ -294,7 +294,7 @@ int run_convert_main(Options & opts)
         const auto [bed, marker] = read_plink_bed(ifs_bed, ifs_bim, nsamples, opts.chunksize);
         res.emplace_back(pool.enqueue(convert_geno2like, bed, marker, nsamples));
     }
-    string out{opts.out.string() + ".gz"};
+    string out{opts.out + ".gz"};
     gzFile gzfp = gzopen(out.c_str(), "wb");
     gzwrite(gzfp, hdr.c_str(), hdr.size());
     for(auto && ll : res)

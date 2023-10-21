@@ -2,9 +2,9 @@
  * @file        https://github.com/Zilong-Li/vcfpp/vcfpp.h
  * @author      Zilong Li
  * @email       zilong.dk@gmail.com
- * @version     v0.1.4
+ * @version     v0.3.1
  * @breif       a single C++ file for manipulating VCF
- * Copyright (C) 2022. The use of this code is governed by the LICENSE file.
+ * Copyright (C) 2022-2023.The use of this code is governed by the LICENSE file.
  ******************************************************************************/
 
 /*! \mainpage The documentation of the single C++ file *vcfpp.h* for manipulating VCF/BCF
@@ -47,6 +47,7 @@
 // make sure you have htslib installed
 extern "C"
 {
+#    include <htslib/kstring.h>
 #    include <htslib/tbx.h>
 #    include <htslib/vcf.h>
 #    include <htslib/vcfutils.h>
@@ -82,9 +83,14 @@ using isString = typename std::enable_if<std::is_same<T, std::string>::value, vo
 
 template<typename T>
 using isValidGT = typename std::enable_if<std::is_same<T, std::vector<bool>>::value
-                                              || std::is_same<T, std::vector<char>>::value
-                                              || std::is_same<T, std::vector<int>>::value,
+                                              || std::is_same<T, std::vector<char>>::value,
                                           bool>::type;
+
+template<typename T>
+using isGtVector = typename std::enable_if<
+    std::is_same<T, std::vector<bool>>::value || std::is_same<T, std::vector<char>>::value
+        || std::is_same<T, std::string>::value || std::is_same<T, std::vector<int>>::value,
+    bool>::type;
 
 template<typename T>
 using isFormatVector = typename std::enable_if<std::is_same<T, std::vector<float>>::value
@@ -118,6 +124,27 @@ inline bool isEndWith(std::string const & s, std::string const & e)
     }
 }
 
+// string split by separator
+inline std::vector<std::string> split_string(const std::string & s, const std::string & separators)
+{
+    std::vector<std::string> ret;
+    bool is_seperator[256] = {false};
+    for(auto & ch : separators)
+    {
+        is_seperator[(unsigned int)ch] = true;
+    }
+    int begin = 0;
+    for(int i = 0; i <= (int)s.size(); i++)
+    {
+        if(is_seperator[(uint8_t)s[i]] || i == (int)s.size())
+        {
+            ret.push_back(std::string(s.begin() + begin, s.begin() + i));
+            begin = i + 1;
+        }
+    }
+    return ret;
+}
+
 /**
  * @class BcfHeader
  * @brief Object represents the header in VCF
@@ -129,10 +156,14 @@ class BcfHeader
     friend class BcfReader;
     friend class BcfWriter;
 
+  private:
+    bcf_hdr_t * hdr = NULL; // bcf header
+    bcf_hrec_t * hrec = NULL; // populate header
+
   public:
     BcfHeader() {}
 
-    virtual ~BcfHeader() {}
+    ~BcfHeader() {}
 
     /** @brief print out the header */
     friend std::ostream & operator<<(std::ostream & out, const BcfHeader & h)
@@ -249,6 +280,25 @@ class BcfHeader
         return vec;
     }
 
+    /**
+     *  @brief get the type of a given tag
+     *  @param tag in the FORMAT
+     *  @return 1: int; 2: float; 3: string; 0: error;
+     */
+    inline int getFormatType(std::string tag) const
+    {
+        int tag_id = bcf_hdr_id2int(hdr, BCF_DT_ID, tag.c_str());
+        if(tag_id < 0) return 0;
+        if(bcf_hdr_id2type(hdr, BCF_HL_FMT, tag_id) == (BCF_HT_INT & 0xff))
+            return 1;
+        else if(bcf_hdr_id2type(hdr, BCF_HL_FMT, tag_id) == (BCF_HT_REAL & 0xff))
+            return 2;
+        else if(bcf_hdr_id2type(hdr, BCF_HL_FMT, tag_id) == (BCF_HT_STR & 0xff))
+            return 3;
+        else
+            return 0;
+    }
+
     /** @brief remove a contig tag from header */
     inline void removeContig(std::string tag) const
     {
@@ -300,10 +350,6 @@ class BcfHeader
     {
         return bcf_hdr_nsamples(hdr);
     }
-
-  private:
-    bcf_hdr_t * hdr = NULL; // bcf header
-    bcf_hrec_t * hrec = NULL; // populate header
 };
 
 /**
@@ -327,6 +373,12 @@ class BcfRecord
     int ndst, ret, nsamples;
     bool noneMissing = true; // whenever parsing a tag have to reset this variable
     bool isAllPhased = false;
+    int nploidy = 0; // the number of ploidy
+    int nvalues = 0; // the number of values for a tag in FORMAT
+
+  public:
+    /// if there is "." in GT for the sample, then it's coded as missing (TRUE)
+    std::vector<char> isGenoMissing;
 
   public:
     /** @brief initilize a BcfRecord object using a given BcfHeader object. */
@@ -337,7 +389,7 @@ class BcfRecord
         gtPhase.resize(nsamples, 0);
     }
 
-    virtual ~BcfRecord() {}
+    ~BcfRecord() {}
 
     /** @brief stream out the variant */
     friend std::ostream & operator<<(std::ostream & out, const BcfRecord & v)
@@ -357,22 +409,26 @@ class BcfRecord
     }
 
     /**
-     * @brief get genotypes and fill in the input vector
-     * @param v valid input includes vector<bool>, vector<char>, vector<int> type
+     * @brief fill in the input vector with genotypes of 0 and 1. only works for ploidy<=2. genotypes with
+missing allele is coded as heterozygous
+     * @param v valid input are vector<bool> vector<char> type
      * @return bool
+     * @note user can use isNoneMissing() to check if there is genotype with missingness. then one can decide
+if the default behaviour of this function is desired. Alternatively, user can use vector<int> as the input
+type as noted in the other overloading function.
      * */
     template<typename T>
     isValidGT<T> getGenotypes(T & v)
     {
         ndst = 0;
         ret = bcf_get_genotypes(header.hdr, line, &gts, &ndst);
-        if(ret <= 1) return false; // gt not present
+        if(ret <= 0) throw std::runtime_error("genotypes not present");
         // if nploidy is not set manually. find the max nploidy using the first variant (eg. 2) resize v as
         // max(nploidy)
         // * nsamples (ret) NOTE: if ret == nsamples and only one sample then haploid
         if(ret != nploidy * nsamples && nploidy > 0)
         {
-            // rare case if noploidy is set manually. eg. only one sample. the first variant is '1' but the
+            // rare case if nploidy is set manually. eg. only one sample. the first variant is '1' but the
             // second is '1/0'. ret = 1 but nploidy should be 2
             v.resize(nploidy * nsamples);
         }
@@ -382,6 +438,7 @@ class BcfRecord
             nploidy = ret / nsamples;
         }
         // work with nploidy == 1, haploid?
+        isGenoMissing.assign(nsamples, 0);
         int i, j, nphased = 0;
         noneMissing = true;
         fmt = bcf_get_fmt(header.hdr, line, "GT");
@@ -392,8 +449,10 @@ class BcfRecord
             typeOfGT[i] = bcf_gt_type(fmt, i, NULL, NULL);
             if(typeOfGT[i] == GT_UNKN)
             {
-                noneMissing = false;
-                for(j = 0; j < nploidy; j++) v[i * nploidy + j] = 0;
+                noneMissing = false; // set missing as het, user should check if isNoneMissing();
+                isGenoMissing[i] = 1;
+                v[i * nploidy + 0] = 1;
+                for(j = 1; j < nploidy_cur; j++) v[i * nploidy + j] = 0;
                 continue;
             }
 
@@ -405,6 +464,55 @@ class BcfRecord
             if(nploidy == 2)
             {
                 gtPhase[i] = (gts[1 + i * nploidy_cur] & 1) == 1;
+                nphased += gtPhase[i];
+            }
+        }
+        if(nphased == nsamples)
+            isAllPhased = true;
+        else
+            isAllPhased = false;
+        return true;
+    }
+
+    /**
+     * @brief fill in the input vector with genotyps, 0, 1 or -9 (missing).
+     * @param v valid input is vector<int> type
+     * @return bool
+     * @note this function provides full capability to handl all kinds of genotypes in multi-ploidy data with
+     * the cost of more spae than the other function. missing allele is set as -9.
+     * */
+    bool getGenotypes(std::vector<int> & v)
+    {
+        ndst = 0;
+        ret = bcf_get_genotypes(header.hdr, line, &gts, &ndst);
+        if(ret <= 0) throw std::runtime_error("genotypes not present");
+        v.resize(ret);
+        isGenoMissing.assign(nsamples, 0);
+        nploidy = ret / nsamples;
+        int i, j, nphased = 0;
+        noneMissing = true;
+        for(i = 0; i < nsamples; i++)
+        {
+            int32_t * ptr = gts + i * nploidy;
+            int is_phased = 0;
+            for(j = 0; j < nploidy; j++)
+            {
+                // if true, the sample has smaller ploidy
+                if(ptr[j] == bcf_int32_vector_end) break;
+                // missing allele
+                if(bcf_gt_is_missing(ptr[j]))
+                {
+                    noneMissing = false;
+                    isGenoMissing[i] = 1;
+                    v[i * nploidy + j] = -9;
+                    continue;
+                }
+                v[i * nploidy + j] = bcf_gt_allele(ptr[j]);
+                is_phased += bcf_gt_is_phased(ptr[j]);
+            }
+            if(nploidy == is_phased)
+            {
+                gtPhase[i] = true;
                 nphased += gtPhase[i];
             }
         }
@@ -429,13 +537,15 @@ class BcfRecord
         nvalues = fmt->n;
         ndst = 0;
         S * dst = NULL;
-        int tag_id = bcf_hdr_id2int(header.hdr, BCF_DT_ID, tag.c_str());
-        if(bcf_hdr_id2type(header.hdr, BCF_HL_FMT, tag_id) == (BCF_HT_INT & 0xff))
+        int tagid = header.getFormatType(tag);
+        if(tagid == 1)
             ret = bcf_get_format_int32(header.hdr, line, tag.c_str(), &dst, &ndst);
-        else if(bcf_hdr_id2type(header.hdr, BCF_HL_FMT, tag_id) == (BCF_HT_REAL & 0xff))
+        else if(tagid == 2)
             ret = bcf_get_format_float(header.hdr, line, tag.c_str(), &dst, &ndst);
-        else if(bcf_hdr_id2type(header.hdr, BCF_HL_FMT, tag_id) == (BCF_HT_STR & 0xff))
+        else if(tagid == 3)
             ret = bcf_get_format_char(header.hdr, line, tag.c_str(), &dst, &ndst);
+        else
+            throw std::runtime_error("can not find the type of " + tag + " in the header file.\n");
         if(ret >= 0)
         {
             // user have to check if there is missing in the return v;
@@ -462,8 +572,7 @@ class BcfRecord
         // if ndst < (fmt->n+1)*nsmpl; then realloc is involved
         ret = -1, ndst = 0;
         char ** dst = NULL;
-        int tag_id = bcf_hdr_id2int(header.hdr, BCF_DT_ID, tag.c_str());
-        if(bcf_hdr_id2type(header.hdr, BCF_HL_FMT, tag_id) == (BCF_HT_STR & 0xff))
+        if(header.getFormatType(tag) == 3)
             ret = bcf_get_format_string(header.hdr, line, tag.c_str(), &dst, &ndst);
         if(ret > 0)
         {
@@ -632,11 +741,11 @@ class BcfRecord
 
     /**
      * @brief set genotypes from scratch assume genotype not present
-     * @param v valid input include vector<int>, vector<float>, std::string
+     * @param v valid input includevector<bool>, vector<char>, vector<int>, std::string
      * @return bool
      * */
     template<class T>
-    isValidGT<T> setGenotypes(const T & v)
+    isGtVector<T> setGenotypes(const T & v)
     {
         // bcf_gt_type
         int i, j, k;
@@ -661,11 +770,11 @@ class BcfRecord
 
     /**
      * @brief update genotypes for current record, assume genotypes present
-     * @param v valid input include vector<int>, vector<float>, std::string
+     * @param v valid input includevector<bool>, vector<char>, vector<int>, std::string
      * @return bool
      * */
     template<class T>
-    isValidGT<T> updateGenotypes(const T & v)
+    isGtVector<T> updateGenotypes(const T & v)
     {
         // bcf_gt_type
         ndst = 0;
@@ -779,7 +888,7 @@ class BcfRecord
             return true;
     }
 
-    /** @brief return boolean value indicates if current variant is INDEL or not */
+    /** @brief return boolean value indicates if current variant is exclusively INDEL */
     inline bool isIndel() const
     {
         // REF has multiple allels
@@ -793,28 +902,22 @@ class BcfRecord
         return false;
     }
 
-    /** @brief return boolean value indicates if current variant is INDEL and DELETION or not */
-    inline bool isDeletion() const
+    /** @brief return boolean value indicates if current variant is multiallelic sites */
+    inline bool isMultiAllelics() const
     {
-        if(ALT().length() > 1) return false;
-        if(!isIndel()) return false;
-        if(ALT().length() == 0)
-            return true;
-        else if(ALT()[0] == '.')
-            return true;
-        if(REF().length() > ALT().length()) return true;
-        return false;
+        if(line->n_allele <= 2) return false;
+        return true;
     }
 
-    /** @brief return boolean value indicates if current variant is multi allelic or not */
-    inline bool isMultiAllelic() const
+    /** @brief return boolean value indicates if current variant is exclusively multiallelic SNP sites */
+    inline bool isMultiAllelicSNP() const
     {
-        // REF has multiple allels
+        // skip REF with length > 1, i.e. INDEL
         if(REF().length() > 1 || line->n_allele <= 2) return false;
         for(int i = 1; i < line->n_allele; i++)
         {
             std::string snp(line->d.allele[i]);
-            if(!(snp == "A" || snp == "C" || snp == "G" || snp == "T"))
+            if(snp.length() != 1)
             {
                 return false;
             }
@@ -822,7 +925,8 @@ class BcfRecord
         return true;
     }
 
-    /** @brief return boolean value indicates if current variant is SNP (biallelic) or not */
+    /** @brief return boolean value indicates if current variant is exclusively biallelic SNP. Note ALT=* are
+     * skipped */
     inline bool isSNP() const
     {
         // REF and ALT have multiple allels
@@ -832,6 +936,79 @@ class BcfRecord
         {
             return false;
         }
+        return true;
+    }
+
+    /** @brief return boolean value indicates if current variant has SNP type defined in vcf.h (htslib>=1.16)
+     */
+    inline bool hasSNP() const
+    {
+        int type = bcf_has_variant_types(line, VCF_SNP, bcf_match_overlap);
+        if(type < 0) throw std::runtime_error("something wrong with variant type\n");
+        if(type == 0) return false;
+        return true;
+    }
+
+    /// return boolean value indicates if current variant has INDEL type defined in vcf.h (htslib>=1.16)
+    inline bool hasINDEL() const
+    {
+        int type = bcf_has_variant_types(line, VCF_INDEL, bcf_match_overlap);
+        if(type < 0) throw std::runtime_error("something wrong with variant type\n");
+        if(type == 0) return false;
+        return true;
+    }
+
+    /// return boolean value indicates if current variant has INS type defined in vcf.h (htslib>=1.16)
+    inline bool hasINS() const
+    {
+        int type = bcf_has_variant_types(line, VCF_INS, bcf_match_overlap);
+        if(type < 0) throw std::runtime_error("something wrong with variant type\n");
+        if(type == 0) return false;
+        return true;
+    }
+
+    /// return boolean value indicates if current variant has DEL type defined in vcf.h (htslib>=1.16)
+    inline bool hasDEL() const
+    {
+        int type = bcf_has_variant_types(line, VCF_DEL, bcf_match_overlap);
+        if(type < 0) throw std::runtime_error("something wrong with variant type\n");
+        if(type == 0) return false;
+        return true;
+    }
+
+    /// return boolean value indicates if current variant has MNP type defined in vcf.h (htslib>=1.16)
+    inline bool hasMNP() const
+    {
+        int type = bcf_has_variant_types(line, VCF_MNP, bcf_match_overlap);
+        if(type < 0) throw std::runtime_error("something wrong with variant type\n");
+        if(type == 0) return false;
+        return true;
+    }
+
+    /// return boolean value indicates if current variant has BND type defined in vcf.h (htslib>=1.16)
+    inline bool hasBND() const
+    {
+        int type = bcf_has_variant_types(line, VCF_BND, bcf_match_overlap);
+        if(type < 0) throw std::runtime_error("something wrong with variant type\n");
+        if(type == 0) return false;
+        return true;
+    }
+
+    /// return boolean value indicates if current variant has OTHER type defined in vcf.h (htslib>=1.16)
+    inline bool hasOTHER() const
+    {
+        int type = bcf_has_variant_types(line, VCF_OTHER, bcf_match_overlap);
+        if(type < 0) throw std::runtime_error("something wrong with variant type\n");
+        if(type == 0) return false;
+        return true;
+    }
+
+    /// return boolean value indicates if current variant has OVERLAP type defined in vcf.h (htslib>=1.16)
+    inline bool hasOVERLAP() const
+    {
+        int type = bcf_has_variant_types(line, VCF_OVERLAP, bcf_match_overlap);
+        if(type < 0) throw std::runtime_error("something wrong with variant type\n");
+        if(type == 0) return false;
         return true;
     }
 
@@ -889,10 +1066,10 @@ class BcfRecord
         return std::string(line->d.allele[0]);
     }
 
-    /** @brief swap REF and ALT for biallelic */
+    /** @brief swap REF and ALT for biallelic SNP */
     inline void swap_REF_ALT()
     {
-        if(!isMultiAllelic()) std::swap(line->d.allele[0], line->d.allele[1]);
+        if(!isMultiAllelicSNP()) std::swap(line->d.allele[0], line->d.allele[1]);
     }
 
     /** @brief return raw ALT alleles as string */
@@ -944,6 +1121,79 @@ class BcfRecord
         }
     }
 
+    /** @brief return raw INFO column as string. recommend to use getINFO for specific tag. */
+    inline std::string INFO()
+    {
+        int32_t max_dt_id = header.hdr->n[BCF_DT_ID];
+        kstring_t * s = (kstring_t *)calloc(1, sizeof(kstring_t));
+        if(line->n_info)
+        {
+            int first = 1;
+            for(int i = 0; i < line->n_info; ++i)
+            {
+                bcf_info_t * z = &line->d.info[i];
+                if(!z->vptr) continue;
+                if(!first) kputc(';', s);
+                first = 0;
+                if(z->key < 0 || z->key >= max_dt_id || header.hdr->id[BCF_DT_ID][z->key].key == NULL)
+                    throw std::runtime_error("Invalid BCF and wrong INFO tag");
+                kputs(header.hdr->id[BCF_DT_ID][z->key].key, s);
+                if(z->len <= 0) continue;
+                kputc('=', s);
+                if(z->len == 1)
+                {
+                    switch(z->type)
+                    {
+                        case BCF_BT_INT8:
+                            if(z->v1.i == bcf_int8_missing)
+                                kputc('.', s);
+                            else
+                                kputw(z->v1.i, s);
+                            break;
+                        case BCF_BT_INT16:
+                            if(z->v1.i == bcf_int16_missing)
+                                kputc('.', s);
+                            else
+                                kputw(z->v1.i, s);
+                            break;
+                        case BCF_BT_INT32:
+                            if(z->v1.i == bcf_int32_missing)
+                                kputc('.', s);
+                            else
+                                kputw(z->v1.i, s);
+                            break;
+                        case BCF_BT_INT64:
+                            if(z->v1.i == bcf_int64_missing)
+                                kputc('.', s);
+                            else
+                                kputll(z->v1.i, s);
+                            break;
+                        case BCF_BT_FLOAT:
+                            if(bcf_float_is_missing(z->v1.f))
+                                kputc('.', s);
+                            else
+                                kputd(z->v1.f, s);
+                            break;
+                        case BCF_BT_CHAR:
+                            kputc(z->v1.i, s);
+                            break;
+                        default:
+                            throw std::runtime_error("Unexpected type in INFO");
+                    }
+                }
+                else
+                    bcf_fmt_array(s, z->len, z->type, z->vptr);
+            }
+            if(first) kputc('.', s);
+        }
+        else
+            kputc('.', s);
+        std::string out = std::string(s->s, s->l);
+        free(s->s);
+        free(s);
+        return out;
+    }
+
     /** @brief return boolean value indicates if genotypes of all samples are phased */
     inline bool allPhased() const
     {
@@ -954,6 +1204,12 @@ class BcfRecord
     inline int ploidy() const
     {
         return nploidy;
+    }
+
+    /** @brief in a rare case, one may want to set the number of ploidy manually */
+    inline void setPloidy(int v)
+    {
+        nploidy = v;
     }
 
     /// return the shape of current tag in FORMAT (nsamples x nvalues)
@@ -975,13 +1231,8 @@ class BcfRecord
      * */
     std::vector<char> typeOfGT;
 
-    /** @brief vector of nsamples length. keep track of the phasing status of each sample (for dploidy) */
+    /** @brief vector of nsamples length. keep track of the phasing status of each sample */
     std::vector<char> gtPhase;
-
-    /// the number of ploidy
-    int nploidy = 0;
-    /// the number of values for a tag in FORMAT
-    int nvalues = 0;
 };
 
 /**
@@ -991,7 +1242,23 @@ class BcfRecord
  **/
 class BcfReader
 {
+  private:
+    htsFile * fp = NULL; // hts file
+    hts_idx_t * hidx = NULL; // hts index file
+    tbx_t * tidx = NULL; // .tbi .csi index file for vcf files
+    hts_itr_t * itr = NULL; // hts records iterator
+    kstring_t s = {0, 0, NULL}; // kstring
+    std::string fname;
+    bool isBcf; // if the input file is bcf or vcf;
+
   public:
+    /** @brief a BcfHeader object */
+    BcfHeader header;
+    /** @brief number of samples in the VCF */
+    int nsamples;
+    /** @brief number of samples in the VCF */
+    std::vector<std::string> SamplesName;
+
     /// Construct an empty BcfReader
     BcfReader() {}
 
@@ -1007,31 +1274,26 @@ class BcfReader
     /**
      *  @brief construct a vcf/bcf reader with subset samples
      *  @param file   the input vcf/bcf with suffix vcf(.gz)/bcf(.gz) or stdin "-"
-     *  @param samples  LIST samples to include or exclude as a comma-separated string. \n
-     *                  LIST : select samples in list \n
-     *                  ^LIST : exclude samples from list \n
-     *                  "-" : include all samples \n
-     *                  "" : exclude all samples
+     *  @param region samtools-like region "chr:start-end", skip if empty
      */
-    BcfReader(const std::string & file, const std::string & samples) : fname(file)
+    BcfReader(const std::string & file, const std::string & region) : fname(file)
     {
         open(file);
-        header.setSamples(samples);
-        nsamples = bcf_hdr_nsamples(header.hdr);
+        if(!region.empty()) setRegion(region);
         SamplesName = header.getSamples();
     }
 
     /**
      *  @brief construct a vcf/bcf reader with subset samples in target region
      *  @param file   the input vcf/bcf with suffix vcf(.gz) or bcf(.gz)
+     *  @param region samtools-like region "chr:start-end", skip if empty
      *  @param samples  LIST samples to include or exclude as a comma-separated string. \n
      *                  LIST : select samples in list \n
      *                  ^LIST : exclude samples from list \n
      *                  "-" : include all samples \n
      *                  "" : exclude all samples
-     *  @param region samtools-like region "chr:start-end", skip if empty
      */
-    BcfReader(const std::string & file, const std::string & samples, const std::string & region) : fname(file)
+    BcfReader(const std::string & file, const std::string & region, const std::string & samples) : fname(file)
     {
         open(file);
         header.setSamples(samples);
@@ -1072,7 +1334,7 @@ class BcfReader
         if(itr) hts_itr_destroy(itr);
     }
 
-    virtual ~BcfReader()
+    ~BcfReader()
     {
         if(fp) hts_close(fp);
         if(itr) hts_itr_destroy(itr);
@@ -1084,27 +1346,13 @@ class BcfReader
         return hts_set_threads(fp, n);
     }
 
-    /** @brief get records of current contig to use */
-    uint64_t get_region_records(const std::string & region)
+    /** @brief get the number of records of given region */
+    uint64_t getVariantsCount(BcfRecord & r, const std::string & region)
     {
-        setRegion(region); // only one chromosome
-        int tid = 0, ret = 0, nseq = 0;
-        uint64_t records, v;
-        if(tidx)
-        {
-            tbx_seqnames(tidx, &nseq);
-        }
-        else
-        {
-            nseq = hts_idx_nseq(hidx);
-        }
-        for(tid = 0; tid < nseq; tid++)
-        {
-            ret = hts_idx_get_stat(tidx ? tidx->idx : hidx, tid, &records, &v);
-            // printf("%" PRIu64 "\n", records);
-            if(ret >= 0 && records > 0) return records;
-        }
-        return 0;
+        uint64_t c{0};
+        while(getNextVariant(r)) c++;
+        setRegion(region); // reset the region
+        return c;
     }
 
     /**
@@ -1115,12 +1363,16 @@ class BcfReader
     {
         // 1. check and load index first
         // 2. query iterval region
+        // 3. if region is empty, use "."
         if(isEndWith(fname, "bcf") || isEndWith(fname, "bcf.gz"))
         {
             isBcf = true;
             hidx = bcf_index_load(fname.c_str());
             if(itr) bcf_itr_destroy(itr); // reset current region.
-            itr = bcf_itr_querys(hidx, header.hdr, region.c_str());
+            if(region.empty())
+                itr = bcf_itr_querys(hidx, header.hdr, ".");
+            else
+                itr = bcf_itr_querys(hidx, header.hdr, region.c_str());
         }
         else
         {
@@ -1128,7 +1380,10 @@ class BcfReader
             tidx = tbx_index_load(fname.c_str());
             assert(tidx != NULL && "error loading tabix index!");
             if(itr) tbx_itr_destroy(itr); // reset current region.
-            itr = tbx_itr_querys(tidx, region.c_str());
+            if(region.empty())
+                itr = tbx_itr_querys(tidx, ".");
+            else
+                itr = tbx_itr_querys(tidx, region.c_str());
             assert(itr != NULL && "no interval region found.failed!");
         }
     }
@@ -1165,22 +1420,6 @@ class BcfReader
             return (ret == 0);
         }
     }
-
-    /** @brief a BcfHeader object */
-    BcfHeader header;
-    /** @brief number of samples in the VCF */
-    int nsamples;
-    /** @brief number of samples in the VCF */
-    std::vector<std::string> SamplesName;
-
-  private:
-    htsFile * fp = NULL; // hts file
-    hts_idx_t * hidx = NULL; // hts index file
-    tbx_t * tidx = NULL; // .tbi .csi index file for vcf files
-    hts_itr_t * itr = NULL; // hts records iterator
-    kstring_t s = {0, 0, NULL}; // kstring
-    std::string fname;
-    bool isBcf; // if the input file is bcf or vcf;
 };
 
 /**
@@ -1196,6 +1435,7 @@ class BcfWriter
     bcf1_t * b = bcf_init();
     kstring_t s = {0, 0, NULL}; // kstring
     bool isHeaderWritten = false;
+    bool isClosed = false;
 
   public:
     /// header object initialized by initalHeader
@@ -1258,9 +1498,9 @@ class BcfWriter
         initalHeader(h);
     }
 
-    virtual ~BcfWriter()
+    ~BcfWriter()
     {
-        close();
+        if(!isClosed) close();
     }
 
     /**
@@ -1294,8 +1534,9 @@ class BcfWriter
     void close()
     {
         if(!isHeaderWritten) writeHeader();
-        if(fp) hts_close(fp);
         if(b) bcf_destroy(b);
+        if(fp) hts_close(fp); // be careful of double free
+        isClosed = true;
     }
 
     /// initial a VCF header using the internal template given a specific version. VCF4.1 is the default
@@ -1315,7 +1556,7 @@ class BcfWriter
     /// write a string to a vcf line
     void writeLine(const std::string & vcfline)
     {
-        if(!isHeaderWritten) writeHeader();
+        if(!isHeaderWritten && !writeHeader()) throw std::runtime_error("could not write header out\n");
         std::vector<char> line(vcfline.begin(), vcfline.end());
         line.push_back('\0'); // don't forget string has no \0;
         s.s = &line[0];
@@ -1351,7 +1592,6 @@ class BcfWriter
         else
             return true;
     }
-
 };
 
 } // namespace vcfpp

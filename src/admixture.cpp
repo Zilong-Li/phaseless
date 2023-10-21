@@ -192,7 +192,7 @@ void Admixture::setFlags(bool debug_, bool nonewQ_)
 
 int run_admix_main(Options & opts)
 {
-    cao.cao.open(opts.out.string() + ".log");
+    cao.cao.open(opts.out + ".log");
     cao.is_screen = !opts.noscreen;
     cao.print(opts.opts_in_effect);
     cao.warn(tim.date(), "-> running admixture");
@@ -201,7 +201,7 @@ int run_admix_main(Options & opts)
     cao.print(tim.date(), avail_threads, " concurrent threads are available. use", opts.nthreads, " threads");
     ThreadPool poolit(opts.nthreads);
     // Deserialize from file
-    auto filesize = std::filesystem::file_size(opts.in_bin);
+    auto filesize = std::filesystem::file_size(std::filesystem::path(opts.in_bin));
     std::error_code ec;
     std::ifstream ifs(opts.in_bin, std::ios::in | std::ios::binary);
     constexpr auto OPTIONS = alpaca::options::fixed_length_encoding;
@@ -306,7 +306,7 @@ int run_admix_main(Options & opts)
         }
     }
     cao.done(tim.date(), "admixture done and outputting");
-    admixer.writeQ(opts.out.string() + ".Q");
+    admixer.writeQ(opts.out + ".Q");
     cao.done(tim.date(), "-> good job. have a nice day, bye!");
 
     return 0;

@@ -253,7 +253,7 @@ double Phaseless::runBigass(int ind, const MyFloat2D & GL, bool finalIter)
 
 int run_phaseless_main(Options & opts)
 {
-    cao.cao.open(opts.out.string() + ".log");
+    cao.cao.open(opts.out + ".log");
     cao.is_screen = !opts.noscreen;
     cao.print(opts.opts_in_effect);
     cao.warn(tim.date(), "-> running phaseless");
@@ -266,8 +266,8 @@ int run_phaseless_main(Options & opts)
     init_bigass(genome, opts);
     Eigen::IOFormat fmt(6, Eigen::DontAlignCols, " ", "\n");
     vector<future<double>> res;
-    std::ofstream oanc(opts.out.string() + ".Q");
-    std::ofstream op(opts.out.string() + ".P");
+    std::ofstream oanc(opts.out + ".Q");
+    std::ofstream op(opts.out + ".P");
     Phaseless faith(opts.K, opts.C, genome->nsamples, genome->nsnps, opts.seed);
     faith.setFlags(opts.ptol, opts.ftol, opts.qtol, opts.debug, opts.nQ, opts.nP, opts.nF, opts.nR);
     faith.setStartPoint(opts.in_qfile, opts.in_pfile);
@@ -403,11 +403,11 @@ int run_phaseless_main(Options & opts)
     par->init(faith.K, faith.C, faith.M, faith.N, faith.er, faith.P, faith.Q, faith.F);
     par->pos = genome->pos;
     par->gls = genome->gls;
-    std::ofstream opar(opts.out.string() + ".pars.bin", std::ios::out | std::ios::binary);
+    std::ofstream opar(opts.out + ".pars.bin", std::ios::out | std::ios::binary);
     constexpr auto OPTIONS = alpaca::options::fixed_length_encoding;
     auto bytes_written = alpaca::serialize<OPTIONS, Pars>(*par, opar);
     opar.close();
-    assert(std::filesystem::file_size(opts.out.string() + ".pars.bin") == bytes_written);
+    assert(std::filesystem::file_size(opts.out + ".pars.bin") == bytes_written);
     cao.done(tim.date(), "joint model done and outputting.", bytes_written, " bytes written to file");
 
     return 0;

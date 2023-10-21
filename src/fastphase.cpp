@@ -1,4 +1,3 @@
-
 #include "fastphase.hpp"
 
 #include "common.hpp"
@@ -599,7 +598,7 @@ fbd_res2 make_input_per_chunk(const std::unique_ptr<BigAss> & genome,
 
 int run_impute_main(Options & opts)
 {
-    cao.cao.open(opts.out.string() + ".log");
+    cao.cao.open(opts.out + ".log");
     cao.is_screen = !opts.noscreen;
     cao.print(opts.opts_in_effect);
     cao.warn(tim.date(), "-> running fastphase");
@@ -610,11 +609,11 @@ int run_impute_main(Options & opts)
 
     std::unique_ptr<BigAss> genome = std::make_unique<BigAss>();
     init_bigass(genome, opts);
-    auto bw = make_bcfwriter(opts.out.string() + ".vcf.gz", genome->chrs, genome->sampleids);
-    std::ofstream orecomb(opts.out.string() + ".recomb");
-    std::ofstream opi(opts.out.string() + ".pi");
-    std::ofstream oae(opts.out.string() + ".cluster.freq");
-    std::ofstream op(opts.out.string() + ".P");
+    auto bw = make_bcfwriter(opts.out + ".vcf.gz", genome->chrs, genome->sampleids);
+    std::ofstream orecomb(opts.out + ".recomb");
+    std::ofstream opi(opts.out + ".pi");
+    std::ofstream oae(opts.out + ".cluster.freq");
+    std::ofstream op(opts.out + ".P");
     Eigen::IOFormat fmt(6, Eigen::DontAlignCols, " ", "\n");
     if(opts.single_chunk)
     {
@@ -669,10 +668,10 @@ int run_impute_main(Options & opts)
             {
                 cao.warn(tim.date(), "start collapsing!");
                 faith.collapse_and_resize(genome->pos[ic], opts.tol_r);
-                std::ofstream orecomb2(opts.out.string() + ".recomb2");
-                std::ofstream opi2(opts.out.string() + ".pi2");
-                std::ofstream oae2(opts.out.string() + ".cluster.freq2");
-                std::ofstream oclp(opts.out.string() + ".collapse");
+                std::ofstream orecomb2(opts.out + ".recomb2");
+                std::ofstream opi2(opts.out + ".pi2");
+                std::ofstream oae2(opts.out + ".cluster.freq2");
+                std::ofstream oclp(opts.out + ".collapse");
                 opts.nimpute = 2;
                 for(int it = 0; it <= opts.nimpute; it++)
                 {
@@ -736,10 +735,10 @@ int run_impute_main(Options & opts)
         }
     }
     constexpr auto OPTIONS = alpaca::options::fixed_length_encoding;
-    std::ofstream ofs(opts.out.string() + ".pars.bin", std::ios::out | std::ios::binary);
+    std::ofstream ofs(opts.out + ".pars.bin", std::ios::out | std::ios::binary);
     auto bytes_written = alpaca::serialize<OPTIONS, BigAss>(*genome, ofs);
     ofs.close();
-    assert(std::filesystem::file_size(opts.out.string() + ".pars.bin") == bytes_written);
+    assert(std::filesystem::file_size(opts.out + ".pars.bin") == bytes_written);
     cao.done(tim.date(), "imputation done and outputting.", bytes_written, " bytes written to file");
     return 0;
 }
