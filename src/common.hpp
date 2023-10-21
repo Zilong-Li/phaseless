@@ -99,7 +99,7 @@ struct Options
     bool noaccel{0}, noscreen{0}, single_chunk{0}, debug{0}, collapse{0};
     bool nQ{0}, nP{0}, nF{0};
     std::filesystem::path out, in_beagle, in_vcf, in_bin, in_impute, in_joint;
-    std::string samples{""}, region{""}, in_plink{""}, in_qfile{""}, in_pfile{""};
+    std::string samples{""}, region{""}, in_plink{""}, in_qfile{""}, in_pfile{""}, in_rfile{""};
     std::string opts_in_effect{"Options in effect:\n   "};
 };
 

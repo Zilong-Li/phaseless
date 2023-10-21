@@ -76,6 +76,9 @@ int main(int argc, char * argv[])
     program.add_argument("--pfile")
         .help("read P file as the start point")
         .default_value(std::string{""});
+    program.add_argument("--rfile")
+        .help("read R file as the start point")
+        .default_value(std::string{""});
 
     argparse::ArgumentParser cmd_joint("joint", VERSION, default_arguments::help);
     cmd_joint.add_description("run phasing and admixture inference in one goal");
@@ -262,6 +265,7 @@ int main(int argc, char * argv[])
         program.parse_args(argc, argv);
         opts.debug = program.get<bool>("--debug");
         opts.noscreen = program.get<bool>("--no-stdout");
+        opts.in_rfile.assign(program.get("--rfile"));
         opts.in_qfile.assign(program.get("--qfile"));
         opts.in_pfile.assign(program.get("--pfile"));
         opts.ptol = program.get<double>("--ptol");

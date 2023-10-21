@@ -30,6 +30,7 @@ class Phaseless
                                                                       1 - clusterFreqThreshold);
             F[i].rowwise() /= F[i].colwise().sum();
         }
+        R = MyArr2D(3, M);
     }
     ~Phaseless() {}
 
@@ -52,8 +53,8 @@ class Phaseless
 
     void setStartPoint(std::string, std::string);
     void setStartPoint(const std::unique_ptr<Pars> &);
-    void initRecombination(const Int1D & pos, double Ne = 20000, int B = 1);
-    void initRecombination(const Int2D & pos, double Ne = 20000, int B = 1);
+    void initRecombination(const Int1D & pos, std::string rfile = "", double Ne = 20000, int B = 1);
+    void initRecombination(const Int2D & pos, std::string rfile = "", double Ne = 20000, int B = 1);
     void setFlags(double, double, double, bool, bool, bool, bool);
     void protectPars();
     void initIteration();

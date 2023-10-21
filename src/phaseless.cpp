@@ -13,17 +13,24 @@
 
 using namespace std;
 
-void Phaseless::initRecombination(const Int1D & pos, double Ne, int B)
+void Phaseless::initRecombination(const Int1D & pos, std::string rfile, double Ne, int B)
 {
-    nGen = 4 * Ne / C;
-    er = calc_distRate(pos, C, 1.0);
-    R = MyArr2D(3, M);
-    R.row(0) = er.square();
-    R.row(1) = er * (1 - er);
-    R.row(2) = (1 - er).square();
+    if(rfile.empty())
+    {
+        nGen = 4 * Ne / C;
+        er = calc_distRate(pos, C, 1.0);
+        R.row(0) = er.square();
+        R.row(1) = er * (1 - er);
+        R.row(2) = (1 - er).square();
+    }
+    else
+    {
+        load_csv(rfile, R);
+        er = R.row(0).sqrt();
+    }
 }
 
-void Phaseless::initRecombination(const Int2D & pos, double Ne, int B)
+void Phaseless::initRecombination(const Int2D & pos, std::string rfile, double Ne, int B)
 {
     int nchunks = pos.size();
     pos_chunk.resize(nchunks + 1);
@@ -36,10 +43,17 @@ void Phaseless::initRecombination(const Int2D & pos, double Ne, int B)
         ss += pos[i].size();
     }
     pos_chunk[nchunks] = ss; // add sentinel
-    R = MyArr2D(3, M);
-    R.row(0) = er.square();
-    R.row(1) = er * (1 - er);
-    R.row(2) = (1 - er).square();
+    if(rfile.empty())
+    {
+        R.row(0) = er.square();
+        R.row(1) = er * (1 - er);
+        R.row(2) = (1 - er).square();
+    }
+    else
+    {
+        load_csv(rfile, R);
+        er = R.row(0).sqrt();
+    }
 }
 
 void Phaseless::setFlags(double tol_p, double tol_f, double tol_q, bool debug_, bool nQ, bool nP, bool nF)
@@ -62,6 +76,9 @@ void Phaseless::setStartPoint(std::string qfile, std::string pfile)
 void Phaseless::setStartPoint(const std::unique_ptr<Pars> & par)
 {
     er = Eigen::Map<MyArr1D>(par->er.data(), M);
+    R.row(0) = er.square();
+    R.row(1) = er * (1 - er);
+    R.row(2) = (1 - er).square();
     Q = Eigen::Map<MyArr2D>(par->Q.data(), K, N);
     P = Eigen::Map<MyArr2D>(par->P.data(), M, C);
     for(int i = 0; i < K; i++) F[i] = Eigen::Map<MyArr2D>(par->F[i].data(), C, M);
@@ -246,7 +263,7 @@ int run_phaseless_main(Options & opts)
     Phaseless faith(opts.K, opts.C, genome->nsamples, genome->nsnps, opts.seed);
     faith.setFlags(opts.ptol, opts.ftol, opts.qtol, opts.debug, opts.nQ, opts.nP, opts.nF);
     faith.setStartPoint(opts.in_qfile, opts.in_pfile);
-    faith.initRecombination(genome->pos);
+    faith.initRecombination(genome->pos, opts.in_rfile);
     double loglike, diff, prevlike{std::numeric_limits<double>::lowest()};
     if(opts.noaccel)
     {
@@ -332,11 +349,11 @@ int run_phaseless_main(Options & opts)
             // update Q and F using the second em iter
             faith.Q = Q0 + 2 * alpha * (Q1 - Q0) + alpha * alpha * (faith.Q - 2 * Q1 + Q0);
             for(int k = 0; k < faith.K; k++)
-                faith.F[k] =
-                    F0.middleRows(k * faith.C, faith.C)
-                    + 2 * alpha * (F1.middleRows(k * faith.C, faith.C) - F0.middleRows(k * faith.C, faith.C))
-                    + alpha * alpha
-                          * (faith.F[k] - 2 * F1.middleRows(k * faith.C, faith.C) + F0.middleRows(k * faith.C, faith.C));
+                faith.F[k] = F0.middleRows(k * faith.C, faith.C)
+                             + 2 * alpha * (F1.middleRows(k * faith.C, faith.C) - F0.middleRows(k * faith.C, faith.C))
+                             + alpha * alpha
+                                   * (faith.F[k] - 2 * F1.middleRows(k * faith.C, faith.C)
+                                      + F0.middleRows(k * faith.C, faith.C));
             faith.protectPars();
             faith.initIteration();
             for(int i = 0; i < faith.N; i++)
