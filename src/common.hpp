@@ -24,6 +24,7 @@
 #include <string>
 #include <unordered_map>
 #include <vector>
+#include <sys/utsname.h>
 
 // MAKE SOME TOOLS FULLY ACCESSIBLE THROUGHOUT THE SOFTWARE
 #ifdef _DECLARE_TOOLBOX_HERE
@@ -155,6 +156,24 @@ inline auto calc_position_distance(const Int1D & markers)
 //******************************************************************************
 //                               STRING UTILS
 //******************************************************************************
+
+inline std::string get_machine()
+{
+    struct utsname unameData;
+    if(uname(&unameData) != 0)
+    {
+        perror("uname");
+        exit(EXIT_FAILURE);
+    }
+    std::string machine{unameData.machine};
+    std::string node{unameData.nodename};
+    std::string release{unameData.release};
+    std::string version{unameData.version};
+    std::string sysname{unameData.sysname};
+    return "Machine name: " + machine + "\nNode name: " + node + "\nOperating system release: " + release
+           + "\nOperating system version: " + version + "\nOperating system name: " + sysname + "\n";
+}
+
 
 inline std::vector<std::string> split_string(const std::string & s, const std::string & separators)
 {

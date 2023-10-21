@@ -254,7 +254,7 @@ int run_phaseless_main(Options & opts)
         {
             tim.clock();
             faith.initIteration();
-            for(int i = 0; i < genome->nsamples; i++)
+            for(int i = 0; i < faith.N; i++)
             {
                 if(it == opts.nimpute)
                     res.emplace_back(pool.enqueue(&Phaseless::runBigass, &faith, i, std::ref(genome->gls), true));
@@ -288,7 +288,7 @@ int run_phaseless_main(Options & opts)
             faith.initIteration();
             Q0 = faith.Q;
             F0 = cat_stdvec_of_eigen(faith.F);
-            for(int i = 0; i < genome->nsamples; i++)
+            for(int i = 0; i < faith.N; i++)
                 res.emplace_back(pool.enqueue(&Phaseless::runBigass, &faith, i, std::ref(genome->gls), false));
             loglike = 0;
             for(auto && ll : res) loglike += ll.get();
@@ -299,7 +299,7 @@ int run_phaseless_main(Options & opts)
             faith.initIteration();
             Q1 = faith.Q;
             F1 = cat_stdvec_of_eigen(faith.F);
-            for(int i = 0; i < genome->nsamples; i++)
+            for(int i = 0; i < faith.N; i++)
                 res.emplace_back(pool.enqueue(&Phaseless::runBigass, &faith, i, std::ref(genome->gls), false));
             loglike = 0;
             for(auto && ll : res) loglike += ll.get();
@@ -339,7 +339,7 @@ int run_phaseless_main(Options & opts)
                           * (faith.F[k] - 2 * F1.middleRows(k * faith.C, faith.C) + F0.middleRows(k * faith.C, faith.C));
             faith.protectPars();
             faith.initIteration();
-            for(int i = 0; i < genome->nsamples; i++)
+            for(int i = 0; i < faith.N; i++)
                 res.emplace_back(pool.enqueue(&Phaseless::runBigass, &faith, i, std::ref(genome->gls), false));
             loglike = 0;
             for(auto && ll : res) loglike += ll.get();
@@ -352,7 +352,7 @@ int run_phaseless_main(Options & opts)
             faith.Q = Qt;
             for(int k = 0; k < faith.K; k++) faith.F[k] = Ft.middleRows(k * faith.C, faith.C);
             faith.initIteration();
-            for(int i = 0; i < genome->nsamples; i++)
+            for(int i = 0; i < faith.N; i++)
                 res.emplace_back(pool.enqueue(&Phaseless::runBigass, &faith, i, std::ref(genome->gls), false));
             logcheck = 0;
             for(auto && ll : res) logcheck += ll.get();

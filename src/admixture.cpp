@@ -252,11 +252,6 @@ int run_admix_main(Options & opts)
             cao.print(tim.date(), "SqS3 iteration", it * 3 + 1, ", diff(Q) =", std::scientific, qdiff,
                       ", alpha=", alpha, ", likelihoods =", std::fixed, loglike, ", diff(likelihoods)=", ldiff,
                       ", elapsed", tim.reltime(), " sec");
-            if(qdiff < opts.qtol)
-            {
-                cao.print(tim.date(), "hit stopping criteria, diff(Q) =", std::scientific, qdiff, " <", opts.qtol);
-                break;
-            }
             if(ldiff < opts.ltol)
             {
                 cao.print(tim.date(), "hit stopping criteria, diff(loglikelihood) =", std::scientific, ldiff, " <",
@@ -307,7 +302,6 @@ int run_admix_main(Options & opts)
             cao.print(tim.date(), "normal iteration", it, ", diff(Q) =", std::scientific, qdiff,
                       ", likelihoods =", std::fixed, loglike, ", diff(likelihoods)=", ldiff, ", elapsed", tim.reltime(),
                       " sec");
-            if(qdiff < opts.qtol) break;
             if(ldiff < opts.ltol) break;
         }
     }

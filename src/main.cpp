@@ -18,7 +18,7 @@ int main(int argc, char * argv[])
 {
     // ========= helper message and parameters parsing ===========================
 
-    const std::string VERSION{"0.2.5"};
+    const std::string VERSION{"0.3.0"};
 
     // below for catching ctrl+c, and dumping files
     struct sigaction sa;
@@ -34,17 +34,51 @@ int main(int argc, char * argv[])
         .help("enable debug mode")
         .default_value(false)
         .implicit_value(true);
-    program.add_argument("-P", "--no-stdout")
+    program.add_argument("-S", "--no-stdout")
         .help("disable print log to screen")
         .default_value(false)
         .implicit_value(true);
-
-    argparse::ArgumentParser cmd_joint("joint", VERSION, default_arguments::help);
-    cmd_joint.add_description("run phasing and admixture inference in one goal");
-    cmd_joint.add_argument("-a", "--no-accel")
+    program.add_argument("-a", "--no-accel")
         .help("disable accelerated EM")
         .default_value(false)
         .implicit_value(true);
+    program.add_argument("-l", "--ltol")
+        .help("convergence tolerance of difference in log likelihoods")
+        .default_value(1e-1)
+        .scan<'g', double>();
+    program.add_argument("-P", "--ptol")
+        .help("lower boundary for P")
+        .default_value(1e-6)
+        .scan<'g', double>();
+    program.add_argument("-F", "--ftol")
+        .help("lower boundary for F")
+        .default_value(1e-6)
+        .scan<'g', double>();
+    program.add_argument("-Q", "--qtol")
+        .help("lower boundary for Q")
+        .default_value(1e-6)
+        .scan<'g', double>();
+    program.add_argument("-q","--NQ")
+        .help("disable updating Q")
+        .default_value(false)
+        .implicit_value(true);
+    program.add_argument("-p", "--NP")
+        .help("disable updating P")
+        .default_value(false)
+        .implicit_value(true);
+    program.add_argument("-f","--NF")
+        .help("disable updating F")
+        .default_value(false)
+        .implicit_value(true);
+    program.add_argument("--qfile")
+        .help("read Q file as the start point")
+        .default_value(std::string{""});
+    program.add_argument("--pfile")
+        .help("read P file as the start point")
+        .default_value(std::string{""});
+
+    argparse::ArgumentParser cmd_joint("joint", VERSION, default_arguments::help);
+    cmd_joint.add_description("run phasing and admixture inference in one goal");
     cmd_joint.add_argument("-c", "--cluster")
         .help("number of haplotype clusters")
         .default_value(10)
@@ -60,22 +94,6 @@ int main(int argc, char * argv[])
         .help("number of EM iterations")
         .default_value(1000)
         .scan<'i', int>();
-    cmd_joint.add_argument("-l", "--ltol")
-        .help("tolerance of stopping criteria for diff(loglikelihood)")
-        .default_value(1e-1)
-        .scan<'g', double>();
-    cmd_joint.add_argument("-P", "--ptol")
-        .help("lower boundary for P")
-        .default_value(1e-6)
-        .scan<'g', double>();
-    cmd_joint.add_argument("-F", "--ftol")
-        .help("lower boundary for F")
-        .default_value(1e-6)
-        .scan<'g', double>();
-    cmd_joint.add_argument("-Q", "--qtol")
-        .help("lower boundary for Q")
-        .default_value(1e-6)
-        .scan<'g', double>();
     cmd_joint.add_argument("-n", "--threads")
         .help("number of threads")
         .default_value(1)
@@ -95,24 +113,6 @@ int main(int argc, char * argv[])
         .help("seed for reproducibility")
         .default_value(999)
         .scan<'i', int>();
-    cmd_joint.add_argument("--qfile")
-        .help("read Q file as the start point")
-        .default_value(std::string{""});
-    cmd_joint.add_argument("--pfile")
-        .help("read P file as the start point")
-        .default_value(std::string{""});
-    cmd_joint.add_argument("--NQ")
-        .help("disable updating Q")
-        .default_value(false)
-        .implicit_value(true);
-    cmd_joint.add_argument("--NP")
-        .help("disable updating P")
-        .default_value(false)
-        .implicit_value(true);
-    cmd_joint.add_argument("--NF")
-        .help("disable updating F")
-        .default_value(false)
-        .implicit_value(true);
     // cmd_joint.add_parents(program);
 
     argparse::ArgumentParser cmd_impute("impute", VERSION, default_arguments::help);
@@ -169,10 +169,6 @@ int main(int argc, char * argv[])
 
     argparse::ArgumentParser cmd_admix("admix", VERSION, default_arguments::help);
     cmd_admix.add_description("run admixture with cluster likelihoods as input");
-    cmd_admix.add_argument("-a", "--no-accel")
-        .help("disable accelerated EM")
-        .default_value(false)
-        .implicit_value(true);
     cmd_admix.add_argument("-b", "--bin")
         .help("binary format from impute command as input")
         .default_value(std::string{""});
@@ -191,25 +187,10 @@ int main(int argc, char * argv[])
     cmd_admix.add_argument("-o", "--out")
         .help("output prefix")
         .default_value(std::string{"admix"});
-    cmd_admix.add_argument("-q", "--qtol")
-        .help("tolerance of stopping criteria for diff(Q)")
-        .default_value(1e-6)
-        .scan<'g', double>();
-    cmd_admix.add_argument("-l", "--ltol")
-        .help("tolerance of stopping criteria for diff(loglikelihood)")
-        .default_value(1e-1)
-        .scan<'g', double>();
     cmd_admix.add_argument("-d","--seed")
         .help("seed for reproducibility")
         .default_value(999)
         .scan<'i', int>();
-    cmd_admix.add_argument("--qfile")
-        .help("read Q file as the start point")
-        .default_value(std::string{""});
-    cmd_admix.add_argument("--no-newQ")
-        .help("disable updating Q")
-        .default_value(false)
-        .implicit_value(true);
     // cmd_admix.add_parents(program);
 
     argparse::ArgumentParser cmd_convert("convert", VERSION, default_arguments::help);
@@ -264,24 +245,6 @@ int main(int argc, char * argv[])
         .help("seed for reproducibility")
         .default_value(999)
         .scan<'i', int>();
-    cmd_parse.add_argument("--qfile")
-        .help("read Q file as the start point")
-        .default_value(std::string{""});
-    cmd_parse.add_argument("--pfile")
-        .help("read P file as the start point")
-        .default_value(std::string{""});
-    cmd_parse.add_argument("--NQ")
-        .help("disable updating Q")
-        .default_value(false)
-        .implicit_value(true);
-    cmd_parse.add_argument("--NP")
-        .help("disable updating P")
-        .default_value(false)
-        .implicit_value(true);
-    cmd_parse.add_argument("--NF")
-        .help("disable updating F")
-        .default_value(false)
-        .implicit_value(true);
     // cmd_parse.add_parents(program);
 
     program.add_subparser(cmd_impute);
@@ -295,15 +258,24 @@ int main(int argc, char * argv[])
     {
         Options opts;
         for(int i = 0; i < argc; i++) opts.opts_in_effect += " " + std::string{argv[i]};
+        opts.opts_in_effect += "\nVersion: " + VERSION + "\n" + get_machine();
         program.parse_args(argc, argv);
         opts.debug = program.get<bool>("--debug");
         opts.noscreen = program.get<bool>("--no-stdout");
+        opts.in_qfile.assign(program.get("--qfile"));
+        opts.in_pfile.assign(program.get("--pfile"));
+        opts.ptol = program.get<double>("--ptol");
+        opts.ftol = program.get<double>("--ftol");
+        opts.qtol = program.get<double>("--qtol");
+        opts.nQ = program.get<bool>("--NQ");
+        opts.nP = program.get<bool>("--NP");
+        opts.nF = program.get<bool>("--NF");
+        opts.ltol = program.get<double>("--ltol");
+        opts.noaccel = program.get<bool>("--no-accel");
 
         if(program.is_subcommand_used(cmd_joint))
         {
             opts.in_beagle.assign(cmd_joint.get("--beagle"));
-            opts.in_qfile.assign(cmd_joint.get("--qfile"));
-            opts.in_pfile.assign(cmd_joint.get("--pfile"));
             opts.out.assign(cmd_joint.get("--out"));
             opts.C = cmd_joint.get<int>("--cluster");
             opts.K = cmd_joint.get<int>("--ancestry");
@@ -312,14 +284,6 @@ int main(int argc, char * argv[])
             opts.seed = cmd_joint.get<int>("--seed");
             opts.chunksize = cmd_joint.get<int>("--chunksize");
             opts.single_chunk = cmd_joint.get<bool>("--single-chunk");
-            opts.noaccel = cmd_joint.get<bool>("--no-accel");
-            opts.ltol = cmd_joint.get<double>("--ltol");
-            opts.ptol = cmd_joint.get<double>("--ptol");
-            opts.ftol = cmd_joint.get<double>("--ftol");
-            opts.qtol = cmd_joint.get<double>("--qtol");
-            opts.nQ = cmd_joint.get<bool>("--NQ");
-            opts.nP = cmd_joint.get<bool>("--NP");
-            opts.nF = cmd_joint.get<bool>("--NF");
             if(opts.single_chunk) opts.chunksize = INT_MAX;
             if((opts.in_beagle.empty() && opts.in_vcf.empty()) || cmd_joint.get<bool>("--help"))
                 throw std::runtime_error(cmd_joint.help().str());
@@ -347,16 +311,11 @@ int main(int argc, char * argv[])
         else if(program.is_subcommand_used(cmd_admix))
         {
             opts.in_bin.assign(cmd_admix.get("--bin"));
-            opts.in_qfile.assign(cmd_admix.get("--qfile"));
             opts.out.assign(cmd_admix.get("--out"));
             opts.seed = cmd_admix.get<int>("--seed");
             opts.K = cmd_admix.get<int>("-k");
             opts.nthreads = cmd_admix.get<int>("--threads");
             opts.nadmix = cmd_admix.get<int>("--iterations");
-            opts.qtol = cmd_admix.get<double>("--qtol");
-            opts.ltol = cmd_admix.get<double>("--ltol");
-            opts.noaccel = cmd_admix.get<bool>("--no-accel");
-            opts.nQ = cmd_admix.get<bool>("--no-NQ");
             if(opts.in_bin.empty() || cmd_admix.get<bool>("--help")) throw std::runtime_error(cmd_admix.help().str());
             run_admix_main(opts);
         }
@@ -364,17 +323,12 @@ int main(int argc, char * argv[])
         {
             opts.in_impute.assign(cmd_parse.get("--impute"));
             opts.in_joint.assign(cmd_parse.get("--joint"));
-            opts.in_qfile.assign(cmd_parse.get("--qfile"));
-            opts.in_pfile.assign(cmd_parse.get("--pfile"));
             opts.out.assign(cmd_parse.get("--out"));
             opts.nimpute = cmd_parse.get<int>("--iterations");
             opts.nthreads = cmd_parse.get<int>("--threads");
             opts.seed = cmd_parse.get<int>("--seed");
             opts.samples = cmd_parse.get("--samples-file");
             opts.ichunk = cmd_parse.get<int>("--chunk");
-            opts.nQ = cmd_parse.get<bool>("--NQ");
-            opts.nP = cmd_parse.get<bool>("--NP");
-            opts.nF = cmd_parse.get<bool>("--NF");
             if((opts.in_impute.empty() && opts.in_joint.empty()) || cmd_parse.get<bool>("--help"))
                 throw std::runtime_error(cmd_parse.help().str());
             run_parse_main(opts);
@@ -391,7 +345,7 @@ int main(int argc, char * argv[])
         }
         else
         {
-            cao.cerr("Contact author: Zilong Li (zilong.dk@gmail.com)\n");
+            cao.cerr("Contact: Zilong Li (zilong.dk@gmail.com)\n");
             cao.cerr(program.help().str());
             std::exit(1);
         }

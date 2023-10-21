@@ -47,96 +47,128 @@ int run_parse_main(Options & opts)
         vector<future<double>> res;
         std::ofstream oanc(opts.out.string() + ".Q");
         ThreadPool pool(opts.nthreads);
-        MyArr2D Q0, Q1, Q2, Qt;
-        MyArr2D F0, F1, F2, Ft;
-        const int istep{4};
-        double alpha{0}, stepMax{4}, alphaMax{1280}, logcheck{0};
-        for(int it = 0; SIG_COND && (it < opts.nimpute / 4); it++)
+        if(opts.noaccel)
         {
-            // first normal iter
-            faith.initIteration();
-            Q0 = faith.Q;
-            F0 = cat_stdvec_of_eigen(faith.F);
-            for(int i = 0; i < par->N; i++)
-                res.emplace_back(pool.enqueue(&Phaseless::runBigass, &faith, i, std::ref(par->gls), false));
-            loglike = 0;
-            for(auto && ll : res) loglike += ll.get();
-            res.clear(); // clear future and renew
-            faith.updateIteration();
-            // second normal iter
-            tim.clock();
-            faith.initIteration();
-            Q1 = faith.Q;
-            F1 = cat_stdvec_of_eigen(faith.F);
-            for(int i = 0; i < par->N; i++)
-                res.emplace_back(pool.enqueue(&Phaseless::runBigass, &faith, i, std::ref(par->gls), false));
-            loglike = 0;
-            for(auto && ll : res) loglike += ll.get();
-            res.clear(); // clear future and renew
-            faith.updateIteration();
-            diff = it ? loglike - prevlike : NAN;
-            prevlike = loglike;
-            cao.print(tim.date(), "SqS3 iteration", it * 4 + 1, ", alpha=", alpha, ", likelihoods =", std::fixed,
-                      loglike, ", diff =", diff, ", time", tim.reltime(), " sec");
-            if(diff < opts.ltol)
+            for(int it = 0; SIG_COND && it <= opts.nimpute; it++)
             {
-                cao.print(tim.date(), "hit stopping criteria, diff =", std::scientific, diff, " <", opts.ltol);
-                break;
+                tim.clock();
+                faith.initIteration();
+                for(int i = 0; i < faith.N; i++)
+                {
+                    if(it == opts.nimpute)
+                        res.emplace_back(pool.enqueue(&Phaseless::runBigass, &faith, i, std::ref(par->gls), true));
+                    else
+                        res.emplace_back(pool.enqueue(&Phaseless::runBigass, &faith, i, std::ref(par->gls), false));
+                }
+                loglike = 0;
+                for(auto && ll : res) loglike += ll.get();
+                res.clear(); // clear future and renew
+                faith.updateIteration();
+                diff = it ? loglike - prevlike : NAN;
+                prevlike = loglike;
+                cao.print(tim.date(), "run whole genome, iteration", it, ", likelihoods =", loglike, ", diff =", diff,
+                          ", time", tim.reltime(), " sec");
+                if(diff < opts.ltol)
+                {
+                    cao.print(tim.date(), "hit stopping criteria, diff =", std::scientific, diff, " <", opts.ltol);
+                    break;
+                }
             }
-            // save for later comparison
-            Qt = faith.Q;
-            Ft = cat_stdvec_of_eigen(faith.F);
-            // calculate alpha based on first two pars
-            // alpha = ((Q1 - Q0).square().sum()) / ((faith.Q - 2 * Q1 + Q0).square().sum());
-            alpha = ((F1 - F0).square().sum() + (Q1 - Q0).square().sum())
-                    / ((cat_stdvec_of_eigen(faith.F) - 2 * F1 + F0).square().sum()
-                       + (faith.Q - 2 * Q1 + Q0).square().sum());
-            alpha = max(1.0, sqrt(alpha));
-            if(alpha >= stepMax)
+        }
+        else
+        {
+            MyArr2D Q0, Q1, Q2, Qt;
+            MyArr2D F0, F1, F2, Ft;
+            const int istep{4};
+            double alpha{0}, stepMax{4}, alphaMax{1280}, logcheck{0};
+            for(int it = 0; SIG_COND && (it < opts.nimpute / 4); it++)
             {
-                alpha = min(stepMax, alphaMax);
-                stepMax = min(stepMax * istep, alphaMax);
-            }
-            // third accel iter
-            // update Q and F using the second em iter
-            faith.Q = Q0 + 2 * alpha * (Q1 - Q0) + alpha * alpha * (faith.Q - 2 * Q1 + Q0);
-            for(int k = 0; k < faith.K; k++)
-                faith.F[k] =
-                    F0.middleRows(k * faith.C, faith.C)
-                    + 2 * alpha * (F1.middleRows(k * faith.C, faith.C) - F0.middleRows(k * faith.C, faith.C))
-                    + alpha * alpha
-                          * (faith.F[k] - 2 * F1.middleRows(k * faith.C, faith.C) + F0.middleRows(k * faith.C, faith.C));
-            faith.protectPars();
-            faith.initIteration();
-            for(int i = 0; i < par->N; i++)
-                res.emplace_back(pool.enqueue(&Phaseless::runBigass, &faith, i, std::ref(par->gls), false));
-            loglike = 0;
-            for(auto && ll : res) loglike += ll.get();
-            res.clear(); // clear future and renew
-            faith.updateIteration();
-            // save current pars
-            Q2 = faith.Q;
-            F2 = cat_stdvec_of_eigen(faith.F);
-            // check if normal third iter is better
-            faith.Q = Qt;
-            for(int k = 0; k < faith.K; k++) faith.F[k] = Ft.middleRows(k * faith.C, faith.C);
-            faith.initIteration();
-            for(int i = 0; i < par->N; i++)
-                res.emplace_back(pool.enqueue(&Phaseless::runBigass, &faith, i, std::ref(par->gls), false));
-            logcheck = 0;
-            for(auto && ll : res) logcheck += ll.get();
-            res.clear(); // clear future and renew
-            faith.updateIteration();
-            if(logcheck - loglike > 0.1)
-            {
-                if(faith.debug)
-                    cao.warn(tim.date(), "normal EM yields better likelihoods than the accelerated EM.", logcheck, " -",
-                             loglike, "> 0.1");
-            }
-            else
-            {
-                faith.Q = Q2;
-                for(int k = 0; k < faith.K; k++) faith.F[k] = F2.middleRows(k * faith.C, faith.C);
+                // first normal iter
+                faith.initIteration();
+                Q0 = faith.Q;
+                F0 = cat_stdvec_of_eigen(faith.F);
+                for(int i = 0; i < faith.N; i++)
+                    res.emplace_back(pool.enqueue(&Phaseless::runBigass, &faith, i, std::ref(par->gls), false));
+                loglike = 0;
+                for(auto && ll : res) loglike += ll.get();
+                res.clear(); // clear future and renew
+                faith.updateIteration();
+                // second normal iter
+                tim.clock();
+                faith.initIteration();
+                Q1 = faith.Q;
+                F1 = cat_stdvec_of_eigen(faith.F);
+                for(int i = 0; i < faith.N; i++)
+                    res.emplace_back(pool.enqueue(&Phaseless::runBigass, &faith, i, std::ref(par->gls), false));
+                loglike = 0;
+                for(auto && ll : res) loglike += ll.get();
+                res.clear(); // clear future and renew
+                faith.updateIteration();
+                diff = it ? loglike - prevlike : NAN;
+                prevlike = loglike;
+                cao.print(tim.date(), "SqS3 iteration", it * 4 + 1, ", alpha=", alpha, ", likelihoods =", std::fixed,
+                          loglike, ", diff =", diff, ", time", tim.reltime(), " sec");
+                if(diff < opts.ltol)
+                {
+                    cao.print(tim.date(), "hit stopping criteria, diff =", std::scientific, diff, " <", opts.ltol);
+                    break;
+                }
+                // save for later comparison
+                Qt = faith.Q;
+                Ft = cat_stdvec_of_eigen(faith.F);
+                // calculate alpha based on first two pars
+                // alpha = ((Q1 - Q0).square().sum()) / ((faith.Q - 2 * Q1 + Q0).square().sum());
+                alpha = ((F1 - F0).square().sum() + (Q1 - Q0).square().sum())
+                        / ((cat_stdvec_of_eigen(faith.F) - 2 * F1 + F0).square().sum()
+                           + (faith.Q - 2 * Q1 + Q0).square().sum());
+                alpha = max(1.0, sqrt(alpha));
+                if(alpha >= stepMax)
+                {
+                    alpha = min(stepMax, alphaMax);
+                    stepMax = min(stepMax * istep, alphaMax);
+                }
+                // third accel iter
+                // update Q and F using the second em iter
+                faith.Q = Q0 + 2 * alpha * (Q1 - Q0) + alpha * alpha * (faith.Q - 2 * Q1 + Q0);
+                for(int k = 0; k < faith.K; k++)
+                    faith.F[k] =
+                        F0.middleRows(k * faith.C, faith.C)
+                        + 2 * alpha * (F1.middleRows(k * faith.C, faith.C) - F0.middleRows(k * faith.C, faith.C))
+                        + alpha * alpha
+                              * (faith.F[k] - 2 * F1.middleRows(k * faith.C, faith.C)
+                                 + F0.middleRows(k * faith.C, faith.C));
+                faith.protectPars();
+                faith.initIteration();
+                for(int i = 0; i < faith.N; i++)
+                    res.emplace_back(pool.enqueue(&Phaseless::runBigass, &faith, i, std::ref(par->gls), false));
+                loglike = 0;
+                for(auto && ll : res) loglike += ll.get();
+                res.clear(); // clear future and renew
+                faith.updateIteration();
+                // save current pars
+                Q2 = faith.Q;
+                F2 = cat_stdvec_of_eigen(faith.F);
+                // check if normal third iter is better
+                faith.Q = Qt;
+                for(int k = 0; k < faith.K; k++) faith.F[k] = Ft.middleRows(k * faith.C, faith.C);
+                faith.initIteration();
+                for(int i = 0; i < faith.N; i++)
+                    res.emplace_back(pool.enqueue(&Phaseless::runBigass, &faith, i, std::ref(par->gls), false));
+                logcheck = 0;
+                for(auto && ll : res) logcheck += ll.get();
+                res.clear(); // clear future and renew
+                faith.updateIteration();
+                if(logcheck - loglike > 0.1)
+                {
+                    if(faith.debug)
+                        cao.warn(tim.date(), "normal EM yields better likelihoods than the accelerated EM.", logcheck,
+                                 " -", loglike, "> 0.1");
+                }
+                else
+                {
+                    faith.Q = Q2;
+                    for(int k = 0; k < faith.K; k++) faith.F[k] = F2.middleRows(k * faith.C, faith.C);
+                }
             }
         }
         faith.Q = (faith.Q * 1e6).round() / 1e6;

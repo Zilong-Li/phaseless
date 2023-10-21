@@ -11,7 +11,7 @@ class Phaseless
     // randon engine
     std::default_random_engine rng = std::default_random_engine{};
     // BOUNDING
-    double minRate{0.1}, maxRate{100}; // threshold for R
+    // double minRate{0.1}, maxRate{100}; // threshold for R
     double alleleEmitThreshold{1e-6}; // threshold for P
     double clusterFreqThreshold{1e-6}; // threshold for F
     double admixtureThreshold{1e-6}; // threshold for Q
