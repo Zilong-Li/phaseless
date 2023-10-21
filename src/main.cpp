@@ -66,6 +66,10 @@ int main(int argc, char * argv[])
         .help("disable updating P")
         .default_value(false)
         .implicit_value(true);
+    program.add_argument("-r", "--NR")
+        .help("disable updating R")
+        .default_value(false)
+        .implicit_value(true);
     program.add_argument("-f","--NF")
         .help("disable updating F")
         .default_value(false)
@@ -273,6 +277,7 @@ int main(int argc, char * argv[])
         opts.qtol = program.get<double>("--qtol");
         opts.nQ = program.get<bool>("--NQ");
         opts.nP = program.get<bool>("--NP");
+        opts.nR = program.get<bool>("--NR");
         opts.nF = program.get<bool>("--NF");
         opts.ltol = program.get<double>("--ltol");
         opts.noaccel = program.get<bool>("--no-accel");

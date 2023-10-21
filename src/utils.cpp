@@ -38,7 +38,7 @@ int run_parse_main(Options & opts)
         ifs.close();
         assert((bool)ec == false);
         Phaseless faith(par->K, par->C, par->N, par->M, opts.seed);
-        faith.setFlags(opts.ptol, opts.ftol, opts.qtol, opts.debug, opts.nQ, opts.nP, opts.nF);
+        faith.setFlags(opts.ptol, opts.ftol, opts.qtol, opts.debug, opts.nQ, opts.nP, opts.nF, opts.nR);
         faith.initRecombination(par->pos);
         faith.setStartPoint(par);
         faith.setStartPoint(opts.in_qfile, opts.in_pfile);

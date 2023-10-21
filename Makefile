@@ -37,7 +37,7 @@ impute2:
 	./phaseless impute -g data/all.bgl.gz -c 10 -n 4 -S -i 100
 
 joint:
-	./phaseless -p --pfile impute.P --rfile impute.recomb joint -g data/bgl.gz -c 10 -k 3 -n 4 -S
+	./phaseless -pr --pfile impute.P --rfile impute.recomb joint -g data/bgl.gz -c 10 -k 3 -n 4 -S
 
 joint2:
-	./phaseless -p --pfile impute.P --rfile impute.recomb joint -g data/all.bgl.gz -c 10 -k 3 -n 4 -S
+	./phaseless -pr --pfile impute.P --rfile impute.recomb joint -g data/all.bgl.gz -c 10 -k 3 -n 4 -S

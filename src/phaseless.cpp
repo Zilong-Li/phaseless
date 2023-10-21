@@ -19,9 +19,7 @@ void Phaseless::initRecombination(const Int1D & pos, std::string rfile, double N
     {
         nGen = 4 * Ne / C;
         er = calc_distRate(pos, C, 1.0);
-        R.row(0) = er.square();
-        R.row(1) = er * (1 - er);
-        R.row(2) = (1 - er).square();
+        er2R(er);
     }
     else
     {
@@ -45,9 +43,7 @@ void Phaseless::initRecombination(const Int2D & pos, std::string rfile, double N
     pos_chunk[nchunks] = ss; // add sentinel
     if(rfile.empty())
     {
-        R.row(0) = er.square();
-        R.row(1) = er * (1 - er);
-        R.row(2) = (1 - er).square();
+        er2R(er);
     }
     else
     {
@@ -56,7 +52,14 @@ void Phaseless::initRecombination(const Int2D & pos, std::string rfile, double N
     }
 }
 
-void Phaseless::setFlags(double tol_p, double tol_f, double tol_q, bool debug_, bool nQ, bool nP, bool nF)
+void Phaseless::er2R(const MyArr1D & er)
+{
+    R.row(0) = er.square();
+    R.row(1) = er * (1 - er);
+    R.row(2) = (1 - er).square();
+}
+
+void Phaseless::setFlags(double tol_p, double tol_f, double tol_q, bool debug_, bool nQ, bool nP, bool nF, bool nR)
 {
     alleleEmitThreshold = tol_p;
     clusterFreqThreshold = tol_f;
@@ -65,6 +68,7 @@ void Phaseless::setFlags(double tol_p, double tol_f, double tol_q, bool debug_, 
     NQ = nQ;
     NP = nP;
     NF = nF;
+    NR = nR;
 }
 
 void Phaseless::setStartPoint(std::string qfile, std::string pfile)
@@ -76,9 +80,7 @@ void Phaseless::setStartPoint(std::string qfile, std::string pfile)
 void Phaseless::setStartPoint(const std::unique_ptr<Pars> & par)
 {
     er = Eigen::Map<MyArr1D>(par->er.data(), M);
-    R.row(0) = er.square();
-    R.row(1) = er * (1 - er);
-    R.row(2) = (1 - er).square();
+    er2R(er);
     Q = Eigen::Map<MyArr2D>(par->Q.data(), K, N);
     P = Eigen::Map<MyArr2D>(par->P.data(), M, C);
     for(int i = 0; i < K; i++) F[i] = Eigen::Map<MyArr2D>(par->F[i].data(), C, M);
@@ -113,6 +115,12 @@ void Phaseless::protectPars()
             F[k].rowwise() /= F[k].colwise().sum();
         }
     }
+    if(!NR)
+    {
+        er = (er < 0.1).select(0.1, er);
+        er = (er > std::exp(1e-9)).select(std::exp(1e-9), er);
+        er2R(er);
+    }
 }
 
 void Phaseless::initIteration()
@@ -137,9 +145,10 @@ void Phaseless::updateIteration()
         for(int k = 0; k < K; k++)
         {
             F[k] = EclusterK.middleRows(k * C, C);
-            F[k].rowwise() /= F[k].colwise().sum(); // normalize F per site
+            F[k].rowwise() /= F[k].colwise().sum(); // normalize F per site per K
         }
     }
+    if(!NR) er = 1.0 - EclusterK.colwise().sum() / N;
     protectPars();
 }
 
@@ -260,7 +269,7 @@ int run_phaseless_main(Options & opts)
     std::ofstream oanc(opts.out.string() + ".Q");
     std::ofstream op(opts.out.string() + ".P");
     Phaseless faith(opts.K, opts.C, genome->nsamples, genome->nsnps, opts.seed);
-    faith.setFlags(opts.ptol, opts.ftol, opts.qtol, opts.debug, opts.nQ, opts.nP, opts.nF);
+    faith.setFlags(opts.ptol, opts.ftol, opts.qtol, opts.debug, opts.nQ, opts.nP, opts.nF, opts.nR);
     faith.setStartPoint(opts.in_qfile, opts.in_pfile);
     faith.initRecombination(genome->pos, opts.in_rfile);
     double loglike, diff, prevlike{std::numeric_limits<double>::lowest()};

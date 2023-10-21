@@ -35,7 +35,7 @@ class Phaseless
     ~Phaseless() {}
 
     // FLAGS
-    bool debug{0}, local{0}, post{1}, NQ{0}, NF{0}, NP{0};
+    bool debug{0}, local{0}, post{1}, NQ{0}, NF{0}, NP{0}, NR{0};
     // SHARED VARIBALES
     const int K, C, N, M, KK, CC; // CC = C x C, KK = K x K
     double nGen;
@@ -55,7 +55,8 @@ class Phaseless
     void setStartPoint(const std::unique_ptr<Pars> &);
     void initRecombination(const Int1D & pos, std::string rfile = "", double Ne = 20000, int B = 1);
     void initRecombination(const Int2D & pos, std::string rfile = "", double Ne = 20000, int B = 1);
-    void setFlags(double, double, double, bool, bool, bool, bool);
+    void er2R(const MyArr1D &);
+    void setFlags(double, double, double, bool, bool, bool, bool, bool);
     void protectPars();
     void initIteration();
     void updateIteration();
