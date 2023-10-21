@@ -753,7 +753,7 @@ inline void load_csv(const std::string & path, MyArr2D & Q, char sep = ' ')
         j = 0;
         while(std::getline(lineStream, tok, sep))
         {
-            Q(j, i) = std::stof(tok);
+            Q(j, i) = std::stod(tok);
             ++j;
         }
         assert(j == Q.rows());
@@ -775,7 +775,7 @@ inline void load_csv2(const std::string & path, MyArr2D & P, char sep = ' ')
         j = 0;
         while(std::getline(lineStream, tok, sep))
         {
-            P(i, j) = std::stof(tok);
+            P(i, j) = std::stod(tok);
             ++j;
         }
         assert(j == P.cols());

@@ -190,14 +190,13 @@ void Phaseless::getPosterios(const int ind,
             {
                 zz = z1 * C + z2;
                 double eb = emit(zz, s) * beta(zz, s);
-                tmp += eb * ((1 - er(m)) * er(m) * alphaprev(z2) + (1 - er(m)) * (1 - er(m)) * H(z2, s));
+                tmp += eb * (R(1, m) * alphaprev(z2) + R(2, m) * H(z2, s));
                 for(y1 = 0; y1 < K; y1++)
                 {
-                    ind_post_y(y1, s) +=
-                        eb * cs(s) * Q(y1, ind)
-                        * (er(m) * er(m) * alpha(zz, s - 1)
-                           + er(m) * (1 - er(m)) * (alphaprev(z2) * F[y1](z1, m) + alphaprev(z1) * H(z2, s))
-                           + (1 - er(m)) * (1 - er(m)) * F[y1](z1, m) * H(z2, s));
+                    ind_post_y(y1, s) += eb * cs(s) * Q(y1, ind)
+                                         * (R(0, m) * alpha(zz, s - 1)
+                                            + R(1, m) * (alphaprev(z2) * F[y1](z1, m) + alphaprev(z1) * H(z2, s))
+                                            + R(2, m) * F[y1](z1, m) * H(z2, s));
                 }
             }
             for(y1 = 0; y1 < K; y1++) ind_post_zy(y1 * C + z1, s) = tmp * Q(y1, ind) * F[y1](z1, m) * cs(s);
