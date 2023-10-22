@@ -31,3 +31,6 @@ impute.*
 admix.*
 *.png
 run.sh
+inst/include/htslib*
+src/phaseless.so
+*.gz

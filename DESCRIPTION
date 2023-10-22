@@ -1,0 +1,22 @@
+Package: phaseless
+Title: Admixture and imputation for low coverage sequencing data in one goal
+Version: 0.3.0
+Authors@R: 
+    person("Zilong", "Li", , "zilong.dk@gmail.com", role = c("aut", "cre", "cph"),
+           comment = c(ORCID = "0000-0001-5859-2078"))
+Description: Admixture and imputation for low coverage sequencing data in one goal.
+Encoding: UTF-8
+Depends: R (>= 3.6.0)
+Roxygen: list(markdown = TRUE)
+RoxygenNote: 7.2.3
+Suggests: 
+    testthat (>= 3.0.0)
+Config/testthat/edition: 3
+SystemRequirements: C++17, GNU make
+Imports: 
+    Rcpp
+LinkingTo:
+    Rcpp
+URL: https://github.com/Zilong-Li/phaseless
+BugReports: https://github.com/Zilong-Li/phaseless/issues
+License: GPL3 + file LICENSE

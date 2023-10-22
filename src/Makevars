@@ -1,0 +1,26 @@
+CXX_STD = CXX17
+HTSDIR = ../inst/include/htslib-1.18
+PKG_CPPFLAGS = -I. -I../inst/include -I${HTSDIR}
+PKG_LIBS = ${HTSDIR}/libhts.a -fPIC -lz -lm -lbz2 -llzma -lcurl
+
+## needs GNU make
+platform := $(shell uname -s)
+
+ifeq (${platform},Darwin)
+	PKG_CPPFLAGS += -mmacosx-version-min=10.15
+endif
+
+.PHONY: all clean htslib
+
+all: $(SHLIB)
+
+$(SHLIB): htslib
+
+CC=$(shell "R CMD config CC")
+CXX=$(shell "R CMD config CXX")
+AR=$(shell "R CMD config AR")
+RANLIB=$(shell "R CMD config RANLIB")
+LDFLAGS=$(shell "R CMD config LDFLAGS")
+
+htslib:
+	(cd ${HTSDIR} && ./configure && $(MAKE) CC="$(CC)" AR="$(AR)" RANLIB="$(RANLIB)" CFLAGS="$(CFLAGS)" CPPFLAGS="$(CPPFLAGS) -fPIC" LDFLAGS="$(LDFLAGS)" && cd ..)
