@@ -1,7 +1,7 @@
 CXX_STD = CXX17
 HTSDIR = ../inst/include/htslib-1.18
 PKG_CPPFLAGS = -I. -I../inst/include -I${HTSDIR}
-PKG_LIBS = ${HTSDIR}/libhts.a -fPIC -lz -lm -lbz2 -llzma -lcurl
+PKG_LIBS = ${HTSDIR}/libhts.a -fPIC -lz -lm -lbz2 -llzma
 
 ## needs GNU make
 platform := $(shell uname -s)
@@ -23,4 +23,4 @@ RANLIB=$(shell "R CMD config RANLIB")
 LDFLAGS=$(shell "R CMD config LDFLAGS")
 
 htslib:
-	(cd ${HTSDIR} && ./configure && $(MAKE) CC="$(CC)" AR="$(AR)" RANLIB="$(RANLIB)" CFLAGS="$(CFLAGS)" CPPFLAGS="$(CPPFLAGS) -fPIC" LDFLAGS="$(LDFLAGS)" && cd ..)
+	(cd ${HTSDIR} && ./configure --disable-libcurl && $(MAKE) CC="$(CC)" AR="$(AR)" RANLIB="$(RANLIB)" CFLAGS="$(CFLAGS)" CPPFLAGS="$(CPPFLAGS) -fPIC" LDFLAGS="$(LDFLAGS)" && cd ..)

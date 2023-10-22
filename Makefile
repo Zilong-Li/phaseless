@@ -3,10 +3,10 @@ CXX      = g++
 
 # CXXFLAGS = -std=c++17 -Wall -O3 -g -fsanitize=address
 # CXXFLAGS = -std=c++17 -Wall -O3 -march=native -DNDEBUG
-CXXFLAGS = -std=c++17 -Wall -O3 -march=native
+CXXFLAGS = -std=c++17 -Wall -O3 -march=native -fPIC
 INC      = -I./src -I./inst/include -I$(HTSDIR)
-LDFLAGS  =  -L$(HTSDIR) -Wl,-rpath,$(HTSDIR)
-LIBS     = -lpthread -lhts -lz
+LDFLAGS  =  -L$(HTSDIR) $(HTSDIR)/libhts.a
+LIBS     = -llzma -lbz2 -lm -lz -lpthread
 OBJS     = src/main.o src/phaseless.o src/fastphase.o src/admixture.o src/utils.o
 BINS     = phaseless
 FLOAT    = 0
@@ -27,7 +27,7 @@ $(BINS): $(OBJS) htslib
 	${CXX} ${CXXFLAGS} -o $@ $(OBJS) ${INC} $(LIBS) $(LDFLAGS)
 
 htslib:
-	cd $(HTSDIR) && ./configure && make -j4
+	cd $(HTSDIR) && ./configure --disable-libcurl && make -j4
 
 clean:
 	rm -f $(BINS) $(OBJS)
