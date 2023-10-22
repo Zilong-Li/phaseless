@@ -4,7 +4,15 @@
 #' parse parameters in joint model
 #' @param filename path to binary file from joint command
 #' @export
-parse_joint <- function(filename) {
-    .Call(`_phaseless_parse_joint`, filename)
+parse_joint_par <- function(filename) {
+    .Call(`_phaseless_parse_joint_par`, filename)
+}
+
+#' parse posterior probabilty of Z in joint model
+#' @param filename path to binary file from joint command
+#' @param chunk which chunk to extract
+#' @export
+parse_joint_post <- function(filename, chunk = 0L) {
+    .Call(`_phaseless_parse_joint_post`, filename, chunk)
 }
 

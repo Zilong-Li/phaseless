@@ -219,7 +219,16 @@ inline bool starts_with(std::string const & str, std::string const & ending)
         return std::equal(ending.begin(), ending.end(), str.begin());
 }
 
-inline auto calc_distRate(const Int1D & markers, int C, double expRate = 1.0, double Ne = 20000)
+inline MyArr2D er2R(const MyArr1D & er)
+{
+    MyArr2D R(3, er.size());
+    R.row(0) = er.square();
+    R.row(1) = er * (1 - er);
+    R.row(2) = (1 - er).square();
+    return R;
+}
+
+inline MyArr1D calc_distRate(const Int1D & markers, int C, double expRate = 1.0, double Ne = 20000)
 {
     MyArr1D distRate(markers.size());
     distRate(0) = 1; //  act as sentinel. so dim aligns with M
@@ -229,19 +238,16 @@ inline auto calc_distRate(const Int1D & markers, int C, double expRate = 1.0, do
 
 // check initialize_sigmaCurrent_m in STITCH
 // double nGen = 4 * Ne / C;
-inline auto calc_transRate_diploid(const Int1D & dl, double nGen, double expRate = 0.5)
+inline MyArr2D calc_transRate_diploid(const Int1D & dl, double nGen, double expRate = 0.5)
 {
-    MyArr2D transRate(3, dl.size());
     MyArr1D distRate(dl.size());
     distRate(0) = 1; //  act as sentinel. so dim aligns with M
     for(size_t i = 1; i < dl.size(); i++) distRate(i) = std::exp(-dl[i] * expRate * nGen / 1e8);
     // for(size_t i = 1; i < dl.size(); i++) distRate(i) = std::exp(-dl[i] /
     // 1e6);
-    transRate.row(0) = distRate.square();
-    transRate.row(1) = distRate * (1 - distRate);
-    transRate.row(2) = (1 - distRate).square();
-    return transRate;
+    return er2R(distRate);
 }
+
 
 /*
 ** @param gli  genotype likelihoods of current individual i, (M, 3)

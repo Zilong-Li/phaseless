@@ -1,0 +1,4 @@
+#!/bin/sh
+
+make clean
+cd inst/include/htslib-1.18/ && make clean && cd -

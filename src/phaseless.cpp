@@ -19,7 +19,7 @@ void Phaseless::initRecombination(const Int1D & pos, std::string rfile, double N
     {
         nGen = 4 * Ne / C;
         er = calc_distRate(pos, C, 1.0);
-        er2R(er);
+        R = er2R(er);
     }
     else
     {
@@ -43,20 +43,13 @@ void Phaseless::initRecombination(const Int2D & pos, std::string rfile, double N
     pos_chunk[nchunks] = ss; // add sentinel
     if(rfile.empty())
     {
-        er2R(er);
+        R = er2R(er);
     }
     else
     {
         load_csv(rfile, R);
         er = R.row(0).sqrt();
     }
-}
-
-void Phaseless::er2R(const MyArr1D & er)
-{
-    R.row(0) = er.square();
-    R.row(1) = er * (1 - er);
-    R.row(2) = (1 - er).square();
 }
 
 void Phaseless::setFlags(double tol_p, double tol_f, double tol_q, bool debug_, bool nQ, bool nP, bool nF, bool nR)
@@ -80,7 +73,7 @@ void Phaseless::setStartPoint(std::string qfile, std::string pfile)
 void Phaseless::setStartPoint(const std::unique_ptr<Pars> & par)
 {
     er = Eigen::Map<MyArr1D>(par->er.data(), M);
-    er2R(er);
+    R = er2R(er);
     Q = Eigen::Map<MyArr2D>(par->Q.data(), K, N);
     P = Eigen::Map<MyArr2D>(par->P.data(), M, C);
     for(int i = 0; i < K; i++) F[i] = Eigen::Map<MyArr2D>(par->F[i].data(), C, M);
@@ -119,7 +112,7 @@ void Phaseless::protectPars()
     {
         er = (er < 0.1).select(0.1, er);
         er = (er > std::exp(1e-9)).select(std::exp(1e-9), er);
-        er2R(er);
+        R = er2R(er);
     }
 }
 

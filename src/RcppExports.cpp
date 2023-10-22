@@ -10,20 +10,33 @@ Rcpp::Rostream<true>&  Rcpp::Rcout = Rcpp::Rcpp_cout_get();
 Rcpp::Rostream<false>& Rcpp::Rcerr = Rcpp::Rcpp_cerr_get();
 #endif
 
-// parse_joint
-List parse_joint(std::string filename);
-RcppExport SEXP _phaseless_parse_joint(SEXP filenameSEXP) {
+// parse_joint_par
+List parse_joint_par(std::string filename);
+RcppExport SEXP _phaseless_parse_joint_par(SEXP filenameSEXP) {
 BEGIN_RCPP
     Rcpp::RObject rcpp_result_gen;
     Rcpp::RNGScope rcpp_rngScope_gen;
     Rcpp::traits::input_parameter< std::string >::type filename(filenameSEXP);
-    rcpp_result_gen = Rcpp::wrap(parse_joint(filename));
+    rcpp_result_gen = Rcpp::wrap(parse_joint_par(filename));
+    return rcpp_result_gen;
+END_RCPP
+}
+// parse_joint_post
+List parse_joint_post(std::string filename, int chunk);
+RcppExport SEXP _phaseless_parse_joint_post(SEXP filenameSEXP, SEXP chunkSEXP) {
+BEGIN_RCPP
+    Rcpp::RObject rcpp_result_gen;
+    Rcpp::RNGScope rcpp_rngScope_gen;
+    Rcpp::traits::input_parameter< std::string >::type filename(filenameSEXP);
+    Rcpp::traits::input_parameter< int >::type chunk(chunkSEXP);
+    rcpp_result_gen = Rcpp::wrap(parse_joint_post(filename, chunk));
     return rcpp_result_gen;
 END_RCPP
 }
 
 static const R_CallMethodDef CallEntries[] = {
-    {"_phaseless_parse_joint", (DL_FUNC) &_phaseless_parse_joint, 1},
+    {"_phaseless_parse_joint_par", (DL_FUNC) &_phaseless_parse_joint_par, 1},
+    {"_phaseless_parse_joint_post", (DL_FUNC) &_phaseless_parse_joint_post, 2},
     {NULL, NULL, 0}
 };
 
