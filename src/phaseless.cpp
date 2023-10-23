@@ -205,7 +205,7 @@ void Phaseless::getPosterios(const int ind,
         }
     }
     { // sum over all samples for updates
-        std::lock_guard<std::mutex> lock(mutex_it);
+        std::scoped_lock<std::mutex> lock(mutex_it);
         EclusterA1.middleCols(pos_chunk[ic], S) += ind_post_zg1;
         EclusterA2.middleCols(pos_chunk[ic], S) += ind_post_zg2;
         EclusterK.middleCols(pos_chunk[ic], S) += ind_post_zy; // cluster ancestry allele jump
@@ -213,7 +213,7 @@ void Phaseless::getPosterios(const int ind,
     }
 }
 
-double Phaseless::runForwardBackwards(const int ind, const int ic, const MyFloat1D & GL, bool finalIter)
+fbd_ret Phaseless::runForwardBackwards(const int ind, const int ic, const MyFloat1D & GL, bool finalIter)
 {
     const int S = pos_chunk[ic + 1] - pos_chunk[ic];
     Eigen::Map<const MyArr2D> gli(GL.data() + ind * S * 3, S, 3);
@@ -221,27 +221,84 @@ double Phaseless::runForwardBackwards(const int ind, const int ic, const MyFloat
     MyArr2D alpha(CC, S), beta(CC, S);
     // first get H ie old PI in fastphase
     MyArr2D H = MyArr2D::Zero(C, S);
-    int z1, y1, s;
+    int m{0}, s{0}, z1{0}, z2{0}, y1{0}, zz{0};
     for(s = 0; s < S; s++)
         for(z1 = 0; z1 < C; z1++)
             for(y1 = 0; y1 < K; y1++) H(z1, s) += Q(y1, ind) * F[y1](z1, s + pos_chunk[ic]);
     auto cs =
         forward_backwards_diploid(alpha, beta, emit, R.middleCols(pos_chunk[ic], S), H); // cs is 1 / colsum(alpha)
     // get posterios
-    getPosterios(ind, ic, gli, emit, H, cs, alpha, beta);
-    return (1 / cs).log().sum();
+    MyArr2D ind_post_zg1(C, S), ind_post_zg2(C, S);
+    MyArr2D ind_post_zy(C * K, S);
+    MyArr1D gamma_div_emit(CC);
+    MyArr2D ind_post_y = MyArr2D::Zero(K, S);
+    MyArr1D alphaprev(C); // previous alpha colsums
+    for(s = 0; s < S; s++)
+    {
+        m = s + pos_chunk[ic];
+        gamma_div_emit = (alpha.col(s) * beta.col(s)) / emit.col(s); // what if emit is 0
+        for(z1 = 0; z1 < C; z1++)
+        {
+            ind_post_zg1(z1, s) = (gamma_div_emit(Eigen::seqN(z1, C, C)) * (1 - P(m, z1))
+                                   * (gli(s, 0) * (1 - P.row(m)) + gli(s, 1) * P.row(m)).transpose())
+                                      .sum();
+            ind_post_zg2(z1, s) = (gamma_div_emit(Eigen::seqN(z1, C, C)) * (P(m, z1))
+                                   * (gli(s, 1) * (1 - P.row(m)) + gli(s, 2) * P.row(m)).transpose())
+                                      .sum();
+            if(s == 0)
+            {
+                auto tmp = (alpha.col(0) * beta.col(0)).segment(z1 * C, C).sum();
+                for(y1 = 0; y1 < K; y1++)
+                {
+                    ind_post_zy(y1 * C + z1, 0) = tmp * Q(y1, ind);
+                    ind_post_y(y1, 0) += ind_post_zy(y1 * C + z1, 0);
+                }
+            }
+        }
+        if(s == 0) continue;
+        for(z1 = 0; z1 < C; z1++) alphaprev(z1) = alpha(Eigen::seqN(z1, C, C), s - 1).sum();
+        for(z1 = 0; z1 < C; z1++)
+        {
+            double tmp{0};
+            for(z2 = 0; z2 < C; z2++)
+            {
+                zz = z1 * C + z2;
+                double eb = emit(zz, s) * beta(zz, s);
+                tmp += eb * (R(1, m) * alphaprev(z2) + R(2, m) * H(z2, s));
+                for(y1 = 0; y1 < K; y1++)
+                {
+                    ind_post_y(y1, s) += eb * cs(s) * Q(y1, ind)
+                                         * (R(0, m) * alpha(zz, s - 1)
+                                            + R(1, m) * (alphaprev(z2) * F[y1](z1, m) + alphaprev(z1) * H(z2, s))
+                                            + R(2, m) * F[y1](z1, m) * H(z2, s));
+                }
+            }
+            for(y1 = 0; y1 < K; y1++) ind_post_zy(y1 * C + z1, s) = tmp * Q(y1, ind) * F[y1](z1, m) * cs(s);
+        }
+    }
+    Eancestry.col(ind) += ind_post_y.rowwise().sum();
+    double loglike = (1 / cs).log().sum();
+    return std::tuple(loglike, ind_post_zy, ind_post_zg1, ind_post_zg2);
 }
 
-double Phaseless::runBigass(int ind, const MyFloat2D & GL, bool finalIter)
+fbd_ret Phaseless::runBigass(int ind, const MyFloat2D & GL, bool finalIter)
 {
     if(pos_chunk.size() == 0) cao.error("please run initRecombination first");
     int nchunks = GL.size();
     double loglike{0};
+    MyArr2D ind_post_zg1 = MyArr2D::Zero(C, M);
+    MyArr2D ind_post_zg2 = MyArr2D::Zero(C, M);
+    MyArr2D ind_post_zy = MyArr2D::Zero(C * K, M);
     for(int ic = 0; ic < nchunks; ic++)
     {
-        loglike += runForwardBackwards(ind, ic, GL[ic], finalIter);
+        const auto [l, zy, zg1, zg2] = runForwardBackwards(ind, ic, GL[ic], finalIter);
+        loglike += l;
+        const int S = pos_chunk[ic + 1] - pos_chunk[ic];
+        ind_post_zg1.middleCols(pos_chunk[ic], S) += zg1;
+        ind_post_zg2.middleCols(pos_chunk[ic], S) += zg2;
+        ind_post_zy.middleCols(pos_chunk[ic], S) += zy;
     }
-    return loglike;
+    return std::tuple(loglike, ind_post_zy, ind_post_zg1, ind_post_zg2);
 }
 
 int run_phaseless_main(Options & opts)
@@ -258,7 +315,7 @@ int run_phaseless_main(Options & opts)
     std::unique_ptr<BigAss> genome = std::make_unique<BigAss>();
     init_bigass(genome, opts);
     Eigen::IOFormat fmt(6, Eigen::DontAlignCols, " ", "\n");
-    vector<future<double>> res;
+    vector<future<fbd_ret>> res;
     std::ofstream oanc(opts.out + ".Q");
     std::ofstream op(opts.out + ".P");
     Phaseless faith(opts.K, opts.C, genome->nsamples, genome->nsnps, opts.seed);
@@ -280,7 +337,14 @@ int run_phaseless_main(Options & opts)
                     res.emplace_back(pool.enqueue(&Phaseless::runBigass, &faith, i, std::ref(genome->gls), false));
             }
             loglike = 0;
-            for(auto && ll : res) loglike += ll.get();
+            for(auto && ll : res)
+            {
+                const auto [l, zy, zg1, zg2] = ll.get();
+                loglike += l;
+                faith.EclusterA1 += zg1;
+                faith.EclusterA2 += zg2;
+                faith.EclusterK += zy;
+            }
             res.clear(); // clear future and renew
             faith.updateIteration();
             diff = it ? loglike - prevlike : NAN;
@@ -309,7 +373,14 @@ int run_phaseless_main(Options & opts)
             for(int i = 0; i < faith.N; i++)
                 res.emplace_back(pool.enqueue(&Phaseless::runBigass, &faith, i, std::ref(genome->gls), false));
             loglike = 0;
-            for(auto && ll : res) loglike += ll.get();
+            for(auto && ll : res)
+            {
+                const auto [l, zy, zg1, zg2] = ll.get();
+                loglike += l;
+                faith.EclusterA1 += zg1;
+                faith.EclusterA2 += zg2;
+                faith.EclusterK += zy;
+            }
             res.clear(); // clear future and renew
             faith.updateIteration();
             // second normal iter
@@ -320,7 +391,14 @@ int run_phaseless_main(Options & opts)
             for(int i = 0; i < faith.N; i++)
                 res.emplace_back(pool.enqueue(&Phaseless::runBigass, &faith, i, std::ref(genome->gls), false));
             loglike = 0;
-            for(auto && ll : res) loglike += ll.get();
+            for(auto && ll : res)
+            {
+                const auto [l, zy, zg1, zg2] = ll.get();
+                loglike += l;
+                faith.EclusterA1 += zg1;
+                faith.EclusterA2 += zg2;
+                faith.EclusterK += zy;
+            }
             res.clear(); // clear future and renew
             faith.updateIteration();
             diff = it ? loglike - prevlike : NAN;
@@ -360,7 +438,14 @@ int run_phaseless_main(Options & opts)
             for(int i = 0; i < faith.N; i++)
                 res.emplace_back(pool.enqueue(&Phaseless::runBigass, &faith, i, std::ref(genome->gls), false));
             loglike = 0;
-            for(auto && ll : res) loglike += ll.get();
+            for(auto && ll : res)
+            {
+                const auto [l, zy, zg1, zg2] = ll.get();
+                loglike += l;
+                faith.EclusterA1 += zg1;
+                faith.EclusterA2 += zg2;
+                faith.EclusterK += zy;
+            }
             res.clear(); // clear future and renew
             faith.updateIteration();
             // save current pars
@@ -373,14 +458,20 @@ int run_phaseless_main(Options & opts)
             for(int i = 0; i < faith.N; i++)
                 res.emplace_back(pool.enqueue(&Phaseless::runBigass, &faith, i, std::ref(genome->gls), false));
             logcheck = 0;
-            for(auto && ll : res) logcheck += ll.get();
+            for(auto && ll : res)
+            {
+                const auto [l, zy, zg1, zg2] = ll.get();
+                logcheck += l;
+                faith.EclusterA1 += zg1;
+                faith.EclusterA2 += zg2;
+                faith.EclusterK += zy;
+            }
             res.clear(); // clear future and renew
             faith.updateIteration();
             if(logcheck - loglike > 0.1)
             {
-                if(faith.debug)
-                    cao.warn(tim.date(), "normal EM yields better likelihoods than the accelerated EM.", logcheck, " -",
-                             loglike, "> 0.1");
+                cao.warn(tim.date(), "normal EM yields better likelihoods than the accelerated EM.", logcheck, " -",
+                         loglike, "> 0.1");
             }
             else
             {

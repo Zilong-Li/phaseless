@@ -44,7 +44,7 @@ int run_parse_main(Options & opts)
         faith.setStartPoint(opts.in_qfile, opts.in_pfile);
         double loglike, diff, prevlike{std::numeric_limits<double>::lowest()};
         Eigen::IOFormat fmt(6, Eigen::DontAlignCols, " ", "\n");
-        vector<future<double>> res;
+        vector<future<fbd_ret>> res;
         std::ofstream oanc(opts.out + ".Q");
         ThreadPool pool(opts.nthreads);
         if(opts.noaccel)
@@ -61,7 +61,14 @@ int run_parse_main(Options & opts)
                         res.emplace_back(pool.enqueue(&Phaseless::runBigass, &faith, i, std::ref(par->gls), false));
                 }
                 loglike = 0;
-                for(auto && ll : res) loglike += ll.get();
+                for(auto && ll : res)
+                {
+                    const auto [l, zy, zg1, zg2] = ll.get();
+                    loglike += l;
+                    faith.EclusterA1 += zg1;
+                    faith.EclusterA2 += zg2;
+                    faith.EclusterK += zy;
+                }
                 res.clear(); // clear future and renew
                 faith.updateIteration();
                 diff = it ? loglike - prevlike : NAN;
@@ -90,7 +97,14 @@ int run_parse_main(Options & opts)
                 for(int i = 0; i < faith.N; i++)
                     res.emplace_back(pool.enqueue(&Phaseless::runBigass, &faith, i, std::ref(par->gls), false));
                 loglike = 0;
-                for(auto && ll : res) loglike += ll.get();
+                for(auto && ll : res)
+                {
+                    const auto [l, zy, zg1, zg2] = ll.get();
+                    loglike += l;
+                    faith.EclusterA1 += zg1;
+                    faith.EclusterA2 += zg2;
+                    faith.EclusterK += zy;
+                }
                 res.clear(); // clear future and renew
                 faith.updateIteration();
                 // second normal iter
@@ -101,7 +115,14 @@ int run_parse_main(Options & opts)
                 for(int i = 0; i < faith.N; i++)
                     res.emplace_back(pool.enqueue(&Phaseless::runBigass, &faith, i, std::ref(par->gls), false));
                 loglike = 0;
-                for(auto && ll : res) loglike += ll.get();
+                for(auto && ll : res)
+                {
+                    const auto [l, zy, zg1, zg2] = ll.get();
+                    loglike += l;
+                    faith.EclusterA1 += zg1;
+                    faith.EclusterA2 += zg2;
+                    faith.EclusterK += zy;
+                }
                 res.clear(); // clear future and renew
                 faith.updateIteration();
                 diff = it ? loglike - prevlike : NAN;
@@ -142,7 +163,14 @@ int run_parse_main(Options & opts)
                 for(int i = 0; i < faith.N; i++)
                     res.emplace_back(pool.enqueue(&Phaseless::runBigass, &faith, i, std::ref(par->gls), false));
                 loglike = 0;
-                for(auto && ll : res) loglike += ll.get();
+                for(auto && ll : res)
+                {
+                    const auto [l, zy, zg1, zg2] = ll.get();
+                    loglike += l;
+                    faith.EclusterA1 += zg1;
+                    faith.EclusterA2 += zg2;
+                    faith.EclusterK += zy;
+                }
                 res.clear(); // clear future and renew
                 faith.updateIteration();
                 // save current pars
@@ -155,7 +183,14 @@ int run_parse_main(Options & opts)
                 for(int i = 0; i < faith.N; i++)
                     res.emplace_back(pool.enqueue(&Phaseless::runBigass, &faith, i, std::ref(par->gls), false));
                 logcheck = 0;
-                for(auto && ll : res) logcheck += ll.get();
+                for(auto && ll : res)
+                {
+                    const auto [l, zy, zg1, zg2] = ll.get();
+                    loglike += l;
+                    faith.EclusterA1 += zg1;
+                    faith.EclusterA2 += zg2;
+                    faith.EclusterK += zy;
+                }
                 res.clear(); // clear future and renew
                 faith.updateIteration();
                 if(logcheck - loglike > 0.1)

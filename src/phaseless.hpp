@@ -4,6 +4,8 @@
 #include "common.hpp"
 #include <mutex>
 
+using fbd_ret = std::tuple<double, MyArr2D, MyArr2D, MyArr2D>;
+
 class Phaseless
 {
   private:
@@ -59,8 +61,8 @@ class Phaseless
     void protectPars();
     void initIteration();
     void updateIteration();
-    double runForwardBackwards(const int, const int, const MyFloat1D &, bool);
-    double runBigass(int, const MyFloat2D &, bool);
+    fbd_ret runForwardBackwards(const int, const int, const MyFloat1D &, bool);
+    fbd_ret runBigass(int, const MyFloat2D &, bool);
 
     void getPosterios(const int,
                       const int,

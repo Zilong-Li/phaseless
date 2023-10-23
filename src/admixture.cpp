@@ -50,7 +50,7 @@ double Admixture::runOptimalWithBigAss(int ind, const std::unique_ptr<BigAss> & 
         }
         iQ += Ekg.rowwise().sum();
         { // for update F
-            std::lock_guard<std::mutex> lock(mutex_it); // sum over all samples
+            std::scoped_lock<std::mutex> lock(mutex_it); // sum over all samples
             Ekc.middleCols(m - nGrids, nGrids) += 2 * kapa;
             NormF.middleCols(m - nGrids, nGrids) += Ekg;
         }
@@ -125,7 +125,7 @@ double Admixture::runNativeWithBigAss(int ind, const std::unique_ptr<BigAss> & g
         }
         iQ += Ekg.rowwise().sum();
         {
-            std::lock_guard<std::mutex> lock(mutex_it); // sum over all samples
+            std::scoped_lock<std::mutex> lock(mutex_it); // sum over all samples
             Ekc.middleCols(m - nGrids, nGrids) += iEkc;
             NormF.middleCols(m - nGrids, nGrids) += Ekg;
         }
