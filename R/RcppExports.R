@@ -8,7 +8,7 @@ parse_joint_par <- function(filename) {
     .Call(`_phaseless_parse_joint_par`, filename)
 }
 
-#' parse posterior probabilty of Z in joint model
+#' parse posterior probabilty in joint model
 #' @param filename path to binary file from joint command
 #' @param chunk which chunk to extract
 #' @export

@@ -2,7 +2,7 @@
 % Please edit documentation in R/RcppExports.R
 \name{parse_joint_post}
 \alias{parse_joint_post}
-\title{parse posterior probabilty of Z in joint model}
+\title{parse posterior probabilty in joint model}
 \usage{
 parse_joint_post(filename, chunk = 0L)
 }
@@ -12,5 +12,5 @@ parse_joint_post(filename, chunk = 0L)
 \item{chunk}{which chunk to extract}
 }
 \description{
-parse posterior probabilty of Z in joint model
+parse posterior probabilty in joint model
 }

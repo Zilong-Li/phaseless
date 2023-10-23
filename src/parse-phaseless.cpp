@@ -22,7 +22,7 @@ List parse_joint_par(std::string filename)
                         Named("er") = par->er, Named("P") = par->P, Named("F") = par->F, Named("Q") = par->Q);
 }
 
-//' parse posterior probabilty of Z in joint model
+//' parse posterior probabilty in joint model
 //' @param filename path to binary file from joint command
 //' @param chunk which chunk to extract
 //' @export
@@ -38,39 +38,89 @@ List parse_joint_post(std::string filename, int chunk = 0)
     assert((bool)ec == false);
     int nchunks = par->gls.size();
     const int C = par->C;
+    const int K = par->K;
     const int CC = par->C * par->C;
     Eigen::Map<const MyArr2D> Q(par->Q.data(), par->K, par->N);
     Eigen::Map<const MyArr2D> P(par->P.data(), par->M, par->C);
     Eigen::Map<const MyArr1D> er(par->er.data(), par->M);
     auto R = er2R(er);
-    MyFloat2D res(par->N);
-    int S{0};
-    for(int ind = 0; ind < par->N; ind++)
+    MyFloat2D ret_gamma(par->N), ret_post_y(par->N), ret_post_zy(par->N);
+    int m{0}, s{0}, z1{0}, z2{0}, y1{0}, zz{0}, S{0};
+    for(int ic = 0, pos_chunk = 0; ic < nchunks; ic++)
     {
-        for(int ic = 0, pos_chunk = 0; ic < nchunks; ic++)
+        S = par->pos[ic].size();
+        pos_chunk += S;
+        if(ic != chunk) continue;
+        MyArr2D ind_post_zg1(C, S), ind_post_zg2(C, S);
+        MyArr2D ind_post_zy(C * K, S);
+        MyArr1D gamma_div_emit(CC);
+        MyArr2D ind_post_y = MyArr2D::Zero(K, S);
+        for(int ind = 0; ind < par->N; ind++)
         {
-            S = par->pos[ic].size();
-            pos_chunk += S;
-            if(ic == chunk)
+            Eigen::Map<const MyArr2D> gli(par->gls[ic].data() + ind * S * 3, S, 3);
+            MyArr2D emit = get_emission_by_gl(gli, P.middleRows(pos_chunk - S, S)).transpose(); // CC x S
+            MyArr2D alpha(CC, S), beta(CC, S);
+            // first get H ie old PI in fastphase
+            MyArr2D H = MyArr2D::Zero(C, S);
+            int z1, y1, s; // m * C + z1
+            for(s = 0; s < S; s++)
+                for(z1 = 0; z1 < C; z1++)
+                    for(y1 = 0; y1 < par->K; y1++) H(z1, s) += Q(y1, ind) * par->F[y1][(pos_chunk - S + s) * C + z1];
+            // cs is 1 / colsum(alpha)
+            auto cs = forward_backwards_diploid(alpha, beta, emit, R.middleCols(pos_chunk - S, S), H);
+            MyArr2D gamma = alpha * beta;
+            ret_gamma[ind] = MyFloat1D(gamma.data(), gamma.data() + gamma.size());
+            ind_post_zg1.setZero(), ind_post_zg2.setZero(), ind_post_y.setZero(), ind_post_zy.setZero();
+            for(s = 0; s < S; s++)
             {
-                Eigen::Map<const MyArr2D> gli(par->gls[ic].data() + ind * S * 3, S, 3);
-                MyArr2D emit = get_emission_by_gl(gli, P.middleRows(pos_chunk - S, S)).transpose(); // CC x S
-                MyArr2D alpha(CC, S), beta(CC, S);
-                // first get H ie old PI in fastphase
-                MyArr2D H = MyArr2D::Zero(C, S);
-                int z1, y1, s; // m * C + z1
-                for(s = 0; s < S; s++)
-                    for(z1 = 0; z1 < C; z1++)
-                        for(y1 = 0; y1 < par->K; y1++)
-                            H(z1, s) += Q(y1, ind) * par->F[y1][(pos_chunk - S + s) * C + z1];
-                forward_backwards_diploid(alpha, beta, emit, R.middleCols(pos_chunk - S, S),
-                                          H); // cs is 1 / colsum(alpha)
-                MyArr2D gamma = alpha * beta;
-                res[ind] = MyFloat1D(gamma.data(), gamma.data() + gamma.size());
-                break;
+                m = pos_chunk - S + s;
+                gamma_div_emit = (alpha.col(s) * beta.col(s)) / emit.col(s); // what if emit is 0
+                for(z1 = 0; z1 < C; z1++)
+                {
+                    ind_post_zg1(z1, s) = (gamma_div_emit(Eigen::seqN(z1, C, C)) * (1 - P(m, z1))
+                                           * (gli(s, 0) * (1 - P.row(m)) + gli(s, 1) * P.row(m)).transpose())
+                                              .sum();
+                    ind_post_zg2(z1, s) = (gamma_div_emit(Eigen::seqN(z1, C, C)) * (P(m, z1))
+                                           * (gli(s, 1) * (1 - P.row(m)) + gli(s, 2) * P.row(m)).transpose())
+                                              .sum();
+                    if(s == 0)
+                    {
+                        auto tmp = (alpha.col(0) * beta.col(0)).segment(z1 * C, C).sum();
+                        for(y1 = 0; y1 < K; y1++)
+                        {
+                            ind_post_zy(y1 * C + z1, 0) = tmp * Q(y1, ind);
+                            ind_post_y(y1, 0) += ind_post_zy(y1 * C + z1, 0);
+                        }
+                    }
+                }
+                if(s == 0) continue;
+                MyArr1D alphaprev(C); // previous alpha colsums
+                for(z1 = 0; z1 < C; z1++) alphaprev(z1) = alpha(Eigen::seqN(z1, C, C), s - 1).sum();
+                for(z1 = 0; z1 < C; z1++)
+                {
+                    double tmp{0};
+                    for(z2 = 0; z2 < C; z2++)
+                    {
+                        zz = z1 * C + z2;
+                        double eb = emit(zz, s) * beta(zz, s);
+                        tmp += eb * (R(1, m) * alphaprev(z2) + R(2, m) * H(z2, s));
+                        for(y1 = 0; y1 < K; y1++)
+                        {
+                            ind_post_y(y1, s) +=
+                                eb * cs(s) * Q(y1, ind)
+                                * (R(0, m) * alpha(zz, s - 1)
+                                   + R(1, m) * (alphaprev(z2) * par->F[y1][m * C + z1] + alphaprev(z1) * H(z2, s))
+                                   + R(2, m) * par->F[y1][m * C + z1] * H(z2, s));
+                        }
+                    }
+                    for(y1 = 0; y1 < K; y1++)
+                        ind_post_zy(y1 * C + z1, s) = tmp * Q(y1, ind) * par->F[y1][m * C + z1] * cs(s);
+                }
             }
+            ret_post_y[ind] = MyFloat1D(ind_post_y.data(), ind_post_y.data() + ind_post_y.size());
+            ret_post_zy[ind] = MyFloat1D(ind_post_zy.data(), ind_post_zy.data() + ind_post_zy.size());
         }
     }
     return List::create(Named("C") = par->C, Named("K") = par->K, Named("S") = S, Named("N") = par->N,
-                        Named("gamma") = res);
+                        Named("gamma") = ret_gamma, Named("ancestry") = ret_post_y, Named("clusterancestry") = ret_post_zy);
 }
