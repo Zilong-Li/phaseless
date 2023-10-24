@@ -204,12 +204,12 @@ void Phaseless::getPosterios(const int ind,
             for(y1 = 0; y1 < K; y1++) ind_post_zy(y1 * C + z1, s) = tmp * Q(y1, ind) * F[y1](z1, m) * cs(s);
         }
     }
+    Eancestry.col(ind) += ind_post_y.rowwise().sum(); // need to take care
     { // sum over all samples for updates
-        std::lock_guard<std::mutex> lock(mutex_it);
+        std::scoped_lock<std::mutex> lock(mutex_it);
         EclusterA1.middleCols(pos_chunk[ic], S) += ind_post_zg1;
         EclusterA2.middleCols(pos_chunk[ic], S) += ind_post_zg2;
-        EclusterK.middleCols(pos_chunk[ic], S) += ind_post_zy; // cluster ancestry allele jump
-        Eancestry.col(ind) += ind_post_y.rowwise().sum(); // need to take care
+        EclusterK.middleCols(pos_chunk[ic], S) += ind_post_zy;
     }
 }
 

@@ -75,7 +75,7 @@ decltype(auto) ThreadPool::enqueue(F && callable, A &&... arguments)
 inline ThreadPool::~ThreadPool()
 {
     {
-        std::lock_guard<std::mutex> lock(mutex_queue);
+        std::unique_lock<std::mutex> lock(mutex_queue);
         stop = true;
     }
     condition.notify_all();

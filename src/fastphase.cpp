@@ -183,7 +183,7 @@ double FastPhaseK2::forwardAndBackwardsLowRamNormal(int ind, const MyFloat1D & G
                                    .sum();
         }
         {
-            std::lock_guard<std::mutex> lock(mutex_it);
+            std::scoped_lock<std::mutex> lock(mutex_it);
             Ezg1.col(s) += ind_post_zg1;
             Ezg2.col(s) += ind_post_zg2;
             pi += gamma1_ae;
@@ -207,7 +207,7 @@ double FastPhaseK2::forwardAndBackwardsLowRamNormal(int ind, const MyFloat1D & G
             for(z1 = 0; z1 < C; z1++)
                 ind_post_zj(z1) = cs(s) * PI(z1, s) * (alphatmp * beta_mult_emit(Eigen::seqN(z1, C, C))).sum();
             { // sum over all samples for updates
-                std::lock_guard<std::mutex> lock(mutex_it);
+                std::scoped_lock<std::mutex> lock(mutex_it);
                 Ezj.col(s) += ind_post_zj;
                 Ezg1.col(s) += ind_post_zg1;
                 Ezg2.col(s) += ind_post_zg2;
@@ -246,7 +246,7 @@ double FastPhaseK2::forwardAndBackwardsLowRamNormal(int ind, const MyFloat1D & G
                 }
                 {
                     // update GammaAE now
-                    std::lock_guard<std::mutex> lock(mutex_it);
+                    std::scoped_lock<std::mutex> lock(mutex_it);
                     Ezj.row(z1) += alpha.row(z12);
                 }
             }
@@ -295,7 +295,7 @@ double FastPhaseK2::forwardAndBackwardsLowRamCollapse(int ind, const MyFloat1D &
         }
     }
     {
-        std::lock_guard<std::mutex> lock(mutex_it);
+        std::scoped_lock<std::mutex> lock(mutex_it);
         pi += gamma1_sum;
         for(int i = s; i <= e; i++)
         {
@@ -333,7 +333,7 @@ double FastPhaseK2::forwardAndBackwardsLowRamCollapse(int ind, const MyFloat1D &
         for(z1 = 0; z1 < C; z1++)
             ind_post_zj(z1) = cs(g) * (PI(z1, g) * alphatmp * beta_mult_emit(Eigen::seqN(z1, C, C))).sum();
         { // sum over all samples for updates
-            std::lock_guard<std::mutex> lock(mutex_it);
+            std::scoped_lock<std::mutex> lock(mutex_it);
             Ezj.col(g) += ind_post_zj;
             for(int i = s; i <= e; i++)
             {

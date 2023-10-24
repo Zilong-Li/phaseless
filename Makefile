@@ -27,7 +27,7 @@ $(BINS): $(OBJS) htslib
 	${CXX} ${CXXFLAGS} -o $@ $(OBJS) ${INC} $(LIBS) $(LDFLAGS)
 
 htslib:
-	cd $(HTSDIR) && ./configure --disable-libcurl && make -j4
+	cd $(HTSDIR) && ./configure --disable-libcurl && make -j10
 
 clean:
 	rm -f $(BINS) $(OBJS)
