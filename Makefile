@@ -3,7 +3,7 @@ CXX      = g++
 
 # CXXFLAGS = -std=c++17 -Wall -O3 -g -fsanitize=address
 # CXXFLAGS = -std=c++17 -Wall -O3 -march=native -DNDEBUG
-CXXFLAGS = -std=c++17 -Wall -O3 -march=native -fPIC
+CXXFLAGS = -std=c++17 -Wall -O3 -march=native -fPIC -DNDEBUG
 INC      = -I./src -I./inst/include -I$(HTSDIR)
 LDFLAGS  =  -L$(HTSDIR) $(HTSDIR)/libhts.a
 LIBS     = -llzma -lbz2 -lm -lz -lpthread
@@ -36,11 +36,14 @@ clean:
 impute:
 	./phaseless impute -g data/bgl.gz -c 10 -n 4 -S -i 100
 
+joint:
+	./phaseless -Dpr --pfile impute.P --rfile impute.recomb joint -g data/bgl.gz -c 10 -k 3 -n 4 -S -i 100
+
+parse:
+	./phaseless -Dpr parse -j joint.pars.bin -n 4 -i 100
+
 impute2:
 	./phaseless impute -g data/all.bgl.gz -c 10 -n 4 -S -i 100
-
-joint:
-	./phaseless -Dpr --pfile impute.P --rfile impute.recomb joint -g data/bgl.gz -c 10 -k 3 -n 4 -S
 
 joint2:
 	./phaseless -Dpr --pfile impute.P --rfile impute.recomb joint -g data/all.bgl.gz -c 10 -k 3 -n 4 -S

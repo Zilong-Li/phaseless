@@ -173,6 +173,12 @@ int run_parse_main(Options & opts)
         }
         faith.Q = (faith.Q * 1e6).round() / 1e6;
         oanc << std::fixed << faith.Q.transpose().format(fmt) << "\n";
+        par->init(faith.K, faith.C, faith.M, faith.N, faith.er, faith.P, faith.Q, faith.F);
+        std::ofstream opar(opts.out + ".pars.bin", std::ios::out | std::ios::binary);
+        auto bytes_written = alpaca::serialize<OPTIONS, Pars>(*par, opar);
+        opar.close();
+        assert(std::filesystem::file_size(opts.out + ".pars.bin") == bytes_written);
+        cao.done(tim.date(), "parse done and outputting.", bytes_written, " bytes written to file");
         return 0;
     }
     if(!opts.in_impute.empty())
