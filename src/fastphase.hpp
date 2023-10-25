@@ -35,7 +35,7 @@ class FastPhaseK2
     double alleleEmitThreshold{1e-4}; // threshold for F(P)
 
     // FLAGS
-    bool debug{0};
+    bool debug{0}, NR{0};
 
     // SHARED VARIBALES
     const int M, N, C, C2; // C2 = C x C
@@ -53,6 +53,7 @@ class FastPhaseK2
     Bool1D collapse;
     double nGen;
 
+    void setFlags(bool, bool);
     void initRecombination(const Int1D & pos, int B_ = 1, double Ne = 20000);
     void collapse_and_resize(const Int1D & pos, double tol_r = 1e-6);
     void initIteration();

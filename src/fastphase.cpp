@@ -27,6 +27,14 @@ void FastPhaseK2::initRecombination(const Int1D & pos, int B_, double Ne)
     R = calc_transRate_diploid(dist, nGen);
 }
 
+void FastPhaseK2::setFlags(bool d, bool r)
+{
+    debug = d;
+    NR = r;
+    cao.warn("flags: debug=", debug, ", NR=", NR);
+}
+
+
 void FastPhaseK2::initIteration()
 {
     // initial temp variables
@@ -38,22 +46,20 @@ void FastPhaseK2::initIteration()
 
 void FastPhaseK2::updateIteration()
 {
-    MyArr1D er = 1.0 - Ezj.colwise().sum() / N;
-    // er = (er < 0.9).select(0.9, er);
-    // er = (er > std::exp(-1e-9)).select(std::exp(-1e-9), er);
-    // morgans per SNP assuming T=100, 0.5 cM/Mb
-    // x1 <- exp(-nGen * minRate * dl/100/1000000) # lower
-    // x2 <- exp(-nGen * maxRate * dl/100/1000000) # upper
-    for(int i = 0; i < er.size(); i++)
+    if(!NR)
     {
-        double miner = std::exp(-nGen * maxRate * dist[i] / 100 / 1e6);
-        double maxer = std::exp(-nGen * minRate * dist[i] / 100 / 1e6);
-        er(i) = er(i) < miner ? miner : er(i);
-        er(i) = er(i) > maxer ? maxer : er(i);
+        MyArr1D er = 1.0 - Ezj.colwise().sum() / N;
+        for(int i = 0; i < er.size(); i++)
+        {
+            double miner = std::exp(-nGen * maxRate * dist[i] / 100 / 1e6);
+            double maxer = std::exp(-nGen * minRate * dist[i] / 100 / 1e6);
+            er(i) = er(i) < miner ? miner : er(i);
+            er(i) = er(i) > maxer ? maxer : er(i);
+        }
+        R.row(0) = er.square();
+        R.row(1) = (1 - er) * er;
+        R.row(2) = (1 - er).square();
     }
-    R.row(0) = er.square();
-    R.row(1) = (1 - er) * er;
-    R.row(2) = (1 - er).square();
 
     // update F
     F = (Ezg2 / (Ezg1 + Ezg2)).transpose();
@@ -622,7 +628,7 @@ int run_impute_main(Options & opts)
         {
             FastPhaseK2 faith(genome->pos[ic].size(), genome->nsamples, opts.C, opts.seed);
             faith.initRecombination(genome->pos[ic], genome->B);
-            faith.debug = opts.debug;
+            faith.setFlags(opts.debug, opts.nR);
             faith.AF = estimate_af_by_gl(genome->gls[ic], genome->nsamples, genome->pos[ic].size()).cast<MyFloat>();
             for(int it = 0; SIG_COND && it <= opts.nimpute; it++)
             {

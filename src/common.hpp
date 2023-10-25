@@ -22,9 +22,9 @@
 #include <memory>
 #include <random>
 #include <string>
+#include <sys/utsname.h>
 #include <unordered_map>
 #include <vector>
-#include <sys/utsname.h>
 
 // MAKE SOME TOOLS FULLY ACCESSIBLE THROUGHOUT THE SOFTWARE
 #ifdef _DECLARE_TOOLBOX_HERE
@@ -174,7 +174,6 @@ inline std::string get_machine()
            + "\nOperating system version: " + version + "\nOperating system name: " + sysname + "\n";
 }
 
-
 inline std::vector<std::string> split_string(const std::string & s, const std::string & separators)
 {
     std::vector<std::string> ret;
@@ -242,12 +241,10 @@ inline MyArr2D calc_transRate_diploid(const Int1D & dl, double nGen, double expR
 {
     MyArr1D distRate(dl.size());
     distRate(0) = 1; //  act as sentinel. so dim aligns with M
-    for(size_t i = 1; i < dl.size(); i++) distRate(i) = std::exp(-dl[i] * expRate * nGen / 1e8);
-    // for(size_t i = 1; i < dl.size(); i++) distRate(i) = std::exp(-dl[i] /
-    // 1e6);
+    // for(size_t i = 1; i < dl.size(); i++) distRate(i) = std::exp(-dl[i] * expRate * nGen / 1e8);
+    for(size_t i = 1; i < dl.size(); i++) distRate(i) = std::exp(-dl[i] / 1e6);
     return er2R(distRate);
 }
-
 
 /*
 ** @param gli  genotype likelihoods of current individual i, (M, 3)

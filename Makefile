@@ -34,7 +34,7 @@ clean:
 	cd $(HTSDIR) && make clean
 
 impute:
-	./phaseless impute -g data/bgl.gz -c 10 -n 4 -S -i 100
+	./phaseless -Dr impute -g data/bgl.gz -c 10 -n 4 -S -i 100
 
 joint:
 	./phaseless -Dpr --pfile impute.P --rfile impute.recomb joint -g data/bgl.gz -c 10 -k 3 -n 4 -S -i 100
