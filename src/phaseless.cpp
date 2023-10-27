@@ -378,9 +378,9 @@ int run_phaseless_main(Options & opts)
             faith.updateIteration();
             if(logcheck - loglike > 0.1)
             {
-                if(faith.debug)
-                    cao.warn(tim.date(), "normal EM yields better likelihoods than the accelerated EM.", logcheck, " -",
-                             loglike, "> 0.1");
+                stepMax = istep;
+                cao.warn(tim.date(), "reset stepMax to 4, normal EM yields better likelihoods than the accelerated EM.", logcheck, " -",
+                         loglike, "> 0.1");
             }
             else
             {
