@@ -227,22 +227,13 @@ inline MyArr2D er2R(const MyArr1D & er)
     return R;
 }
 
-inline MyArr1D calc_distRate(const Int1D & markers, int C, double expRate = 1.0, double Ne = 20000)
-{
-    MyArr1D distRate(markers.size());
-    distRate(0) = 1; //  act as sentinel. so dim aligns with M
-    for(size_t i = 1; i < markers.size(); i++) distRate(i) = std::exp(-(markers[i] - markers[i - 1]) * expRate / 1e6);
-    return distRate;
-}
-
 // check initialize_sigmaCurrent_m in STITCH
 // double nGen = 4 * Ne / C;
 inline MyArr2D calc_transRate_diploid(const Int1D & dl, double nGen, double expRate = 0.5)
 {
     MyArr1D distRate(dl.size());
-    distRate(0) = 1; //  act as sentinel. so dim aligns with M
-    for(size_t i = 1; i < dl.size(); i++) distRate(i) = std::exp(-dl[i] * expRate * nGen / 1e8);
     // for(size_t i = 1; i < dl.size(); i++) distRate(i) = std::exp(-dl[i] / 1e6);
+    for(size_t i = 1; i < dl.size(); i++) distRate(i) = std::exp(-dl[i] * expRate * nGen / 1e8);
     return er2R(distRate);
 }
 

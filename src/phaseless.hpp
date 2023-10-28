@@ -11,7 +11,7 @@ class Phaseless
     // randon engine
     std::default_random_engine rng = std::default_random_engine{};
     // BOUNDING
-    // double minRate{0.1}, maxRate{100}; // threshold for R
+    double minRate{0.1}, maxRate{100}; // threshold for R
     double alleleEmitThreshold{1e-6}; // threshold for P
     double clusterFreqThreshold{1e-6}; // threshold for F
     double admixtureThreshold{1e-6}; // threshold for Q
@@ -59,17 +59,19 @@ class Phaseless
     void protectPars();
     void initIteration();
     void updateIteration();
+    void callGenoLoopC(int, int, int, const MyArr2D &, const MyArr1D &);
     double runForwardBackwards(const int, const int, const MyFloat1D &, bool);
     double runBigass(int, const MyFloat2D &, bool);
 
     void getPosterios(const int,
-                      const int,
-                      const MyArr2D &,
-                      const MyArr2D &,
-                      const MyArr2D &,
-                      const MyArr1D &,
-                      const MyArr2D &,
-                      const MyArr2D &);
+                     const int,
+                     const MyArr2D &,
+                     const MyArr2D &,
+                     const MyArr2D &,
+                     const MyArr1D &,
+                     const MyArr2D &,
+                     const MyArr2D &,
+                     bool);
 };
 
 int run_phaseless_main(Options & opts);

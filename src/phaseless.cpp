@@ -15,41 +15,33 @@ using namespace std;
 
 void Phaseless::initRecombination(const Int1D & pos, std::string rfile, double Ne, int B)
 {
+    nGen = 4 * Ne / C;
+    dist = calc_position_distance(pos);
     if(rfile.empty())
-    {
-        nGen = 4 * Ne / C;
-        er = calc_distRate(pos, C, 1.0);
-        R = er2R(er);
-    }
+        R = calc_transRate_diploid(dist, nGen);
     else
-    {
         load_csv(rfile, R);
-        er = R.row(0).sqrt();
-    }
+    er = R.row(0).sqrt();
 }
 
 void Phaseless::initRecombination(const Int2D & pos, std::string rfile, double Ne, int B)
 {
+    nGen = 4 * Ne / C;
     int nchunks = pos.size();
     pos_chunk.resize(nchunks + 1);
-    er = MyArr1D::Ones(M);
     int i{0}, ss{0};
+    dist.reserve(M);
     for(i = 0; i < nchunks; i++)
     {
         pos_chunk[i] = ss;
-        er.segment(ss, pos[i].size()) = calc_distRate(pos[i], C, 1.0);
+        auto tmp = calc_position_distance(pos[i]);
+        dist.insert(dist.end(),tmp.begin(), tmp.end());
+        R.middleCols(ss, pos[i].size()) = calc_transRate_diploid(dist, nGen);
         ss += pos[i].size();
     }
     pos_chunk[nchunks] = ss; // add sentinel
-    if(rfile.empty())
-    {
-        R = er2R(er);
-    }
-    else
-    {
-        load_csv(rfile, R);
-        er = R.row(0).sqrt();
-    }
+    if(!rfile.empty()) load_csv(rfile, R);
+    er = R.row(0).sqrt();
 }
 
 void Phaseless::setFlags(double tol_p, double tol_f, double tol_q, bool debug_, bool nQ, bool nP, bool nF, bool nR)
@@ -110,8 +102,13 @@ void Phaseless::protectPars()
     }
     if(!NR)
     {
-        er = (er < 0.1).select(0.1, er);
-        er = (er > std::exp(1e-9)).select(std::exp(1e-9), er);
+        for(int i = 0; i < er.size(); i++)
+        {
+            double miner = std::exp(-nGen * maxRate * dist[i] / 100 / 1e6);
+            double maxer = std::exp(-nGen * minRate * dist[i] / 100 / 1e6);
+            er(i) = er(i) < miner ? miner : er(i);
+            er(i) = er(i) > maxer ? maxer : er(i);
+        }
         R = er2R(er);
     }
 }
@@ -137,12 +134,28 @@ void Phaseless::updateIteration()
     { // update F
         for(int k = 0; k < K; k++)
         {
-            F[k] = EclusterK.middleRows(k * C, C);
+            F[k] = EclusterK.middleRows(k * C, C); // C x M
             F[k].rowwise() /= F[k].colwise().sum(); // normalize F per site per K
         }
     }
     if(!NR) er = 1.0 - EclusterK.colwise().sum() / N;
     protectPars();
+}
+
+void Phaseless::callGenoLoopC(int ind, int s, int z1, const MyArr2D & gli, const MyArr1D & gamma_div_emit)
+{
+    MyArr1D tmp_zg(4);
+    for(int z2 = 0; z2 < C; z2++)
+    {
+        int z12 = z1 * C + z2;
+        tmp_zg(0) = gli(s, 0) * (1 - P(s, z1)) * (1 - P(s, z2));
+        tmp_zg(1) = gli(s, 1) * (1 - P(s, z1)) * P(s, z2);
+        tmp_zg(2) = gli(s, 1) * P(s, z1) * (1 - P(s, z2));
+        tmp_zg(3) = gli(s, 2) * P(s, z1) * P(s, z2);
+        GP(3 * s + 0, ind) += gamma_div_emit(z12) * tmp_zg(0);
+        GP(3 * s + 1, ind) += gamma_div_emit(z12) * (tmp_zg(1) + tmp_zg(2));
+        GP(3 * s + 2, ind) += gamma_div_emit(z12) * tmp_zg(3);
+    }
 }
 
 void Phaseless::getPosterios(const int ind,
@@ -152,7 +165,8 @@ void Phaseless::getPosterios(const int ind,
                              const MyArr2D & H,
                              const MyArr1D & cs,
                              const MyArr2D & alpha,
-                             const MyArr2D & beta)
+                             const MyArr2D & beta,
+                             bool finalIter)
 {
     const int S = pos_chunk[ic + 1] - pos_chunk[ic];
     int m{0}, s{0}, z1{0}, z2{0}, y1{0}, zz{0};
@@ -166,6 +180,7 @@ void Phaseless::getPosterios(const int ind,
         gamma_div_emit = (alpha.col(s) * beta.col(s)) / emit.col(s); // what if emit is 0
         for(z1 = 0; z1 < C; z1++)
         {
+            if(finalIter) callGenoLoopC(ind, m, z1, gli, gamma_div_emit);
             ind_post_zg1(z1, s) = (gamma_div_emit(Eigen::seqN(z1, C, C)) * (1 - P(m, z1))
                                    * (gli(s, 0) * (1 - P.row(m)) + gli(s, 1) * P.row(m)).transpose())
                                       .sum();
@@ -225,10 +240,10 @@ double Phaseless::runForwardBackwards(const int ind, const int ic, const MyFloat
     for(s = 0; s < S; s++)
         for(z1 = 0; z1 < C; z1++)
             for(y1 = 0; y1 < K; y1++) H(z1, s) += Q(y1, ind) * F[y1](z1, s + pos_chunk[ic]);
-    auto cs =
-        forward_backwards_diploid(alpha, beta, emit, R.middleCols(pos_chunk[ic], S), H); // cs is 1 / colsum(alpha)
+    // cs is 1 / colsum(alpha)
+    auto cs = forward_backwards_diploid(alpha, beta, emit, R.middleCols(pos_chunk[ic], S), H);
     // get posterios
-    getPosterios(ind, ic, gli, emit, H, cs, alpha, beta);
+    getPosterios(ind, ic, gli, emit, H, cs, alpha, beta, finalIter);
     return (1 / cs).log().sum();
 }
 
@@ -273,12 +288,7 @@ int run_phaseless_main(Options & opts)
             tim.clock();
             faith.initIteration();
             for(int i = 0; i < faith.N; i++)
-            {
-                if(it == opts.nimpute)
-                    res.emplace_back(pool.enqueue(&Phaseless::runBigass, &faith, i, std::ref(genome->gls), true));
-                else
-                    res.emplace_back(pool.enqueue(&Phaseless::runBigass, &faith, i, std::ref(genome->gls), false));
-            }
+                res.emplace_back(pool.enqueue(&Phaseless::runBigass, &faith, i, std::ref(genome->gls), false));
             loglike = 0;
             for(auto && ll : res) loglike += ll.get();
             res.clear(); // clear future and renew
@@ -379,8 +389,8 @@ int run_phaseless_main(Options & opts)
             if(logcheck - loglike > 0.1)
             {
                 stepMax = istep;
-                cao.warn(tim.date(), "reset stepMax to 4, normal EM yields better likelihoods than the accelerated EM.", logcheck, " -",
-                         loglike, "> 0.1");
+                cao.warn(tim.date(), "reset stepMax to 4, normal EM yields better likelihoods than the accelerated EM.",
+                         logcheck, " -", loglike, "> 0.1");
             }
             else
             {
@@ -389,6 +399,18 @@ int run_phaseless_main(Options & opts)
             }
         }
     }
+    cao.done(tim.date(), "joint model done. run one more iteration to output vcf.");
+    faith.initIteration();
+    faith.GP.setZero(faith.M * 3, faith.N);
+    for(int i = 0; i < faith.N; i++)
+        res.emplace_back(pool.enqueue(&Phaseless::runBigass, &faith, i, std::ref(genome->gls), true));
+    loglike = 0;
+    for(auto && ll : res) loglike += ll.get();
+    res.clear(); // clear future and renew
+    faith.updateIteration();
+    auto bw = make_bcfwriter(opts.out + ".vcf.gz", genome->chrs, genome->sampleids);
+    for(int ic = 0; ic < genome->nchunks; ic++)
+        write_bigass_to_bcf(bw, faith.GP.data(), genome->chrs[ic], genome->pos[ic]);
     faith.Q = (faith.Q * 1e6).round() / 1e6;
     oanc << std::fixed << faith.Q.transpose().format(fmt) << "\n";
     op << std::fixed << faith.P.format(fmt) << "\n";
