@@ -37,7 +37,7 @@ void Phaseless::initRecombination(const Int2D & pos, std::string rfile, double N
     {
         pos_chunk[i] = ss;
         auto tmp = calc_position_distance(pos[i]);
-        dist.insert(dist.end(),tmp.begin(), tmp.end());
+        dist.insert(dist.end(), tmp.begin(), tmp.end());
         R.middleCols(ss, pos[i].size()) = calc_transRate_diploid(dist, nGen);
         ss += pos[i].size();
     }
@@ -351,10 +351,17 @@ int run_phaseless_main(Options & opts)
             Qt = faith.Q;
             Ft = cat_stdvec_of_eigen(faith.F);
             // calculate alpha based on first two pars
-            // alpha = ((Q1 - Q0).square().sum()) / ((faith.Q - 2 * Q1 + Q0).square().sum());
-            alpha = ((F1 - F0).square().sum() + (Q1 - Q0).square().sum())
-                    / ((cat_stdvec_of_eigen(faith.F) - 2 * F1 + F0).square().sum()
-                       + (faith.Q - 2 * Q1 + Q0).square().sum());
+            if(opts.aQ)
+            {
+
+                alpha = ((Q1 - Q0).square().sum()) / ((faith.Q - 2 * Q1 + Q0).square().sum());
+            }
+            else
+            {
+                alpha = ((F1 - F0).square().sum() + (Q1 - Q0).square().sum())
+                        / ((cat_stdvec_of_eigen(faith.F) - 2 * F1 + F0).square().sum()
+                           + (faith.Q - 2 * Q1 + Q0).square().sum());
+            }
             alpha = max(1.0, sqrt(alpha));
             if(alpha >= stepMax)
             {

@@ -116,6 +116,10 @@ int main(int argc, char * argv[])
         .help("treat input as big single chunk")
         .default_value(false)
         .implicit_value(true);
+    cmd_joint.add_argument("-Q", "--aQ")
+        .help("aphla is accelarated with Q only")
+        .default_value(false)
+        .implicit_value(true);
     cmd_joint.add_argument("-d","--seed")
         .help("seed for reproducibility")
         .default_value(999)
@@ -293,6 +297,7 @@ int main(int argc, char * argv[])
             opts.seed = cmd_joint.get<int>("--seed");
             opts.chunksize = cmd_joint.get<int>("--chunksize");
             opts.single_chunk = cmd_joint.get<bool>("--single-chunk");
+            opts.aQ = cmd_joint.get<bool>("--aQ");
             if(opts.single_chunk) opts.chunksize = INT_MAX;
             if((opts.in_beagle.empty() && opts.in_vcf.empty()) || cmd_joint.get<bool>("--help"))
                 throw std::runtime_error(cmd_joint.help().str());
