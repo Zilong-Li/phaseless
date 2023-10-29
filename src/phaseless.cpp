@@ -22,6 +22,8 @@ void Phaseless::initRecombination(const Int1D & pos, std::string rfile, double N
     else
         load_csv(rfile, R);
     er = R.row(0).sqrt();
+    protect_er(er);
+    R = er2R(er);
 }
 
 void Phaseless::initRecombination(const Int2D & pos, std::string rfile, double Ne, int B)
@@ -42,6 +44,8 @@ void Phaseless::initRecombination(const Int2D & pos, std::string rfile, double N
     pos_chunk[nchunks] = ss; // add sentinel
     if(!rfile.empty()) load_csv(rfile, R);
     er = R.row(0).sqrt();
+    protect_er(er);
+    R = er2R(er);
 }
 
 void Phaseless::setFlags(double tol_p, double tol_f, double tol_q, bool debug_, bool nQ, bool nP, bool nF, bool nR)
@@ -76,7 +80,7 @@ void Phaseless::protectPars()
     // if we accelerate pars, protect them!
     if(!NQ)
     { // protect Q
-        if(debug && Q.isNaN().any()) cao.warn("NaN in Q in Phaseless model. reset it to the threshold");
+        if(debug && Q.isNaN().any()) cao.error("NaN in Q in Phaseless model. reset it to the threshold");
         Q = (Q < admixtureThreshold).select(admixtureThreshold, Q); // lower bound
         Q = (Q > 1 - admixtureThreshold).select(1 - admixtureThreshold, Q); // upper bound
         Q.rowwise() /= Q.colwise().sum(); // normalize Q per individual
@@ -93,7 +97,7 @@ void Phaseless::protectPars()
         for(int k = 0; k < K; k++)
         {
             // could cluster jump be zero?
-            if(F[k].isNaN().any()) cao.warn("NaN in F in Phaseless model. reset it to the threshold. k =", k);
+            if(F[k].isNaN().any()) cao.error("NaN in F in Phaseless model. reset it to the threshold. k =", k);
             F[k] = (F[k] < clusterFreqThreshold).select(clusterFreqThreshold, F[k]);
             F[k] = (F[k] > 1 - clusterFreqThreshold).select(1 - clusterFreqThreshold, F[k]);
             // re-normalize F per site. hope should work well. otherwise do the complicated.
@@ -104,11 +108,12 @@ void Phaseless::protectPars()
     {
         for(int i = 0; i < er.size(); i++)
         {
-            double miner = std::exp(-nGen * maxRate * dist[i] / 100 / 1e6);
-            double maxer = std::exp(-nGen * minRate * dist[i] / 100 / 1e6);
+            const double miner = std::exp(-nGen * maxRate * dist[i] / 100 / 1e6);
+            const double maxer = std::exp(-nGen * minRate * dist[i] / 100 / 1e6);
             er(i) = er(i) < miner ? miner : er(i);
             er(i) = er(i) > maxer ? maxer : er(i);
         }
+        protect_er(er);
         R = er2R(er);
     }
 }

@@ -56,9 +56,7 @@ void FastPhaseK2::updateIteration()
             er(i) = er(i) < miner ? miner : er(i);
             er(i) = er(i) > maxer ? maxer : er(i);
         }
-        R.row(0) = er.square();
-        R.row(1) = (1 - er) * er;
-        R.row(2) = (1 - er).square();
+        R = er2R(er);
     }
 
     // update F

@@ -227,14 +227,30 @@ inline MyArr2D er2R(const MyArr1D & er)
     return R;
 }
 
+inline void protect_er(MyArr1D & er)
+{
+    const double maxer{std::exp(-1e-9)};
+    er = (er > maxer).select(maxer, er);
+    er = (er < 1.0 - maxer).select(1.0 - maxer, er);
+}
+
+// check initialize_sigmaCurrent_m in STITCH
+// double nGen = 4 * Ne / C;
+inline MyArr1D calc_er(const Int1D & dl, double nGen, double expRate = 0.5)
+{
+    MyArr1D er(dl.size());
+    // for(size_t i = 1; i < dl.size(); i++) distRate(i) = std::exp(-dl[i] / 1e6);
+    for(size_t i = 1; i < dl.size(); i++) er(i) = std::exp(-dl[i] * expRate * nGen / 1e8);
+    protect_er(er);
+    return er;
+}
+
 // check initialize_sigmaCurrent_m in STITCH
 // double nGen = 4 * Ne / C;
 inline MyArr2D calc_transRate_diploid(const Int1D & dl, double nGen, double expRate = 0.5)
 {
-    MyArr1D distRate(dl.size());
-    // for(size_t i = 1; i < dl.size(); i++) distRate(i) = std::exp(-dl[i] / 1e6);
-    for(size_t i = 1; i < dl.size(); i++) distRate(i) = std::exp(-dl[i] * expRate * nGen / 1e8);
-    return er2R(distRate);
+    auto er = calc_er(dl, nGen, expRate);
+    return er2R(er);
 }
 
 /*
@@ -262,7 +278,7 @@ inline auto get_emission_by_gl(const MyArr2D & gli, const MyArr2D & F, double mi
             }
         }
     // emitDip = emitDip.colwise() / emitDip.rowwise().maxCoeff(); // normalize
-    // emitDip = (emitDip < minEmission).select(minEmission, emitDip);
+    emitDip = (emitDip < minEmission).select(minEmission, emitDip);
     return emitDip;
 }
 
