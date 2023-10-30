@@ -97,7 +97,7 @@ struct Options
     double ftol{1e-6}; // threshold for F
     double qtol{1e-6}; // threshold for Q
     bool noaccel{0}, noscreen{0}, single_chunk{0}, debug{0}, collapse{0};
-    bool nQ{0}, nP{0}, nF{0}, nR{0},aQ{0};
+    bool nQ{0}, nP{0}, nF{0}, nR{0}, aQ{0};
     std::string out, in_beagle, in_vcf, in_bin, in_impute, in_joint;
     std::string samples{""}, region{""}, in_plink{""}, in_qfile{""}, in_pfile{""}, in_rfile{""};
     std::string opts_in_effect{"Options in effect:\n   "};
@@ -750,11 +750,10 @@ inline auto cat_stdvec_of_eigen(const std::vector<MyArr2D> & arr3)
     return out;
 }
 
-inline void load_csv(const std::string & path, MyArr2D & Q, char sep = ' ')
+inline void load_csv(MyArr2D & Q, const std::string & path, bool colmajor = true, char sep = ' ')
 {
     std::ifstream fin(path);
     std::string line;
-    std::vector<double> values;
     int i{0}, j{0};
     while(std::getline(fin, line))
     {
@@ -763,35 +762,18 @@ inline void load_csv(const std::string & path, MyArr2D & Q, char sep = ' ')
         j = 0;
         while(std::getline(lineStream, tok, sep))
         {
-            Q(j, i) = std::stod(tok);
+            if(colmajor)
+                Q(j, i) = std::stod(tok);
+            else
+                Q(i, j) = std::stod(tok);
             ++j;
         }
-        assert(j == Q.rows());
+        if(colmajor)
+            assert(j == Q.rows());
+        else
+            assert(j == Q.cols());
         ++i;
     }
-    assert(i == Q.cols());
-}
-
-inline void load_csv2(const std::string & path, MyArr2D & P, char sep = ' ')
-{
-    std::ifstream fin(path);
-    std::string line;
-    std::vector<double> values;
-    int i{0}, j{0};
-    while(std::getline(fin, line))
-    {
-        std::stringstream lineStream(line);
-        std::string tok;
-        j = 0;
-        while(std::getline(lineStream, tok, sep))
-        {
-            P(i, j) = std::stod(tok);
-            ++j;
-        }
-        assert(j == P.cols());
-        ++i;
-    }
-    assert(i == P.rows());
 }
 
 #endif // COMMON_H_

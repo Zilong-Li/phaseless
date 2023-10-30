@@ -172,7 +172,7 @@ void Admixture::normalizeF()
 
 void Admixture::setStartPoint(std::string qfile)
 {
-    if(!qfile.empty()) load_csv(qfile, Q);
+    if(!qfile.empty()) load_csv(Q, qfile);
 }
 
 void Admixture::writeQ(std::string out)
