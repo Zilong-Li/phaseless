@@ -755,6 +755,7 @@ inline void load_csv(MyArr2D & Q, const std::string & path, bool colmajor = true
     std::ifstream fin(path);
     std::string line;
     int i{0}, j{0};
+    double val;
     while(std::getline(fin, line))
     {
         std::stringstream lineStream(line);
@@ -762,10 +763,18 @@ inline void load_csv(MyArr2D & Q, const std::string & path, bool colmajor = true
         j = 0;
         while(std::getline(lineStream, tok, sep))
         {
+            try
+            {
+                val = std::stod(tok);
+            }
+            catch(const std::out_of_range & e)
+            {
+                val = 0;
+            }
             if(colmajor)
-                Q(j, i) = std::stod(tok);
+                Q(j, i) = val;
             else
-                Q(i, j) = std::stod(tok);
+                Q(i, j) = val;
             ++j;
         }
         if(colmajor)
