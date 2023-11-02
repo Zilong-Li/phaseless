@@ -425,18 +425,22 @@ int run_phaseless_main(Options & opts)
     opar.close();
     assert(std::filesystem::file_size(opts.out + ".pars.bin") == bytes_written);
     cao.done(tim.date(), "joint model done and outputting.", bytes_written, " bytes written to file");
-    faith.initIteration();
-    cao.done(tim.date(), "run one more iteration to output vcf.");
-    faith.GP.setZero(faith.M * 3, faith.N);
-    for(int i = 0; i < faith.N; i++)
-        res.emplace_back(pool.enqueue(&Phaseless::runBigass, &faith, i, std::ref(genome->gls), true));
-    loglike = 0;
-    for(auto && ll : res) loglike += ll.get();
-    res.clear(); // clear future and renew
-    faith.updateIteration();
-    auto bw = make_bcfwriter(opts.out + ".vcf.gz", genome->chrs, genome->sampleids);
-    for(int ic = 0; ic < genome->nchunks; ic++)
-        write_bigass_to_bcf(bw, faith.GP.data(), genome->chrs[ic], genome->pos[ic]);
+    if(opts.oVCF)
+    {
+        faith.initIteration();
+        cao.done(tim.date(), "run one more iteration to output vcf.");
+        faith.GP.setZero(faith.M * 3, faith.N);
+        for(int i = 0; i < faith.N; i++)
+            res.emplace_back(pool.enqueue(&Phaseless::runBigass, &faith, i, std::ref(genome->gls), true));
+        loglike = 0;
+        for(auto && ll : res) loglike += ll.get();
+        res.clear(); // clear future and renew
+        faith.updateIteration();
+        auto bw = make_bcfwriter(opts.out + ".vcf.gz", genome->chrs, genome->sampleids);
+        for(int ic = 0; ic < genome->nchunks; ic++)
+            write_bigass_to_bcf(bw, faith.GP.data() + faith.pos_chunk[ic] * faith.N * 3, genome->chrs[ic],
+                                genome->pos[ic]);
+    }
 
     return 0;
 }
