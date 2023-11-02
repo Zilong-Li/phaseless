@@ -145,13 +145,6 @@ struct Pars
     String1D sampleids;
 };
 
-inline auto calc_position_distance(const Int1D & markers)
-{
-    Int1D dl(markers.size());
-    dl[0] = 0;
-    for(size_t i = 1; i < markers.size(); i++) dl[i] = markers[i] - markers[i - 1];
-    return dl;
-}
 
 //******************************************************************************
 //                               STRING UTILS
@@ -216,6 +209,18 @@ inline bool starts_with(std::string const & str, std::string const & ending)
         return false;
     else
         return std::equal(ending.begin(), ending.end(), str.begin());
+}
+
+//******************************************************************************
+//                               RECOMBINATION
+//******************************************************************************
+
+inline auto calc_position_distance(const Int1D & markers)
+{
+    Int1D dl(markers.size());
+    dl[0] = 0;
+    for(size_t i = 1; i < markers.size(); i++) dl[i] = markers[i] - markers[i - 1];
+    return dl;
 }
 
 inline MyArr2D er2R(const MyArr1D & er)

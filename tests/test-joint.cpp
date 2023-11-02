@@ -16,7 +16,7 @@ TEST_CASE("phaseless joint single chunk", "[test-joint]")
     genome->chunksize = chunksize, genome->C = C;
     chunk_beagle_genotype_likelihoods(genome, "../data/bgl.gz");
     Phaseless faith(K, C, genome->nsamples, genome->nsnps, seed);
-    faith.initRecombination(genome->pos, 20000, 1);
+    faith.initRecombination(genome->pos, "", 20000, 1);
     ThreadPool pool(4);
     vector<future<double>> res;
     double loglike, diff, prevlike{std::numeric_limits<double>::lowest()};
@@ -42,10 +42,13 @@ TEST_CASE("phaseless joint multiple chunks", "[test-joint]")
     cao.cerr("TEST: phaseless joint multiple chunks");
     int K{3}, C{5}, seed{1}, chunksize{INT_MAX}, nimpute{10};
     std::unique_ptr<BigAss> genome = std::make_unique<BigAss>();
-    genome->chunksize = chunksize, genome->C = C;
+    genome->chunksize = chunksize, genome->C = C, genome->B = 1;
+    tim.clock();
     chunk_beagle_genotype_likelihoods(genome, "../data/all.bgl.gz");
+    cao.print(tim.date(), "parsing input -> C =", genome->C, ", N =", genome->nsamples, ", M =", genome->nsnps,
+              ", nchunks =", genome->nchunks);
     Phaseless faith(K, C, genome->nsamples, genome->nsnps, seed);
-    faith.initRecombination(genome->pos, 20000, 1);
+    faith.initRecombination(genome->pos, "");
     ThreadPool pool(4);
     vector<future<double>> res;
     double loglike, diff, prevlike{std::numeric_limits<double>::lowest()};
