@@ -19,24 +19,18 @@ jobs:
 
     - name: install dependency
       run: |
-        sudo apt update
         sudo apt-get update
-        sudo apt-get -qy install build-essential zlib1g zlib1g-dev curl libcurl4-openssl-dev lzma-dev liblzma-dev libeigen3-dev
-
-    - name: install htslib
-      run: |
-        git clone --recursive https://github.com/samtools/htslib.git
-        cd htslib && autoreconf -i && ./configure --enable-libcurl
-        sudo make -j 4 install
-        sudo ldconfig
-        cd -
+        sudo apt-get install -y --no-install-suggests --no-install-recommends \
+                     ca-certificates clang git autoconf automake make zlib1g-dev  \
+                     libbz2-dev liblzma-dev libcurl4-gnutls-dev libssl-dev        \
+                     libdeflate-dev libncurses5-dev
 
     - name: build
       run: |
-        make -j4
+        make -j10
 
     - name: test
       run: |
         cd tests
-        make -j4
+        make -j10
         make test
