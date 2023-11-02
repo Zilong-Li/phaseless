@@ -5,8 +5,8 @@ CXX      = g++
 # CXXFLAGS = -std=c++17 -Wall -O3 -march=native -DNDEBUG
 CXXFLAGS = -std=c++17 -Wall -O3 -march=native -fPIC -DNDEBUG
 INC      = -I./src -I./inst/include -I$(HTSDIR)
-LDFLAGS  =  -L$(HTSDIR) $(HTSDIR)/libhts.a
-LIBS     = -llzma -lbz2 -lm -lz -lpthread
+LDFLAGS  =  -L$(HTSDIR) -Wl,-rpath,$(HTSDIR)
+LIBS     = -lhts -llzma -lbz2 -lm -lz -lpthread
 OBJS     = src/main.o src/phaseless.o src/fastphase.o src/admixture.o src/utils.o
 BINS     = phaseless
 FLOAT    = 0

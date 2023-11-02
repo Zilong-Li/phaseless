@@ -2,7 +2,7 @@ HTSDIR   = ../inst/include/htslib-1.18
 CXX      = g++
 CXXFLAGS = -std=c++17 -Wall -O3 -march=native
 INC      = -I. -I../src -I../inst/include -I$(HTSDIR)
-LDFLAGS  =  -L$(HTSDIR) $(HTSDIR)/libhts.a
+LDFLAGS  =  -L$(HTSDIR) -Wl,-rpath,$(HTSDIR)
 LIBS     = -lhts -llzma -lbz2 -lm -lz -lpthread
 
 OBJS = test-main.o test-joint.o test-phaseless.o test-fastphase.o test-forward-backward.o
