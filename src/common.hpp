@@ -210,8 +210,7 @@ inline auto getClusterLikelihoods(int ind,
                                   const MyFloat1D & GL,
                                   const MyFloat1D & transRate_,
                                   const MyFloat1D & PI,
-                                  const MyFloat1D & F,
-                                  bool gamma = true)
+                                  const MyFloat1D & F)
 {
     const int C2 = LikeForwardInd.rows();
     const int M = LikeForwardInd.cols();
@@ -303,8 +302,6 @@ inline auto getClusterLikelihoods(int ind,
             }
         }
     }
-    // for(s = 0; s < M; s++) LikeForwardInd.col(s) /= cs(s);
-    if(gamma) LikeForwardInd.rowwise() /= cs.transpose();
 }
 
 inline auto calc_cluster_info(const int N, const MyArr2D & GZP1, const MyArr2D & GZP2)
