@@ -171,7 +171,7 @@ List parse_impute_par(std::string filename, int ic = -1)
     for(auto ind : ids)
     {
         for(int c = 0; c < nchunks; c++) {
-            ic = nchunks > 1 ? c : ic;
+            ic = nchunks > 1 ? c : std::max(ic, c);
             const int iM = genome->pos[ic].size();
             const int nGrids = genome->B > 1 ? (iM + genome->B - 1) / genome->B : iM;
             alpha.setZero(genome->C * genome->C, nGrids);
