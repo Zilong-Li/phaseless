@@ -1,5 +1,6 @@
 #include "phaseless.hpp"
 #include <Rcpp.h>
+#include <RcppEigen.h>
 #include <alpaca/alpaca.h>
 
 using namespace Rcpp;
@@ -122,5 +123,69 @@ List parse_joint_post(std::string filename, int chunk = 0)
         }
     }
     return List::create(Named("C") = par->C, Named("K") = par->K, Named("S") = S, Named("N") = par->N,
-                        Named("gamma") = ret_gamma, Named("ancestry") = ret_post_y, Named("clusterancestry") = ret_post_zy);
+                        Named("gamma") = ret_gamma, Named("ancestry") = ret_post_y,
+                        Named("clusterancestry") = ret_post_zy);
+}
+
+//' parse options in the fastphase model
+//' @param filename path to binary file from impute command
+//' @export
+// [[Rcpp::export]]
+List parse_impute_opt(std::string filename) {
+    auto filesize = std::filesystem::file_size(filename);
+    std::error_code ec;
+    std::ifstream ifs(filename, std::ios::in | std::ios::binary);
+    constexpr auto OPTIONS = alpaca::options::fixed_length_encoding;
+    std::unique_ptr<BigAss> genome = std::make_unique<BigAss>(alpaca::deserialize<OPTIONS, BigAss>(ifs, filesize, ec));
+    ifs.close();
+    assert((bool)ec == false);
+    return List::create(Named("C") = genome->C,
+                        Named("B") = genome->B,
+                        Named("G") = genome->G,
+                        Named("chunksize") = genome->chunksize,
+                        Named("nsamples") = genome->nsamples,
+                        Named("nsnps") = genome->nsnps,
+                        Named("nchunks") = genome->nchunks);
+    
+}
+
+
+//' parse parameters in the fastphase model
+//' @param filename path to binary file from impute command
+//' @export
+// [[Rcpp::export]]
+List parse_impute_par(std::string filename, int ic = -1)
+{
+    auto filesize = std::filesystem::file_size(filename);
+    std::error_code ec;
+    std::ifstream ifs(filename, std::ios::in | std::ios::binary);
+    constexpr auto OPTIONS = alpaca::options::fixed_length_encoding;
+    std::unique_ptr<BigAss> genome = std::make_unique<BigAss>(alpaca::deserialize<OPTIONS, BigAss>(ifs, filesize, ec));
+    ifs.close();
+    assert((bool)ec == false);
+    MyArr2D alpha, beta, ae;
+    Int1D ids;
+    for(int ind = 0; ind < genome->nsamples; ind++) ids.push_back(ind);
+    int nchunks = ic < 0 ? genome->nchunks : 1;
+    List alphaN(nchunks), betaN(nchunks), aeN(nchunks);
+    for(auto ind : ids)
+    {
+        for(int c = 0; c < nchunks; c++) {
+            ic = nchunks > 1 ? c : ic;
+            const int iM = genome->pos[ic].size();
+            const int nGrids = genome->B > 1 ? (iM + genome->B - 1) / genome->B : iM;
+            alpha.setZero(genome->C * genome->C, nGrids);
+            beta.setZero(genome->C * genome->C, nGrids);
+            get_cluster_likelihood(ind, iM, alpha, beta, genome->gls[ic], genome->R[ic], genome->PI[ic], genome->F[ic]);
+            if(!((1 - (alpha * beta).colwise().sum()).abs() < 1e-6).all()) cao.error("gamma sum is not 1.0!\n");
+            ae.setZero(genome->C * genome->C, nGrids);
+            get_cluster_pairs_probabity(ae, genome->R[ic], genome->PI[ic]);
+            alphaN[c] = alpha;
+            betaN[c] = beta;
+            aeN[c] = ae;
+        }
+    }
+    return List::create(Named("alpha") = alphaN,
+                        Named("beta") = betaN,
+                        Named("ae") = aeN);
 }

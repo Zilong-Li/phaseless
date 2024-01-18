@@ -23,4 +23,4 @@ RANLIB=$(shell "R CMD config RANLIB")
 LDFLAGS=$(shell "R CMD config LDFLAGS")
 
 htslib:
-	(cd ${HTSDIR} && ./configure --disable-libcurl && $(MAKE) CC="$(CC)" AR="$(AR)" RANLIB="$(RANLIB)" CFLAGS="$(CFLAGS)" CPPFLAGS="$(CPPFLAGS) -fPIC" LDFLAGS="$(LDFLAGS)" && cd ..)
+	(cd ${HTSDIR} && ./configure --disable-libcurl --without-libdeflate && $(MAKE) CC="$(CC)" AR="$(AR)" RANLIB="$(RANLIB)" CFLAGS="$(CFLAGS)" CPPFLAGS="$(CPPFLAGS) -fPIC" LDFLAGS="$(LDFLAGS)" && cd ..)

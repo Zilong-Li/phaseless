@@ -1,4 +1,4 @@
 #!/bin/sh
 
-make clean
+make clean && rm -f src/*.o src/*.so src/*.dll src/*.dylib
 cd inst/include/htslib-1.18/ && make clean && cd -

@@ -16,3 +16,17 @@ parse_joint_post <- function(filename, chunk = 0L) {
     .Call(`_phaseless_parse_joint_post`, filename, chunk)
 }
 
+#' parse options in the fastphase model
+#' @param filename path to binary file from impute command
+#' @export
+parse_impute_opt <- function(filename) {
+    .Call(`_phaseless_parse_impute_opt`, filename)
+}
+
+#' parse parameters in the fastphase model
+#' @param filename path to binary file from impute command
+#' @export
+parse_impute_par <- function(filename, ic = -1L) {
+    .Call(`_phaseless_parse_impute_par`, filename, ic)
+}
+

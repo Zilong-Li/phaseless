@@ -16,7 +16,8 @@ SystemRequirements: C++17, GNU make
 Imports: 
     Rcpp
 LinkingTo:
-    Rcpp
+    Rcpp,
+    RcppEigen (>= 0.3.3.3.0)
 URL: https://github.com/Zilong-Li/phaseless
 BugReports: https://github.com/Zilong-Li/phaseless/issues
 License: GPL3 + file LICENSE
