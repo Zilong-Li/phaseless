@@ -167,9 +167,11 @@ List parse_impute_par(std::string filename, int ic = -1)
     Int1D ids;
     for(int ind = 0; ind < genome->nsamples; ind++) ids.push_back(ind);
     int nchunks = ic < 0 ? genome->nchunks : 1;
-    List alphaN(nchunks), betaN(nchunks), aeN(nchunks);
+    int N = ids.size();
+    List ret(N);
     for(auto ind : ids)
     {
+        List alphaI(nchunks), betaI(nchunks), aeI(nchunks);
         for(int c = 0; c < nchunks; c++) {
             ic = nchunks > 1 ? c : std::max(ic, c);
             const int iM = genome->pos[ic].size();
@@ -180,12 +182,13 @@ List parse_impute_par(std::string filename, int ic = -1)
             if(!((1 - (alpha * beta).colwise().sum()).abs() < 1e-6).all()) cao.error("gamma sum is not 1.0!\n");
             ae.setZero(genome->C * genome->C, nGrids);
             get_cluster_pairs_probabity(ae, genome->R[ic], genome->PI[ic]);
-            alphaN[c] = alpha;
-            betaN[c] = beta;
-            aeN[c] = ae;
+            alphaI[c] = alpha;
+            betaI[c] = beta;
+            aeI[c] = ae;
         }
+        ret[ind] =  List::create(Named("alpha") = alphaI,
+                                 Named("beta") = betaI,
+                                 Named("ae") = aeI);
     }
-    return List::create(Named("alpha") = alphaN,
-                        Named("beta") = betaN,
-                        Named("ae") = aeN);
+    return ret;
 }
