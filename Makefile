@@ -6,7 +6,7 @@ CXX      = g++
 CXXFLAGS = -std=c++17 -Wall -O3 -march=native -fPIC -DNDEBUG
 INC      = -I./src -I./inst/include -I$(HTSDIR)
 LDFLAGS  =  -L$(HTSDIR) -Wl,-rpath,$(HTSDIR)
-LIBS     = -lhts -llzma -lbz2 -lm -lz -lpthread
+LIBS     = $(HTSDIR)/libhts.a -llzma -lbz2 -lm -lz -lpthread
 OBJS     = src/main.o src/phaseless.o src/fastphase.o src/admixture.o src/utils.o
 BINS     = phaseless
 FLOAT    = 0
@@ -27,7 +27,7 @@ $(BINS): $(OBJS) htslib
 	${CXX} ${CXXFLAGS} -o $@ $(OBJS) ${INC} $(LIBS) $(LDFLAGS)
 
 htslib:
-	cd $(HTSDIR) && ./configure --disable-libcurl && make -j10
+	cd $(HTSDIR) && ./configure --disable-libcurl --without-libdeflate && make -j10
 
 clean:
 	rm -f $(BINS) $(OBJS)
