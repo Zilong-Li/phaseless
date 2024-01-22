@@ -145,7 +145,6 @@ struct Pars
     String1D sampleids;
 };
 
-
 //******************************************************************************
 //                               STRING UTILS
 //******************************************************************************
@@ -288,6 +287,55 @@ inline auto get_emission_by_gl(const MyArr2D & gli, const MyArr2D & F, double mi
 }
 
 /*
+** @param gli  genotype likelihoods of current individual i, (M, 3)
+** @param F    cluster-specific allele frequence (M, C)
+** @return emission probability (M, C2)
+*/
+inline auto get_emission_by_grid(const MyFloat1D & GL,
+                                 const MyFloat1D & F,
+                                 int ind,
+                                 int M,
+                                 int B,
+                                 double minEmission = 1e-10)
+{
+    const int C = F.size() / M;
+    const int C2 = C * C;
+    const int nGrids = B > 1 ? (M + B - 1) / B : M;
+    MyArr2D emitGrid = MyArr2D::Ones(C2, nGrids);
+    int z1, z2, z12, i, s, e, g, g1, g2;
+    int igs = ind * M * 3;
+    for(g = 0; g < nGrids; g++)
+    {
+        s = g * B;
+        e = g == nGrids - 1 ? M - 1 : B * (g + 1) - 1;
+        for(z1 = 0; z1 < C; z1++)
+        {
+            for(z2 = 0; z2 < C; z2++)
+            {
+                z12 = z1 * C + z2;
+                for(i = s; i <= e; i++)
+                {
+                    double emit = 0;
+                    for(g1 = 0; g1 <= 1; g1++)
+                    {
+                        for(g2 = 0; g2 <= 1; g2++)
+                        {
+                            emit += GL[igs + (g1 + g2) * M + i] * (g1 * F[z1 * M + i] + (1 - g1) * (1 - F[z1 * M + i]))
+                                    * (g2 * F[z2 * M + i] + (1 - g2) * (1 - F[z2 * M + i]));
+                        }
+                    }
+                    emitGrid(z12, g) *= emit;
+                }
+            }
+        }
+        // apply bounding
+        // emitGrid.col(g) /= emitGrid.col(g).maxCoeff();
+        // emitGrid.col(g) = (emitGrid.col(g) < minEmission).select(minEmission, emitGrid.col(g));
+    }
+    return emitGrid;
+}
+
+/*
 ** @param alpha    forward probability, (C2,M)
 ** @param beta     backwards probability (C2,M)
 ** @param E        emission probability with individual genotype
@@ -363,14 +411,14 @@ inline auto forward_backwards_diploid(MyArr2D & alpha,
 }
 
 inline auto get_cluster_probability(int ind,
-                                   const int M,
-                                   MyArr2D & alpha,
-                                   MyArr2D & beta,
-                                   const MyFloat1D & GL,
-                                   const MyFloat1D & R,
-                                   const MyFloat1D & PI,
-                                   const MyFloat1D & F,
-                                   const double minEmission = 1e-6)
+                                    const int M,
+                                    MyArr2D & alpha,
+                                    MyArr2D & beta,
+                                    const MyFloat1D & GL,
+                                    const MyFloat1D & R,
+                                    const MyFloat1D & PI,
+                                    const MyFloat1D & F,
+                                    const double minEmission = 1e-6)
 {
     const int C = F.size() / M;
     const int C2 = alpha.rows();
@@ -408,8 +456,8 @@ inline auto get_cluster_probability(int ind,
                 }
             }
         }
-        emitGrid.col(g) /= emitGrid.col(g).maxCoeff();
-        emitGrid.col(g) = (emitGrid.col(g) < minEmission).select(minEmission, emitGrid.col(g)); // apply bounding
+        // emitGrid.col(g) /= emitGrid.col(g).maxCoeff();
+        // emitGrid.col(g) = (emitGrid.col(g) < minEmission).select(minEmission, emitGrid.col(g)); // apply bounding
         for(z1 = 0; z1 < C; z1++)
         {
             for(z2 = 0; z2 < C; z2++)
@@ -449,8 +497,8 @@ inline auto get_cluster_probability(int ind,
                     }
                 }
             }
-            emitGrid.col(g) /= emitGrid.col(g).maxCoeff();
-            emitGrid.col(g) = (emitGrid.col(g) < minEmission).select(minEmission, emitGrid.col(g)); // apply bounding
+            // emitGrid.col(g) /= emitGrid.col(g).maxCoeff();
+            // emitGrid.col(g) = (emitGrid.col(g) < minEmission).select(minEmission, emitGrid.col(g)); // apply bounding
             for(z1 = 0; z1 < C; z1++)
             {
                 for(z2 = 0; z2 < C; z2++)
@@ -539,8 +587,6 @@ inline auto get_cluster_probability(int ind,
                                                * (g2 * F[z2 * M + s] + (1 - g2) * (1 - F[z2 * M + s]));
                         }
                     }
-                    // emit(k12, s) = emit(k12, s) < minEmission ? minEmission :
-                    // emit(k12, s);
                     alpha(z12, s) = emitSnp(z12, s)
                                     * (alpha(z12, s - 1) * R[s * 3 + 0] + PI[s * C + z1] * sumTmp1(z2)
                                        + PI[s * C + z2] * sumTmp1(z1) + PI[s * C + z1] * PI[s * C + z2] * constTmp);
@@ -612,10 +658,98 @@ inline auto get_cluster_frequency(MyArr2D & ae, const MyFloat1D & R_, const MyFl
     // (1.0 - ae.colwise().sum()).abs() < 1e-2 is OK. this may be due to
     // rounding error if we want to colsum equals 1.0. then normlize it
     // TODO: cluster frequency can be zero for certain cluster.
-    const double tol = 1e-6;
-    ae = (ae < tol).select(tol, ae);
-    ae = (ae > 1 - tol).select(1 - tol, ae);
+    // const double tol = 1e-6;
+    // ae = (ae < tol).select(tol, ae);
+    // ae = (ae > 1 - tol).select(1 - tol, ae);
+    // ae.rowwise() /= ae.colwise().sum();
+}
+
+inline auto get_cluster_likelihoods(int ind,
+                                    const int M,
+                                    const int B,
+                                    const MyFloat1D & GL,
+                                    const MyFloat1D & R,
+                                    const MyFloat1D & PI,
+                                    const MyFloat1D & F,
+                                    const double minEmission = 1e-10)
+{
+    const int C = F.size() / M;
+    const int C2 = C * C;
+    MyArr2D emitGrid = get_emission_by_grid(GL, F, ind, M, B, minEmission);
+    const int nGrids = emitGrid.cols();
+    MyArr2D alpha(C2, nGrids), beta(C2, nGrids), ae(C2, nGrids);
+    int z1, z2, z12;
+    MyArr1D sumTmp1(C); // store sum over internal loop for alpha
+    MyArr1D sumTmp2(C); // store sum over internal loop for ae
+    MyArr1D cs = MyArr1D::Zero(nGrids);
+    double constTmp;
+    // ======== forward and backward recursion ===========
+    int g = 0;
+    for(z1 = 0; z1 < C; z1++)
+    {
+        for(z2 = 0; z2 < C; z2++)
+        {
+            z12 = z1 * C + z2;
+            alpha(z12, g) = emitGrid(z12, g) * PI[g * C + z1] * PI[g * C + z2];
+            ae(z12, g) = PI[g * C + z1] * PI[g * C + z2];
+            cs(g) += alpha(z12, g);
+        }
+    }
+    cs(g) = 1 / cs(g);
+    alpha.col(g) *= cs(g); // normalize it
+    // now get the rest
+    for(g = 1; g < nGrids; g++)
+    {
+        sumTmp1 = alpha.col(g - 1).reshaped(C, C).rowwise().sum() * R[g * 3 + 1];
+        sumTmp2 = ae.col(g - 1).reshaped(C, C).rowwise().sum() * R[g * 3 + 1];
+        constTmp = R[g * 3 + 2]; // since alpha.col(g).sum()==1
+        for(z1 = 0; z1 < C; z1++)
+        {
+            for(z2 = 0; z2 < C; z2++)
+            {
+                z12 = z1 * C + z2;
+                alpha(z12, g) = emitGrid(z12, g)
+                                * (alpha(z12, g - 1) * R[g * 3 + 0] + PI[g * C + z1] * sumTmp1(z2)
+                                   + PI[g * C + z2] * sumTmp1(z1) + PI[g * C + z1] * PI[g * C + z2] * constTmp);
+                cs(g) += alpha(z12, g);
+                ae(z12, g) = (ae(z12, g - 1) * R[g * 3 + 0] + PI[g * C + z1] * sumTmp2(z2)
+                              + PI[g * C + z2] * sumTmp2(z1) + PI[g * C + z1] * PI[g * C + z2] * constTmp);
+            }
+        }
+        cs(g) = 1 / cs(g);
+        alpha.col(g) *= cs(g); // normalize it
+    }
+    // const double tol = 1e-6;
+    // ae = (ae < tol).select(tol, ae);
+    // ae = (ae > 1 - tol).select(1 - tol, ae);
     ae.rowwise() /= ae.colwise().sum();
+    // next backwards
+    g = nGrids - 1;
+    beta.col(g).setConstant(1.0);
+    for(g = nGrids - 2; g >= 0; g--)
+    {
+        auto beta_mult_emit = emitGrid.col(g + 1) * beta.col(g + 1);
+        sumTmp1.setZero();
+        for(constTmp = 0, z1 = 0; z1 < C; z1++)
+        {
+            for(z2 = 0; z2 < C; z2++)
+            {
+                z12 = z1 * C + z2;
+                sumTmp1(z1) += beta_mult_emit(z12) * PI[(g + 1) * C + z2] * R[(g + 1) * 3 + 1];
+                constTmp += beta_mult_emit(z12) * PI[(g + 1) * C + z1] * PI[(g + 1) * C + z2] * R[(g + 1) * 3 + 2];
+            }
+        }
+        for(z1 = 0; z1 < C; z1++)
+        {
+            for(z2 = 0; z2 < C; z2++)
+            {
+                z12 = z1 * C + z2;
+                beta(z12, g) =
+                    (beta_mult_emit(z12) * R[(g + 1) * 3 + 0] + sumTmp1(z1) + sumTmp1(z2) + constTmp) * cs(g + 1);
+            }
+        }
+    }
+    return alpha * beta / ae;
 }
 
 inline auto calc_cluster_info(const int N, const MyArr2D & GZP1, const MyArr2D & GZP2)

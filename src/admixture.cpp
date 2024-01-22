@@ -12,7 +12,6 @@ using namespace std;
 double Admixture::runOptimalWithBigAss(int ind, const std::unique_ptr<BigAss> & genome)
 {
     MyArr2D kapa, Ekg;
-    MyArr2D alpha, beta, ae;
     MyArr1D iQ = MyArr1D::Zero(K);
     MyArr1D Hz(C);
     double norm = 0, llike = 0, tmp = 0;
@@ -20,13 +19,9 @@ double Admixture::runOptimalWithBigAss(int ind, const std::unique_ptr<BigAss> & 
     for(int ic = 0, m = 0; ic < genome->nchunks; ic++)
     {
         const int nsnps = genome->pos[ic].size();
-        const int nGrids = genome->B > 1 ? (nsnps + genome->B - 1) / genome->B : nsnps;
-        alpha.setZero(C * C, nGrids);
-        beta.setZero(C * C, nGrids);
-        get_cluster_probability(ind, nsnps, alpha, beta, genome->gls[ic], genome->R[ic], genome->PI[ic],
-                               genome->F[ic]); // return gamma
-        ae.setZero(C * C, nGrids);
-        get_cluster_frequency(ae, genome->R[ic], genome->PI[ic]);
+        auto cl = get_cluster_likelihoods(ind, nsnps, genome->B, genome->gls[ic], genome->R[ic], genome->PI[ic],
+                                          genome->F[ic]);
+        const int nGrids = cl.cols();
         kapa.setZero(C * K, nGrids); // C x K x M layout
         Ekg.setZero(K, nGrids);
         for(s = 0; s < nGrids; s++, m++)
@@ -37,7 +32,7 @@ double Admixture::runOptimalWithBigAss(int ind, const std::unique_ptr<BigAss> & 
                 for(tmp = 0, c2 = 0; c2 < C; c2++)
                 {
                     c12 = c1 * C + c2;
-                    double xz = alpha(c12, s) * beta(c12, s) / ae(c12, s);
+                    double xz = cl(c12, s);
                     double zy = Hz(c1) * Hz(c2);
                     tmp += xz * zy;
                 }
