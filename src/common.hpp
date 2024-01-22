@@ -362,7 +362,7 @@ inline auto forward_backwards_diploid(MyArr2D & alpha,
     return cs;
 }
 
-inline auto get_cluster_likelihood(int ind,
+inline auto get_cluster_probability(int ind,
                                    const int M,
                                    MyArr2D & alpha,
                                    MyArr2D & beta,

@@ -23,7 +23,7 @@ double Admixture::runOptimalWithBigAss(int ind, const std::unique_ptr<BigAss> & 
         const int nGrids = genome->B > 1 ? (nsnps + genome->B - 1) / genome->B : nsnps;
         alpha.setZero(C * C, nGrids);
         beta.setZero(C * C, nGrids);
-        get_cluster_likelihood(ind, nsnps, alpha, beta, genome->gls[ic], genome->R[ic], genome->PI[ic],
+        get_cluster_probability(ind, nsnps, alpha, beta, genome->gls[ic], genome->R[ic], genome->PI[ic],
                                genome->F[ic]); // return gamma
         ae.setZero(C * C, nGrids);
         get_cluster_pairs_probabity(ae, genome->R[ic], genome->PI[ic]);
@@ -76,7 +76,7 @@ double Admixture::runNativeWithBigAss(int ind, const std::unique_ptr<BigAss> & g
         const int nGrids = genome->B > 1 ? (nsnps + genome->B - 1) / genome->B : nsnps;
         alpha.setZero(C * C, nGrids);
         beta.setZero(C * C, nGrids);
-        get_cluster_likelihood(ind, nsnps, alpha, beta, genome->gls[ic], genome->R[ic], genome->PI[ic], genome->F[ic]);
+        get_cluster_probability(ind, nsnps, alpha, beta, genome->gls[ic], genome->R[ic], genome->PI[ic], genome->F[ic]);
         ae.setZero(C * C, nGrids);
         get_cluster_pairs_probabity(ae, genome->R[ic], genome->PI[ic]);
         iEkc.setZero(C * K, nGrids);
