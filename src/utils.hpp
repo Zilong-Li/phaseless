@@ -4,7 +4,6 @@
 #include "common.hpp"
 
 std::string make_beagle_header(std::string fam);
-int run_parse_main(Options & opts);
 int run_convert_main(Options & opts);
 
 

@@ -152,7 +152,7 @@ int main(int argc, char * argv[])
         .default_value(std::string{""});
     cmd_impute.add_argument("-i", "--iterations")
         .help("number of EM iterations")
-        .default_value(40)
+        .default_value(100)
         .scan<'i', int>();
     cmd_impute.add_argument("-n", "--threads")
         .help("number of threads")
@@ -230,41 +230,8 @@ int main(int argc, char * argv[])
         .scan<'i', int>();
     // cmd_convert.add_parents(program);
 
-    argparse::ArgumentParser cmd_parse("parse", VERSION, default_arguments::help);
-    cmd_parse.add_description("manipulate pars.bin file");
-    cmd_parse.add_argument("-i", "--impute")
-        .help("binary format from impute command as input")
-        .default_value(std::string{""});
-    cmd_parse.add_argument("-j", "--joint")
-        .help("binary format from joint command as input")
-        .default_value(std::string{""});
-    cmd_parse.add_argument("-i", "--iterations")
-        .help("number of EM iterations")
-        .default_value(1000)
-        .scan<'i', int>();
-    cmd_parse.add_argument("-n", "--threads")
-        .help("number of threads")
-        .default_value(10)
-        .scan<'i', int>();
-    cmd_parse.add_argument("-c", "--chunk")
-        .help("which chunk to extract (0-based), negative means all chunks")
-        .default_value(0)
-        .scan<'i', int>();
-    cmd_parse.add_argument("-S", "--samples-file")
-        .help("extract samples in the file, one sample id per line")
-        .default_value(std::string{""});
-    cmd_parse.add_argument("-o", "--out")
-        .help("output prefix")
-        .default_value(std::string{"parse"});
-    cmd_parse.add_argument("-d","--seed")
-        .help("seed for reproducibility")
-        .default_value(999)
-        .scan<'i', int>();
-    // cmd_parse.add_parents(program);
-
     program.add_subparser(cmd_impute);
     program.add_subparser(cmd_admix);
-    program.add_subparser(cmd_parse);
     program.add_subparser(cmd_convert);
     program.add_subparser(cmd_joint);
     // clang-format on
@@ -337,20 +304,6 @@ int main(int argc, char * argv[])
             opts.nadmix = cmd_admix.get<int>("--iterations");
             if(opts.in_bin.empty() || cmd_admix.get<bool>("--help")) throw std::runtime_error(cmd_admix.help().str());
             run_admix_main(opts);
-        }
-        else if(program.is_subcommand_used(cmd_parse))
-        {
-            opts.in_impute.assign(cmd_parse.get("--impute"));
-            opts.in_joint.assign(cmd_parse.get("--joint"));
-            opts.out.assign(cmd_parse.get("--out"));
-            opts.nimpute = cmd_parse.get<int>("--iterations");
-            opts.nthreads = cmd_parse.get<int>("--threads");
-            opts.seed = cmd_parse.get<int>("--seed");
-            opts.samples = cmd_parse.get("--samples-file");
-            opts.ichunk = cmd_parse.get<int>("--chunk");
-            if((opts.in_impute.empty() && opts.in_joint.empty()) || cmd_parse.get<bool>("--help"))
-                throw std::runtime_error(cmd_parse.help().str());
-            run_parse_main(opts);
         }
         else if(program.is_subcommand_used(cmd_convert))
         {
