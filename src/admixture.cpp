@@ -214,11 +214,11 @@ int run_admix_main(Options & opts)
     vector<future<double>> llike;
     if(!opts.noaccel)
     {
-        MyArr2D F0, Q0, F1, Q1;
+        MyArr2D F0, Q0, F1, Q1, F2, Q2, Ft, Qt;
         const int istep{4};
         double alpha{std::numeric_limits<double>::lowest()}, qdiff, ldiff, stepMax{4}, alphaMax{1280};
-        double prevlike{std::numeric_limits<double>::lowest()};
-        for(int it = 0; SIG_COND && (it < opts.nadmix / 3); it++)
+        double prevlike{std::numeric_limits<double>::lowest()}, logcheck{0}, loglike{0};
+        for(int it = 0; SIG_COND && (it < opts.nadmix / 4); it++)
         {
             // first accel iteration
             admixer.initIteration();
@@ -230,20 +230,20 @@ int run_admix_main(Options & opts)
             llike.clear(); // clear future and renew
             admixer.updateIteration();
             // second accel iteration
+            tim.clock();
+            admixer.initIteration();
             F1 = admixer.F;
             Q1 = admixer.Q;
             qdiff = (Q1 - Q0).square().sum();
-            tim.clock();
-            admixer.initIteration();
             for(int i = 0; i < genome->nsamples; i++)
                 llike.emplace_back(poolit.enqueue(&Admixture::runOptimalWithBigAss, &admixer, i, std::ref(genome)));
-            double loglike = 0;
+            loglike = 0;
             for(auto && ll : llike) loglike += ll.get();
             llike.clear(); // clear future and renew
             admixer.updateIteration();
             ldiff = it ? loglike - prevlike : NAN;
             prevlike = loglike;
-            cao.print(tim.date(), "SqS3 iteration", it * 3 + 1, ", diff(Q) =", std::scientific, qdiff,
+            cao.print(tim.date(), "SqS3 iteration", it * 4 + 1, ", diff(Q) =", std::scientific, qdiff,
                       ", alpha=", alpha, ", likelihoods =", std::fixed, loglike, ", diff(likelihoods)=", ldiff,
                       ", elapsed", tim.reltime(), " sec");
             if(ldiff < opts.ltol)
@@ -252,6 +252,9 @@ int run_admix_main(Options & opts)
                           opts.ltol);
                 break;
             }
+            // save for later comparison
+            Ft = admixer.F;
+            Qt = admixer.Q;
             // accel iteration with steplen
             alpha = ((F1 - F0).square().sum() + (Q1 - Q0).square().sum())
                     / ((admixer.F - 2 * F1 + F0).square().sum() + (admixer.Q - 2 * Q1 + Q0).square().sum());
@@ -262,15 +265,42 @@ int run_admix_main(Options & opts)
                 alpha = min(stepMax, alphaMax);
                 stepMax = min(stepMax * istep, alphaMax);
             }
+            // third accel iter
+            // update Q and F using the second em iter
             admixer.F = F0 + 2 * alpha * (F1 - F0) + alpha * alpha * (admixer.F - 2 * F1 + F0);
             admixer.Q = Q0 + 2 * alpha * (Q1 - Q0) + alpha * alpha * (admixer.Q - 2 * Q1 + Q0);
             admixer.protectPars();
             admixer.initIteration();
             for(int i = 0; i < genome->nsamples; i++)
                 llike.emplace_back(poolit.enqueue(&Admixture::runOptimalWithBigAss, &admixer, i, std::ref(genome)));
-            for(auto && ll : llike) ll.get();
+            loglike = 0;
+            for(auto && ll : llike) loglike += ll.get();
             llike.clear(); // clear future and renew
             admixer.updateIteration();
+            // save current pars
+            F2 = admixer.F;
+            Q2 = admixer.Q;
+            // check if normal third iter is better
+            admixer.Q = Qt;
+            admixer.F = Ft;
+            admixer.initIteration();
+            for(int i = 0; i < genome->nsamples; i++)
+                llike.emplace_back(poolit.enqueue(&Admixture::runOptimalWithBigAss, &admixer, i, std::ref(genome)));
+            logcheck = 0;
+            for(auto && ll : llike) logcheck += ll.get();
+            llike.clear(); // clear future and renew
+            admixer.updateIteration();
+            if(logcheck - loglike > 0.1)
+            {
+                stepMax = istep;
+                cao.warn(tim.date(), "reset stepMax to 4, normal EM yields better likelihoods than the accelerated EM.",
+                         logcheck, " -", loglike, " > 0.1");
+            }
+            else
+            {
+                admixer.Q = Q2;
+                admixer.F = F2;
+            }
         }
     }
     else
