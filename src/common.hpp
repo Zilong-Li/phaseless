@@ -722,7 +722,7 @@ inline auto get_cluster_likelihoods(int ind,
     // const double tol = 1e-6;
     // ae = (ae < tol).select(tol, ae);
     // ae = (ae > 1 - tol).select(1 - tol, ae);
-    ae.rowwise() /= ae.colwise().sum();
+    // ae.rowwise() /= ae.colwise().sum();
     // next backwards
     g = nGrids - 1;
     beta.col(g).setConstant(1.0);
