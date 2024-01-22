@@ -214,7 +214,7 @@ inline bool starts_with(std::string const & str, std::string const & ending)
 //                               RECOMBINATION
 //******************************************************************************
 
-inline auto calc_position_distance(const Int1D & markers)
+inline Int1D calc_position_distance(const Int1D & markers)
 {
     Int1D dl(markers.size());
     dl[0] = 0;
@@ -262,7 +262,7 @@ inline MyArr2D calc_transRate_diploid(const Int1D & dl, double nGen, double expR
 ** @param F    cluster-specific allele frequence (M, C)
 ** @return emission probability (M, C2)
 */
-inline auto get_emission_by_gl(const MyArr2D & gli, const MyArr2D & F, double minEmission = 1e-10)
+inline MyArr2D get_emission_by_gl(const MyArr2D & gli, const MyArr2D & F, double minEmission = 1e-10)
 {
     int k1, k2, g1, g2;
     const int M = F.rows();
@@ -291,12 +291,12 @@ inline auto get_emission_by_gl(const MyArr2D & gli, const MyArr2D & F, double mi
 ** @param F    cluster-specific allele frequence (M, C)
 ** @return emission probability (M, C2)
 */
-inline auto get_emission_by_grid(const MyFloat1D & GL,
-                                 const MyFloat1D & F,
-                                 int ind,
-                                 int M,
-                                 int B,
-                                 double minEmission = 1e-10)
+inline MyArr2D get_emission_by_grid(const MyFloat1D & GL,
+                                    const MyFloat1D & F,
+                                    int ind,
+                                    int M,
+                                    int B,
+                                    double minEmission = 1e-10)
 {
     const int C = F.size() / M;
     const int C2 = C * C;
@@ -344,11 +344,11 @@ inline auto get_emission_by_grid(const MyFloat1D & GL,
 ** @param PI       cluster frequency (C,M)
 ** @return individual log likelihood
 */
-inline auto forward_backwards_diploid(MyArr2D & alpha,
-                                      MyArr2D & beta,
-                                      const MyArr2D & E,
-                                      const MyArr2D & R,
-                                      const MyArr2D & PI)
+inline MyArr1D forward_backwards_diploid(MyArr2D & alpha,
+                                         MyArr2D & beta,
+                                         const MyArr2D & E,
+                                         const MyArr2D & R,
+                                         const MyArr2D & PI)
 {
     const int M = alpha.cols();
     const int C = PI.rows();
@@ -410,15 +410,15 @@ inline auto forward_backwards_diploid(MyArr2D & alpha,
     return cs;
 }
 
-inline auto get_cluster_probability(int ind,
-                                    const int M,
-                                    MyArr2D & alpha,
-                                    MyArr2D & beta,
-                                    const MyFloat1D & GL,
-                                    const MyFloat1D & R,
-                                    const MyFloat1D & PI,
-                                    const MyFloat1D & F,
-                                    const double minEmission = 1e-6)
+inline MyArr1D get_cluster_probability(int ind,
+                                       const int M,
+                                       MyArr2D & alpha,
+                                       MyArr2D & beta,
+                                       const MyFloat1D & GL,
+                                       const MyFloat1D & R,
+                                       const MyFloat1D & PI,
+                                       const MyFloat1D & F,
+                                       const double minEmission = 1e-6)
 {
     const int C = F.size() / M;
     const int C2 = alpha.rows();
@@ -627,7 +627,7 @@ inline auto get_cluster_probability(int ind,
     return cs;
 }
 
-inline auto get_cluster_frequency(MyArr2D & ae, const MyFloat1D & R_, const MyFloat1D & PI_)
+inline void get_cluster_frequency(MyArr2D & ae, const MyFloat1D & R_, const MyFloat1D & PI_)
 {
     const int C2 = ae.rows();
     const int M = ae.cols();
@@ -764,7 +764,7 @@ inline auto calc_cluster_info(const int N, const MyArr2D & GZP1, const MyArr2D &
 }
 
 // @params GL genotype likelihoods, N x M x 3
-inline auto estimate_af_by_gl(const MyFloat1D & GL, int N, int M, int niter = 100, double tol = 1e-4)
+inline Arr1D estimate_af_by_gl(const MyFloat1D & GL, int N, int M, int niter = 100, double tol = 1e-4)
 {
     Arr1D af_est = Arr1D::Constant(M, 0.25);
     Arr1D af_tmp = Arr1D::Zero(M);
@@ -793,7 +793,7 @@ inline auto estimate_af_by_gl(const MyFloat1D & GL, int N, int M, int niter = 10
     return af_est;
 }
 
-inline auto divide_pos_into_grid(const Int1D & pos, int B)
+inline Int2D divide_pos_into_grid(const Int1D & pos, int B)
 {
     int M = pos.size();
     int G = (M + B - 1) / B;
@@ -808,7 +808,7 @@ inline auto divide_pos_into_grid(const Int1D & pos, int B)
     return grids;
 }
 
-inline auto divide_pos_into_grid(const Int1D & pos, const Bool1D & collapse)
+inline Int2D divide_pos_into_grid(const Int1D & pos, const Bool1D & collapse)
 {
     assert(pos.size() == collapse.size());
     Int2D grids;
@@ -830,7 +830,7 @@ inline auto divide_pos_into_grid(const Int1D & pos, const Bool1D & collapse)
     return grids;
 }
 
-inline auto find_chunk_to_collapse(const MyArr2D & R, double tol_r = 1e-6)
+inline Bool1D find_chunk_to_collapse(const MyArr2D & R, double tol_r = 1e-6)
 {
     Bool1D collapse(R.cols(), false); // M sites
     for(auto i = 0; i < R.cols(); i++)
@@ -844,7 +844,7 @@ inline auto find_chunk_to_collapse(const MyArr2D & R, double tol_r = 1e-6)
 ** @params pos     snp position, first dim is each grid, second dim is snps in
 *that grid
 */
-inline auto calc_grid_distance(const Int2D & pos)
+inline Int1D calc_grid_distance(const Int2D & pos)
 {
     Int1D dl(pos.size());
     dl[0] = 0;
@@ -858,7 +858,7 @@ inline auto calc_grid_distance(const Int2D & pos)
 /*
 ** @param E original size of emission, full SNPs x C2
 */
-inline auto collapse_emission_by_grid(const MyArr2D & E, const Int2D & grids, double minEmission = 1e-6)
+inline MyArr2D collapse_emission_by_grid(const MyArr2D & E, const Int2D & grids, double minEmission = 1e-6)
 {
     const int C2 = E.rows();
     const int G = grids.size();
@@ -879,7 +879,7 @@ inline auto collapse_emission_by_grid(const MyArr2D & E, const Int2D & grids, do
     return EG;
 }
 
-inline auto cat_stdvec_of_eigen(const std::vector<MyArr2D> & arr3)
+inline MyArr2D cat_stdvec_of_eigen(const std::vector<MyArr2D> & arr3)
 {
     int K = arr3.size();
     int C = arr3[0].rows();
