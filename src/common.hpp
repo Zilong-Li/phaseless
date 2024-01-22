@@ -664,14 +664,14 @@ inline auto get_cluster_frequency(MyArr2D & ae, const MyFloat1D & R_, const MyFl
     // ae.rowwise() /= ae.colwise().sum();
 }
 
-inline auto get_cluster_likelihoods(int ind,
-                                    const int M,
-                                    const int B,
-                                    const MyFloat1D & GL,
-                                    const MyFloat1D & R,
-                                    const MyFloat1D & PI,
-                                    const MyFloat1D & F,
-                                    const double minEmission = 1e-10)
+inline MyArr2D get_cluster_likelihoods(int ind,
+                                       const int M,
+                                       const int B,
+                                       const MyFloat1D & GL,
+                                       const MyFloat1D & R,
+                                       const MyFloat1D & PI,
+                                       const MyFloat1D & F,
+                                       const double minEmission = 1e-10)
 {
     const int C = F.size() / M;
     const int C2 = C * C;

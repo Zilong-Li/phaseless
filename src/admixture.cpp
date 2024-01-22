@@ -19,8 +19,9 @@ double Admixture::runOptimalWithBigAss(int ind, const std::unique_ptr<BigAss> & 
     for(int ic = 0, m = 0; ic < genome->nchunks; ic++)
     {
         const int nsnps = genome->pos[ic].size();
-        auto cl = get_cluster_likelihoods(ind, nsnps, genome->B, genome->gls[ic], genome->R[ic], genome->PI[ic],
-                                          genome->F[ic]);
+        MyArr2D cl = get_cluster_likelihoods(ind, nsnps, genome->B, genome->gls[ic], genome->R[ic], genome->PI[ic],
+                                             genome->F[ic]);
+        cl.rowwise() /= cl.colwise().sum();
         const int nGrids = cl.cols();
         kapa.setZero(C * K, nGrids); // C x K x M layout
         Ekg.setZero(K, nGrids);
@@ -60,7 +61,7 @@ double Admixture::runOptimalWithBigAss(int ind, const std::unique_ptr<BigAss> & 
 double Admixture::runNativeWithBigAss(int ind, const std::unique_ptr<BigAss> & genome)
 {
     MyArr2D w((C * C + C) / 2, K * K);
-    MyArr2D Ekg, iEkc, alpha, beta, ae;
+    MyArr2D Ekg, iEkc;
     double norm = 0, llike = 0;
     int c1, c2, c12, cc;
     int k1, k2, k12, s;
@@ -68,12 +69,10 @@ double Admixture::runNativeWithBigAss(int ind, const std::unique_ptr<BigAss> & g
     for(int ic = 0, m = 0; ic < genome->nchunks; ic++)
     {
         const int nsnps = genome->pos[ic].size();
-        const int nGrids = genome->B > 1 ? (nsnps + genome->B - 1) / genome->B : nsnps;
-        alpha.setZero(C * C, nGrids);
-        beta.setZero(C * C, nGrids);
-        get_cluster_probability(ind, nsnps, alpha, beta, genome->gls[ic], genome->R[ic], genome->PI[ic], genome->F[ic]);
-        ae.setZero(C * C, nGrids);
-        get_cluster_frequency(ae, genome->R[ic], genome->PI[ic]);
+        MyArr2D cl = get_cluster_likelihoods(ind, nsnps, genome->B, genome->gls[ic], genome->R[ic], genome->PI[ic],
+                                             genome->F[ic]);
+        cl.rowwise() /= cl.colwise().sum();
+        const int nGrids = cl.cols();
         iEkc.setZero(C * K, nGrids);
         Ekg.setZero(K, nGrids);
         for(s = 0; s < nGrids; s++, m++)
@@ -83,7 +82,7 @@ double Admixture::runNativeWithBigAss(int ind, const std::unique_ptr<BigAss> & g
                 for(c2 = c1; c2 < C; c2++)
                 {
                     c12 = c1 * C + c2;
-                    double xz = alpha(c12, s) * beta(c12, s) / ae(c12, s);
+                    double xz = cl(c12, s);
                     for(k1 = 0; k1 < K; k1++)
                     {
                         for(k2 = 0; k2 < K; k2++)
