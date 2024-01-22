@@ -581,7 +581,7 @@ inline auto get_cluster_probability(int ind,
     return cs;
 }
 
-inline auto get_cluster_pairs_probabity(MyArr2D & ae, const MyFloat1D & R_, const MyFloat1D & PI_)
+inline auto get_cluster_frequency(MyArr2D & ae, const MyFloat1D & R_, const MyFloat1D & PI_)
 {
     const int C2 = ae.rows();
     const int M = ae.cols();

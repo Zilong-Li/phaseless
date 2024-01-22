@@ -181,7 +181,7 @@ List parse_impute_par(std::string filename, int ic = -1)
             get_cluster_probability(ind, iM, alpha, beta, genome->gls[ic], genome->R[ic], genome->PI[ic], genome->F[ic]);
             if(!((1 - (alpha * beta).colwise().sum()).abs() < 1e-6).all()) cao.error("gamma sum is not 1.0!\n");
             ae.setZero(genome->C * genome->C, nGrids);
-            get_cluster_pairs_probabity(ae, genome->R[ic], genome->PI[ic]);
+            get_cluster_frequency(ae, genome->R[ic], genome->PI[ic]);
             alphaI[c] = alpha;
             betaI[c] = beta;
             aeI[c] = ae;

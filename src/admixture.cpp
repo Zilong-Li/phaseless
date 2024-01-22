@@ -26,7 +26,7 @@ double Admixture::runOptimalWithBigAss(int ind, const std::unique_ptr<BigAss> & 
         get_cluster_probability(ind, nsnps, alpha, beta, genome->gls[ic], genome->R[ic], genome->PI[ic],
                                genome->F[ic]); // return gamma
         ae.setZero(C * C, nGrids);
-        get_cluster_pairs_probabity(ae, genome->R[ic], genome->PI[ic]);
+        get_cluster_frequency(ae, genome->R[ic], genome->PI[ic]);
         kapa.setZero(C * K, nGrids); // C x K x M layout
         Ekg.setZero(K, nGrids);
         for(s = 0; s < nGrids; s++, m++)
@@ -78,7 +78,7 @@ double Admixture::runNativeWithBigAss(int ind, const std::unique_ptr<BigAss> & g
         beta.setZero(C * C, nGrids);
         get_cluster_probability(ind, nsnps, alpha, beta, genome->gls[ic], genome->R[ic], genome->PI[ic], genome->F[ic]);
         ae.setZero(C * C, nGrids);
-        get_cluster_pairs_probabity(ae, genome->R[ic], genome->PI[ic]);
+        get_cluster_frequency(ae, genome->R[ic], genome->PI[ic]);
         iEkc.setZero(C * K, nGrids);
         Ekg.setZero(K, nGrids);
         for(s = 0; s < nGrids; s++, m++)
