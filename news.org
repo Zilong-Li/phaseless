@@ -1,5 +1,6 @@
 #+title: News and Changes
-
+* v0.3.1
+- add phaseless R package
 * v0.2.6
 - add LA utilts
 * v0.2.5
