@@ -13,7 +13,7 @@
 
 using namespace std;
 
-void Phaseless::initRecombination(const Int1D & pos, std::string rfile, double Ne, int B)
+void Phaseless::initRecombination(const Int1D & pos, std::string rfile, int B, double Ne)
 {
     nGen = 4 * Ne / C;
     dist = calc_position_distance(pos);
@@ -26,7 +26,7 @@ void Phaseless::initRecombination(const Int1D & pos, std::string rfile, double N
     R = er2R(er);
 }
 
-void Phaseless::initRecombination(const Int2D & pos, std::string rfile, double Ne, int B)
+void Phaseless::initRecombination(const Int2D & pos, std::string rfile, int B, double Ne)
 {
     nGen = 4 * Ne / C;
     int nchunks = pos.size();
