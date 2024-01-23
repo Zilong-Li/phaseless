@@ -609,7 +609,10 @@ inline MyArr2D get_cluster_likelihoods(int ind,
             }
         }
     }
-    return alpha * beta / ae;
+    // reuse emitGrids for cluster likelihoods
+    emitGrid = alpha * beta / ae;
+    emitGrid.rowwise() /= emitGrid.colwise().sum(); // norm it
+    return emitGrid;
 }
 
 inline auto calc_cluster_info(const int N, const MyArr2D & GZP1, const MyArr2D & GZP2)

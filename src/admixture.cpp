@@ -21,7 +21,6 @@ double Admixture::runOptimalWithBigAss(int ind, const std::unique_ptr<BigAss> & 
         const int nsnps = genome->pos[ic].size();
         MyArr2D cl = get_cluster_likelihoods(ind, nsnps, genome->B, genome->gls[ic], genome->R[ic], genome->PI[ic],
                                              genome->F[ic]);
-        cl.rowwise() /= cl.colwise().sum();
         const int nGrids = cl.cols();
         kapa.setZero(C * K, nGrids); // C x K x M layout
         Ekg.setZero(K, nGrids);
@@ -71,7 +70,6 @@ double Admixture::runNativeWithBigAss(int ind, const std::unique_ptr<BigAss> & g
         const int nsnps = genome->pos[ic].size();
         MyArr2D cl = get_cluster_likelihoods(ind, nsnps, genome->B, genome->gls[ic], genome->R[ic], genome->PI[ic],
                                              genome->F[ic]);
-        cl.rowwise() /= cl.colwise().sum();
         const int nGrids = cl.cols();
         iEkc.setZero(C * K, nGrids);
         Ekg.setZero(K, nGrids);
