@@ -614,8 +614,8 @@ inline auto get_cluster_likelihoods(int ind,
     emitGrid.rowwise() /= emitGrid.colwise().sum(); // norm it
     // reuse alpha for cluster frequency
     alpha.setZero(C, nGrids);
+    ae.rowwise() /= ae.colwise().sum(); // norm it
     for(g = 0; g < nGrids; g++) alpha.col(g) = ae.col(g).reshaped(C, C).colwise().sum();
-    alpha.rowwise() /= alpha.colwise().sum(); // norm it
     return std::tuple(emitGrid, alpha);
 }
 
