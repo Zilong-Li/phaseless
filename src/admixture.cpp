@@ -33,7 +33,7 @@ double Admixture::runOptimalWithBigAss(int ind, const std::unique_ptr<BigAss> & 
                 {
                     c12 = c1 * C + c2;
                     double xz = cl(c12, s);
-                    if(cf(c1, s) < tol || cf(c2, s) < tol) xz = 0.0;
+                    // if(cf(c1, s) < tol || cf(c2, s) < tol) xz = 0.0;
                     double zy = Hz(c1) * Hz(c2);
                     tmp += xz * zy;
                 }

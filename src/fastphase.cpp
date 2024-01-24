@@ -73,28 +73,28 @@ void FastPhaseK2::updateIteration()
 
     // update PI(C, M) except the first snp
     // first we normalize Ezj so that each col sum to 1
-    Ezj = (Ezj < clusterFreqThreshold).select(clusterFreqThreshold, Ezj); // reset to
     Ezj.rowwise() /= Ezj.colwise().sum();
-    Ezj.col(0) = pi / pi.sum(); // now update the first SNP
+    Ezj = (Ezj < clusterFreqThreshold).select(clusterFreqThreshold, Ezj); // reset to
 
-    // if(Ezj.isNaN().any() || (Ezj < clusterFreqThreshold).any())
-    // {
-    //     // std::cerr << "reset values below threshold\n";
-    //     Ezj = (Ezj < clusterFreqThreshold).select(0, Ezj); // reset to 0 first
-    //     for(int i = 0; i < G; i++)
-    //     {
-    //         // for columns with an entry below 0
-    //         // each 0 entry becomes threshold
-    //         // then rest re-scaled so whole thing has sum 1
-    //         if(auto c = (Ezj.col(i) == 0).count() > 0)
-    //         {
-    //             double xsum = 1 - c * clusterFreqThreshold;
-    //             double csum = Ezj.col(i).sum();
-    //             Ezj.col(i) = (Ezj.col(i) > 0).select(Ezj.col(i) * xsum / csum, clusterFreqThreshold);
-    //         }
-    //     }
-    // }
+    if(Ezj.isNaN().any() || (Ezj < clusterFreqThreshold).any())
+    {
+        cao.warn("reset cluster frequency to clusterFreqThreshold");
+        Ezj = (Ezj < clusterFreqThreshold).select(0, Ezj); // reset to 0 first
+        for(int i = 0; i < G; i++)
+        {
+            // for columns with an entry 0, each entry becomes threshold
+            // then rest re-scaled so whole thing has sum 1
+            if(auto c = (Ezj.col(i) == 0).count() > 0)
+            {
+                double xsum = 1 - c * clusterFreqThreshold;
+                double csum = Ezj.col(i).sum();
+                Ezj.col(i) = (Ezj.col(i) > 0).select(Ezj.col(i) * xsum / csum, clusterFreqThreshold);
+            }
+        }
+    }
 
+    // now update the first SNP
+    Ezj.col(0) = pi / pi.sum(); // pi = gammaK.col(0).reshaped(C, C).colwise().sum();
     PI = Ezj;
 
     if(Ezj.isNaN().any()) cao.error(Ezj, "NaN in PI from FastPhaseK2\n");
