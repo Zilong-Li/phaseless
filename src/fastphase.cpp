@@ -34,7 +34,6 @@ void FastPhaseK2::setFlags(bool d, bool r)
     cao.warn("flags: debug=", debug, ", NR=", NR);
 }
 
-
 void FastPhaseK2::initIteration()
 {
     // initial temp variables
@@ -76,7 +75,7 @@ void FastPhaseK2::updateIteration()
     Ezj.rowwise() /= Ezj.colwise().sum();
     if(Ezj.isNaN().any() || (Ezj < clusterFreqThreshold).any())
     {
-        cao.warn("reset cluster frequency to clusterFreqThreshold");
+        cao.warn("reset cluster frequency to clusterFreqThreshold:", clusterFreqThreshold);
         Ezj = (Ezj < clusterFreqThreshold).select(0, Ezj); // reset to 0 first
         for(int i = 0; i < G; i++)
         {

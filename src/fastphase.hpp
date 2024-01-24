@@ -31,8 +31,8 @@ class FastPhaseK2
 
     // BOUNDING
     double minRate{0.1}, maxRate{100}; // threshold for R
-    double clusterFreqThreshold{1e-4}; // threshold for PI
-    double alleleEmitThreshold{1e-4}; // threshold for F(P)
+    double clusterFreqThreshold{1e-6}; // threshold for PI
+    double alleleEmitThreshold{1e-6}; // threshold for F(P)
 
     // FLAGS
     bool debug{0}, NR{0};
