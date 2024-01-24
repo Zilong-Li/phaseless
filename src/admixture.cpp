@@ -12,9 +12,9 @@ using namespace std;
 double Admixture::runOptimalWithBigAss(int ind, const std::unique_ptr<BigAss> & genome)
 {
     MyArr2D kapa, Ekg;
-    MyArr2D alpha, beta, ae;
+    MyArr2D alpha, beta, ae, cl;
     MyArr1D iQ = MyArr1D::Zero(K);
-    MyArr1D Hz(C);
+    MyArr1D Hz(C), gammaK(C);
     double norm = 0, llike = 0, tmp = 0;
     int c1, k1, s, c2, c12;
     for(int ic = 0, m = 0; ic < genome->nchunks; ic++)
@@ -27,17 +27,21 @@ double Admixture::runOptimalWithBigAss(int ind, const std::unique_ptr<BigAss> & 
                                genome->F[ic]); // return gamma
         ae.setZero(C * C, nGrids);
         get_cluster_frequency(ae, genome->R[ic], genome->PI[ic]);
+        cl = alpha * beta / ae;
+        cl.rowwise() /= cl.colwise().sum();
         kapa.setZero(C * K, nGrids); // C x K x M layout
         Ekg.setZero(K, nGrids);
         for(s = 0; s < nGrids; s++, m++)
         {
             for(c1 = 0; c1 < C; c1++) Hz(c1) = (Q.col(ind) * F(Eigen::seqN(c1, K, C), m)).sum();
+            gammaK = ae.col(s).reshaped(C, C).colwise().sum();
             for(norm = 0, c1 = 0; c1 < C; c1++)
             {
                 for(tmp = 0, c2 = 0; c2 < C; c2++)
                 {
                     c12 = c1 * C + c2;
-                    double xz = alpha(c12, s) * beta(c12, s) / ae(c12, s);
+                    double xz = cl(c12, s);
+                    if(gammaK(c1) < 0.01 || gammaK(c2) < 0.01) xz = 0.0;
                     double zy = Hz(c1) * Hz(c2);
                     tmp += xz * zy;
                 }
