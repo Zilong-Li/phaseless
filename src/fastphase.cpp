@@ -74,8 +74,6 @@ void FastPhaseK2::updateIteration()
     // update PI(C, M) except the first snp
     // first we normalize Ezj so that each col sum to 1
     Ezj.rowwise() /= Ezj.colwise().sum();
-    Ezj = (Ezj < clusterFreqThreshold).select(clusterFreqThreshold, Ezj); // reset to
-
     if(Ezj.isNaN().any() || (Ezj < clusterFreqThreshold).any())
     {
         cao.warn("reset cluster frequency to clusterFreqThreshold");
