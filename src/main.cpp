@@ -18,7 +18,7 @@ int main(int argc, char * argv[])
 {
     // ========= helper message and parameters parsing ===========================
 
-    const std::string VERSION{"0.3.1"};
+    const std::string VERSION{"0.3.2"};
 
     // below for catching ctrl+c, and dumping files
     struct sigaction sa;
