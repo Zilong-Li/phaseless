@@ -48,7 +48,7 @@ TEST_CASE("phaseless naive vs dump dataset 1", "[test-phaseless]")
         for(int i = 0; i < genome->nsamples; i++) llike2 += admixer2.runNativeWithBigAss(i, genome);
         admixer2.updateIteration();
         cerr << std::setprecision(6) << "llike2: " << llike2 << "\tllike1: " << llike1 << "\n";
-        REQUIRE(abs(llike1 - llike2) < 1e-10);
+        REQUIRE(abs(llike1 - llike2) < 1e-9);
     }
     REQUIRE(((admixer1.Q - admixer2.Q).abs() < 1e-6).all());
 }

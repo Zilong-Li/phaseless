@@ -145,7 +145,14 @@ List parse_impute_opt(std::string filename) {
                         Named("chunksize") = genome->chunksize,
                         Named("nsamples") = genome->nsamples,
                         Named("nsnps") = genome->nsnps,
-                        Named("nchunks") = genome->nchunks);
+                        Named("nchunks") = genome->nchunks,
+                        Named("gls") = genome->gls,
+                        Named("pos") = genome->pos,
+                        Named("PI") = genome->PI,
+                        Named("F") = genome->F,
+                        Named("R") = genome->R,
+                        Named("CF") = genome->GammaAE
+                        );
     
 }
 
