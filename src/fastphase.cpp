@@ -93,6 +93,7 @@ void FastPhaseK2::updateIteration()
     // now update the first SNP
     Ezj.col(0) = pi / pi.sum(); // pi = gammaK.col(0).reshaped(C, C).colwise().sum();
     PI = Ezj;
+    PI.rowwise() /= PI.colwise().sum(); // normalize it per site
 
     if(Ezj.isNaN().any()) cao.error(Ezj, "NaN in PI from FastPhaseK2\n");
     if(debug && !((1 - PI.colwise().sum()).abs() < 1e-3).all())
