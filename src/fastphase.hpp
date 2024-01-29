@@ -45,8 +45,9 @@ class FastPhaseK2
     MyArr2D F; // M x C, cluster-specific allele frequence
     MyArr1D er; // M, jumping rate
     MyArr2D R; // 3 x M, jumping / recombination rate
-    MyArr2D Ezj; // C x M, E(Z=z,J=1|X,par), expectation of switch into state k
     MyArr2D Ezg1, Ezg2; // C x M
+    MyArr2D Ezj; // C x M, E(Z=z,J=1|X,par), expectation of switch into state k
+    MyArr2D HapSum; // C x M, sum(gammaK) for all inds
     double nGen;
     Int1D dist; // physical position distance between two markers
     Int1D pos_chunk; // store the start pos of each chunk in the full scale

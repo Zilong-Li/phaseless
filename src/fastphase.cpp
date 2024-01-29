@@ -48,6 +48,7 @@ void FastPhaseK2::initIteration()
     Ezj.setZero(C, M); // reset post(Z,j)
     Ezg1.setZero(C, M); // reset pos(Z,g)
     Ezg2.setZero(C, M); // reset pos(Z,g)
+    HapSum.setZero(C, M); // reset post(Z,j)
 }
 
 void FastPhaseK2::protectPars()
@@ -87,6 +88,8 @@ void FastPhaseK2::protectPars()
         // re-normalize F per site. hope should work well. otherwise do the complicated.
         PI.rowwise() /= PI.colwise().sum();
     }
+    // norm HapSum
+    HapSum.rowwise() /= HapSum.colwise().sum();
 }
 
 void FastPhaseK2::updateIteration()
@@ -120,7 +123,7 @@ double FastPhaseK2::hmmIterWithJumps(const MyFloat1D & GL, const int ic, const i
     if(!((1 - ((alpha * beta).colwise().sum())).abs() < 1e-9).all())
         cao.error((alpha * beta).colwise().sum(), "\ngamma sum is not 1.0!\n");
     // now get posterios
-    MyArr2D ind_post_zg1(C, S), ind_post_zg2(C, S), ind_post_zj(C, S);
+    MyArr2D ind_post_zg1(C, S), ind_post_zg2(C, S), ind_post_zj(C, S), gammaC(C, S);
     MyArr1D gamma_div_emit(CC), beta_mult_emit(CC);
     MyArr1D alphatmp(C);
     int z1, m, s;
@@ -128,6 +131,7 @@ double FastPhaseK2::hmmIterWithJumps(const MyFloat1D & GL, const int ic, const i
     {
         m = s + pos_chunk[ic];
         gamma_div_emit = (alpha.col(s) * beta.col(s)) / emit.col(s); // C2
+        gammaC = (alpha.col(s) * beta.col(s)).reshaped(C, C).colwise().sum();
         for(z1 = 0; z1 < C; z1++)
         {
             ind_post_zg1(z1, s) = (gamma_div_emit(Eigen::seqN(z1, C, C)) * (1 - F(m, z1))
@@ -151,6 +155,7 @@ double FastPhaseK2::hmmIterWithJumps(const MyFloat1D & GL, const int ic, const i
         Ezj.middleCols(pos_chunk[ic], S) += ind_post_zj;
         Ezg1.middleCols(pos_chunk[ic], S) += ind_post_zg1;
         Ezg2.middleCols(pos_chunk[ic], S) += ind_post_zg2;
+        HapSum.middleCols(pos_chunk[ic], S) += gammaC;
     }
 
     return (1 / cs).log().sum();
@@ -235,8 +240,12 @@ int run_impute_main(Options & opts)
     assert(std::filesystem::file_size(opts.out + ".pars.bin") == bytes_written);
     cao.done(tim.date(), "imputation done and outputting.", bytes_written, " bytes written to file");
     std::ofstream orecomb(opts.out + ".recomb");
-    std::ofstream opi(opts.out + ".cluster.freq");
-    opi << faith.PI.transpose().format(fmt) << "\n";
     orecomb << faith.R.transpose().format(fmt) << "\n";
+    std::ofstream opi(opts.out + ".pi");
+    opi << faith.PI.transpose().format(fmt) << "\n";
+    std::ofstream ohap(opts.out + ".hapsum");
+    ohap << faith.HapSum.transpose().format(fmt) << "\n";
+    std::ofstream oae(opts.out + ".ae");
+    oae << faith.Ezj.transpose().format(fmt) << "\n";
     return 0;
 }
