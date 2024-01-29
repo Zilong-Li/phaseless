@@ -131,7 +131,7 @@ double FastPhaseK2::hmmIterWithJumps(const MyFloat1D & GL, const int ic, const i
     {
         m = s + pos_chunk[ic];
         gamma_div_emit = (alpha.col(s) * beta.col(s)) / emit.col(s); // C2
-        gammaC = (alpha.col(s) * beta.col(s)).reshaped(C, C).colwise().sum();
+        gammaC.col(s) = (alpha.col(s) * beta.col(s)).reshaped(C, C).colwise().sum();
         for(z1 = 0; z1 < C; z1++)
         {
             ind_post_zg1(z1, s) = (gamma_div_emit(Eigen::seqN(z1, C, C)) * (1 - F(m, z1))
