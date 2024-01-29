@@ -108,7 +108,7 @@ struct BigAss
 {
     int chunksize, nsamples, nsnps, nchunks;
     int B, G, C; // B: snps in a grid; G: total number of grids in a genome
-    MyFloat2D PI, F, R, GammaAE; // M x C, 3 x M, fastphase pars
+    MyFloat2D PI, F, R, AE; // M x C, 3 x M, fastphase pars
     Int1D ends; // chunk index where each chromo ends
     String1D sampleids, chrs;
     Int2D pos; // store position of markers of each chunk
@@ -484,13 +484,12 @@ inline MyArr1D get_cluster_probability(int ind,
     return cs;
 }
 
-inline void get_cluster_frequency(MyArr2D & ae, const MyFloat1D & R_, const MyFloat1D & PI_)
+/// R: 3 x M; PI: C x M
+inline auto get_cluster_frequency(const MyArr2D & R, const MyArr2D & PI)
 {
-    const int C2 = ae.rows();
-    const int M = ae.cols();
-    const int C = std::sqrt(C2);
-    Eigen::Map<const MyArr2D> PI(PI_.data(), C, M);
-    Eigen::Map<const MyArr2D> R(R_.data(), 3, M);
+    const int C = PI.rows();
+    const int M = R.cols();
+    MyArr2D ae(C * C, M);
 
     int s{0};
     ae.col(s) = (PI.col(s).matrix() * PI.col(s).transpose().matrix()).reshaped().array();
@@ -519,6 +518,7 @@ inline void get_cluster_frequency(MyArr2D & ae, const MyFloat1D & R_, const MyFl
     // ae = (ae < tol).select(tol, ae);
     // ae = (ae > 1 - tol).select(1 - tol, ae);
     // ae.rowwise() /= ae.colwise().sum();
+    return ae;
 }
 
 inline auto get_cluster_likelihoods(int ind,

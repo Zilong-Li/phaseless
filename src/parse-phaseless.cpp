@@ -141,6 +141,7 @@ List parse_impute_opt(std::string filename) {
     return List::create(Named("C") = genome->C,
                         Named("B") = genome->B,
                         Named("G") = genome->G,
+                        Named("clusterfreq") = genome->AE,
                         Named("chunksize") = genome->chunksize,
                         Named("nsamples") = genome->nsamples,
                         Named("nsnps") = genome->nsnps,
@@ -170,7 +171,7 @@ List parse_impute_par(std::string filename, int ic = -1)
     List ret(N);
     for(auto ind : ids)
     {
-        List gammaI(nchunks), aeI(nchunks);
+        List gamma(nchunks);
         for(int c = 0; c < nchunks; c++) {
             ic = nchunks > 1 ? c : std::max(ic, c);
             const int iM = genome->pos[ic].size();
@@ -178,14 +179,9 @@ List parse_impute_par(std::string filename, int ic = -1)
             alpha.setZero(genome->C * genome->C, nGrids);
             beta.setZero(genome->C * genome->C, nGrids);
             get_cluster_probability(ind, iM, alpha, beta, genome->gls[ic], genome->R[ic], genome->PI[ic], genome->F[ic]);
-            if(!((1 - (alpha * beta).colwise().sum()).abs() < 1e-6).all()) cao.error("gamma sum is not 1.0!\n");
-            ae.setZero(genome->C * genome->C, nGrids);
-            get_cluster_frequency(ae, genome->R[ic], genome->PI[ic]);
-            gammaI[c] = alpha * beta;
-            aeI[c] = ae;
+            gamma[c] = alpha * beta;
         }
-        ret[ind] =  List::create(Named("gamma") = gammaI,
-                                 Named("ae") = aeI);
+        ret[ind] =  gamma;
     }
-    return ret;
+    return List::create(Named("gamma")=ret, Named("ae") = genome->AE);
 }
