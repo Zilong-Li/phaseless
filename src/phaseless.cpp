@@ -38,7 +38,7 @@ void Phaseless::initRecombination(const Int2D & pos, std::string rfile, int B, d
         pos_chunk[i] = ss;
         auto tmp = calc_position_distance(pos[i]);
         dist.insert(dist.end(), tmp.begin(), tmp.end());
-        R.middleCols(ss, pos[i].size()) = calc_transRate_diploid(dist, nGen);
+        R.middleCols(ss, pos[i].size()) = calc_transRate_diploid(tmp, nGen);
         ss += pos[i].size();
     }
     pos_chunk[nchunks] = ss; // add sentinel
@@ -238,7 +238,6 @@ double Phaseless::runForwardBackwards(const int ind, const int ic, const MyFloat
     const int S = pos_chunk[ic + 1] - pos_chunk[ic];
     Eigen::Map<const MyArr2D> gli(GL.data() + ind * S * 3, S, 3);
     MyArr2D emit = get_emission_by_gl(gli, P.middleRows(pos_chunk[ic], S)).transpose(); // CC x S
-    MyArr2D alpha(CC, S), beta(CC, S);
     // first get H ie old PI in fastphase
     MyArr2D H = MyArr2D::Zero(C, S);
     int z1, y1, s;
@@ -246,7 +245,7 @@ double Phaseless::runForwardBackwards(const int ind, const int ic, const MyFloat
         for(z1 = 0; z1 < C; z1++)
             for(y1 = 0; y1 < K; y1++) H(z1, s) += Q(y1, ind) * F[y1](z1, s + pos_chunk[ic]);
     // cs is 1 / colsum(alpha)
-    auto cs = forward_backwards_diploid(alpha, beta, emit, R.middleCols(pos_chunk[ic], S), H);
+    const auto [alpha, beta, cs] = forward_backwards_diploid(emit, R.middleCols(pos_chunk[ic], S), H);
     // get posterios
     getPosterios(ind, ic, gli, emit, H, cs, alpha, beta, finalIter);
     return (1 / cs).log().sum();

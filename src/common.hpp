@@ -336,32 +336,25 @@ inline MyArr2D get_emission_by_grid(const MyFloat1D & GL,
 }
 
 /*
-** @param alpha    forward probability, (C2,M)
-** @param beta     backwards probability (C2,M)
-** @param E        emission probability with individual genotype
-*likelihood,(C2,M)
-** @param R        transition probability (3,M)
+** @param emit     emission probability(C2,M)
+** @param R        jump probability (3,M)
 ** @param PI       cluster frequency (C,M)
-** @return individual log likelihood
+** @return alpha, beta and scaling vector
 */
-inline MyArr1D forward_backwards_diploid(MyArr2D & alpha,
-                                         MyArr2D & beta,
-                                         const MyArr2D & E,
-                                         const MyArr2D & R,
-                                         const MyArr2D & PI)
+inline auto forward_backwards_diploid(const MyArr2D & emit, const MyArr2D & R, const MyArr2D & PI)
 {
-    const int M = alpha.cols();
+    const int M = emit.cols();
+    const int C2 = emit.rows();
     const int C = PI.rows();
+    MyArr2D alpha(C2, M), beta(C2, M);
     MyArr1D sumTmp1(C), cs(M); // store sum over internal loop
     double constTmp;
     // ======== forward recursion ===========
     int z1, z2, z12;
     int s{0};
-    alpha.col(s) = E.col(s) * (PI.col(s).matrix() * PI.col(s).transpose().matrix()).reshaped().array();
+    alpha.col(s) = emit.col(s) * (PI.col(s).matrix() * PI.col(s).transpose().matrix()).reshaped().array();
     cs(s) = 1.0 / alpha.col(s).sum();
     alpha.col(s) *= cs(s); // normalize it
-    // alpha_s = emit * (alpha_(s-1) * R + pi(z1) * tmp1(z2) + pi(z2) * tmp2(z1)
-    // + P(switch into z1) * P(switch into z2) * constTmp)
     for(s = 1; s < M; s++)
     {
         sumTmp1 = alpha.col(s - 1).reshaped(C, C).rowwise().sum() * R(1, s);
@@ -372,7 +365,7 @@ inline MyArr1D forward_backwards_diploid(MyArr2D & alpha,
             for(z2 = 0; z2 < C; z2++)
             {
                 z12 = z1 * C + z2;
-                alpha(z12, s) = E(z12, s)
+                alpha(z12, s) = emit(z12, s)
                                 * (alpha(z12, s - 1) * R(0, s) + PI(z1, s) * sumTmp1(z2) + PI(z2, s) * sumTmp1(z1)
                                    + PI(z1, s) * PI(z2, s) * constTmp);
             }
@@ -386,7 +379,7 @@ inline MyArr1D forward_backwards_diploid(MyArr2D & alpha,
     beta.col(s).setConstant(1.0);
     for(s = M - 2; s >= 0; s--)
     {
-        auto beta_mult_emit = E.col(s + 1) * beta.col(s + 1);
+        auto beta_mult_emit = emit.col(s + 1) * beta.col(s + 1);
         sumTmp1.setZero();
         for(constTmp = 0, z1 = 0; z1 < C; z1++)
         {
@@ -407,7 +400,8 @@ inline MyArr1D forward_backwards_diploid(MyArr2D & alpha,
             }
         }
     }
-    return cs;
+
+    return std::tuple(alpha, beta, cs);
 }
 
 inline MyArr1D get_cluster_probability(int ind,

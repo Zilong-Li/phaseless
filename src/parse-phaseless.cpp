@@ -60,7 +60,6 @@ List parse_joint_post(std::string filename, int chunk = 0)
         {
             Eigen::Map<const MyArr2D> gli(par->gls[ic].data() + ind * S * 3, S, 3);
             MyArr2D emit = get_emission_by_gl(gli, P.middleRows(pos_chunk - S, S)).transpose(); // CC x S
-            MyArr2D alpha(CC, S), beta(CC, S);
             // first get H ie old PI in fastphase
             MyArr2D H = MyArr2D::Zero(C, S);
             int z1, y1, s; // m * C + z1
@@ -68,7 +67,7 @@ List parse_joint_post(std::string filename, int chunk = 0)
                 for(z1 = 0; z1 < C; z1++)
                     for(y1 = 0; y1 < par->K; y1++) H(z1, s) += Q(y1, ind) * par->F[y1][(pos_chunk - S + s) * C + z1];
             // cs is 1 / colsum(alpha)
-            auto cs = forward_backwards_diploid(alpha, beta, emit, R.middleCols(pos_chunk - S, S), H);
+            const auto [alpha, beta, cs] = forward_backwards_diploid(emit, R.middleCols(pos_chunk - S, S), H);
             MyArr2D gamma = alpha * beta;
             ret_gamma[ind] = MyFloat1D(gamma.data(), gamma.data() + gamma.size());
             ind_post_zg1.setZero(), ind_post_zg2.setZero(), ind_post_y.setZero(), ind_post_zy.setZero();
@@ -171,7 +170,7 @@ List parse_impute_par(std::string filename, int ic = -1)
     List ret(N);
     for(auto ind : ids)
     {
-        List alphaI(nchunks), betaI(nchunks), aeI(nchunks);
+        List gammaI(nchunks), aeI(nchunks);
         for(int c = 0; c < nchunks; c++) {
             ic = nchunks > 1 ? c : std::max(ic, c);
             const int iM = genome->pos[ic].size();
@@ -182,12 +181,10 @@ List parse_impute_par(std::string filename, int ic = -1)
             if(!((1 - (alpha * beta).colwise().sum()).abs() < 1e-6).all()) cao.error("gamma sum is not 1.0!\n");
             ae.setZero(genome->C * genome->C, nGrids);
             get_cluster_frequency(ae, genome->R[ic], genome->PI[ic]);
-            alphaI[c] = alpha;
-            betaI[c] = beta;
+            gammaI[c] = alpha * beta;
             aeI[c] = ae;
         }
-        ret[ind] =  List::create(Named("alpha") = alphaI,
-                                 Named("beta") = betaI,
+        ret[ind] =  List::create(Named("gamma") = gammaI,
                                  Named("ae") = aeI);
     }
     return ret;
