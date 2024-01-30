@@ -140,7 +140,6 @@ List parse_impute_opt(std::string filename) {
     assert((bool)ec == false);
     return List::create(Named("C") = genome->C,
                         Named("B") = genome->B,
-                        Named("G") = genome->G,
                         Named("clusterfreq") = genome->AE,
                         Named("chunksize") = genome->chunksize,
                         Named("nsamples") = genome->nsamples,
