@@ -178,7 +178,7 @@ int main(int argc, char * argv[])
         .scan<'i', int>();
     cmd_impute.add_argument("--no-eaf")
         .help("do not start with eaf")
-        .default_value(true)
+        .default_value(false)
         .implicit_value(true);
     cmd_impute.add_argument("--write-hapsum")
         .help("write Hapsum instead of AE into parse.bin")
@@ -295,7 +295,7 @@ int main(int argc, char * argv[])
             opts.seed = cmd_impute.get<int>("--seed");
             opts.chunksize = cmd_impute.get<int>("--chunksize");
             opts.single_chunk = cmd_impute.get<bool>("--single-chunk");
-            opts.eAF = cmd_impute.get<bool>("--no-eaf");
+            opts.eAF = !cmd_impute.get<bool>("--no-eaf");
             opts.eHap = cmd_impute.get<bool>("--write-hapsum");
             opts.collapse = cmd_impute.get<bool>("--collapse");
             opts.tol_r = cmd_impute.get<double>("--minRecombRate");
