@@ -259,14 +259,14 @@ inline MyArr2D calc_transRate_diploid(const Int1D & dl, double nGen, double expR
 
 /*
 ** @param gli  genotype likelihoods of current individual i, (M, 3)
-** @param F    cluster-specific allele frequence (M, C)
+** @param P    cluster-specific allele frequence (M, C)
 ** @return emission probability (M, C2)
 */
-inline MyArr2D get_emission_by_gl(const MyArr2D & gli, const MyArr2D & F, double minEmission = 1e-10)
+inline MyArr2D get_emission_by_gl(const MyArr2D & gli, const MyArr2D & P, double minEmission = 1e-10)
 {
     int k1, k2, g1, g2;
-    const int M = F.rows();
-    const int C = F.cols();
+    const int M = P.rows();
+    const int C = P.cols();
     MyArr2D emitDip(M, C * C); // emission probabilies, nsnps x (C x C)
     for(k1 = 0; k1 < C; k1++)
         for(k2 = 0; k2 < C; k2++)
@@ -276,8 +276,8 @@ inline MyArr2D get_emission_by_gl(const MyArr2D & gli, const MyArr2D & F, double
             {
                 for(g2 = 0; g2 <= 1; g2++)
                 {
-                    emitDip.col(k1 * C + k2) += gli.col(g1 + g2) * (g1 * F.col(k1) + (1 - g1) * (1 - F.col(k1)))
-                                                * (g2 * F.col(k2) + (1 - g2) * (1 - F.col(k2)));
+                    emitDip.col(k1 * C + k2) += gli.col(g1 + g2) * (g1 * P.col(k1) + (1 - g1) * (1 - P.col(k1)))
+                                                * (g2 * P.col(k2) + (1 - g2) * (1 - P.col(k2)));
                 }
             }
         }
@@ -288,17 +288,17 @@ inline MyArr2D get_emission_by_gl(const MyArr2D & gli, const MyArr2D & F, double
 
 /*
 ** @param gli  genotype likelihoods of current individual i, (M, 3)
-** @param F    cluster-specific allele frequence (M, C)
+** @param P    cluster-specific allele frequence (M, C)
 ** @return emission probability (M, C2)
 */
 inline MyArr2D get_emission_by_grid(const MyFloat1D & GL,
-                                    const MyFloat1D & F,
+                                    const MyFloat1D & P,
                                     int ind,
                                     int M,
                                     int B,
                                     double minEmission = 1e-10)
 {
-    const int C = F.size() / M;
+    const int C = P.size() / M;
     const int C2 = C * C;
     const int nGrids = B > 1 ? (M + B - 1) / B : M;
     MyArr2D emitGrid = MyArr2D::Ones(C2, nGrids);
@@ -320,8 +320,8 @@ inline MyArr2D get_emission_by_grid(const MyFloat1D & GL,
                     {
                         for(g2 = 0; g2 <= 1; g2++)
                         {
-                            emit += GL[igs + (g1 + g2) * M + i] * (g1 * F[z1 * M + i] + (1 - g1) * (1 - F[z1 * M + i]))
-                                    * (g2 * F[z2 * M + i] + (1 - g2) * (1 - F[z2 * M + i]));
+                            emit += GL[igs + (g1 + g2) * M + i] * (g1 * P[z1 * M + i] + (1 - g1) * (1 - P[z1 * M + i]))
+                                    * (g2 * P[z2 * M + i] + (1 - g2) * (1 - P[z2 * M + i]));
                         }
                     }
                     emitGrid(z12, g) *= emit;
@@ -404,85 +404,6 @@ inline auto forward_backwards_diploid(const MyArr2D & emit, const MyArr2D & R, c
     return std::tuple(alpha, beta, cs);
 }
 
-inline MyArr1D get_cluster_probability(int ind,
-                                       const int M,
-                                       MyArr2D & alpha,
-                                       MyArr2D & beta,
-                                       const MyFloat1D & GL,
-                                       const MyFloat1D & R,
-                                       const MyFloat1D & PI,
-                                       const MyFloat1D & F,
-                                       const double minEmission = 1e-10)
-{
-    const int C = F.size() / M;
-    const int nGrids = alpha.cols();
-    const int B = (M + nGrids - 1) / nGrids;
-    int z1, z2, z12;
-    MyArr1D sumTmp1(C); // store sum over internal loop
-    MyArr1D cs = MyArr1D::Zero(nGrids);
-    double constTmp;
-    // ======== forward and backward recursion ===========
-    MyArr2D emitGrid = get_emission_by_grid(GL, F, ind, M, B, minEmission);
-    int g{0};
-    for(z1 = 0; z1 < C; z1++)
-    {
-        for(z2 = 0; z2 < C; z2++)
-        {
-            z12 = z1 * C + z2;
-            alpha(z12, g) = emitGrid(z12, g) * PI[g * C + z1] * PI[g * C + z2];
-            cs(g) += alpha(z12, g);
-        }
-    }
-    cs(g) = 1 / cs(g);
-    alpha.col(g) *= cs(g); // normalize it
-    // now get the rest
-    for(g = 1; g < nGrids; g++)
-    {
-        sumTmp1 = alpha.col(g - 1).reshaped(C, C).rowwise().sum() * R[g * 3 + 1];
-        constTmp = alpha.col(g - 1).sum() * R[g * 3 + 2];
-        for(z1 = 0; z1 < C; z1++)
-        {
-            for(z2 = 0; z2 < C; z2++)
-            {
-                z12 = z1 * C + z2;
-                alpha(z12, g) = emitGrid(z12, g)
-                                * (alpha(z12, g - 1) * R[g * 3 + 0] + PI[g * C + z1] * sumTmp1(z2)
-                                   + PI[g * C + z2] * sumTmp1(z1) + PI[g * C + z1] * PI[g * C + z2] * constTmp);
-                cs(g) += alpha(z12, g);
-            }
-        }
-        cs(g) = 1 / cs(g);
-        alpha.col(g) *= cs(g); // normalize it
-    }
-    // next backwards
-    g = nGrids - 1;
-    beta.col(g).setConstant(1.0);
-    for(g = nGrids - 2; g >= 0; g--)
-    {
-        auto beta_mult_emit = emitGrid.col(g + 1) * beta.col(g + 1);
-        sumTmp1.setZero();
-        for(constTmp = 0, z1 = 0; z1 < C; z1++)
-        {
-            for(z2 = 0; z2 < C; z2++)
-            {
-                z12 = z1 * C + z2;
-                sumTmp1(z1) += beta_mult_emit(z12) * PI[(g + 1) * C + z2] * R[(g + 1) * 3 + 1];
-                constTmp += beta_mult_emit(z12) * PI[(g + 1) * C + z1] * PI[(g + 1) * C + z2] * R[(g + 1) * 3 + 2];
-            }
-        }
-        for(z1 = 0; z1 < C; z1++)
-        {
-            for(z2 = 0; z2 < C; z2++)
-            {
-                z12 = z1 * C + z2;
-                beta(z12, g) =
-                    (beta_mult_emit(z12) * R[(g + 1) * 3 + 0] + sumTmp1(z1) + sumTmp1(z2) + constTmp) * cs(g + 1);
-            }
-        }
-    }
-
-    return cs;
-}
 
 /// R: 3 x M; PI: C x M
 inline auto get_cluster_frequency(const MyArr2D & R, const MyArr2D & PI)
@@ -521,105 +442,19 @@ inline auto get_cluster_frequency(const MyArr2D & R, const MyArr2D & PI)
     return ae;
 }
 
-inline auto get_cluster_likelihoods(int ind,
-                                    const int M,
-                                    const int B,
-                                    const MyFloat1D & GL,
-                                    const MyFloat1D & R,
-                                    const MyFloat1D & PI,
-                                    const MyFloat1D & F,
+inline auto get_cluster_likelihoods(const MyArr2D & gli,
+                                    const MyArr2D & P,
+                                    const MyArr2D & R,
+                                    const MyArr2D & PI,
+                                    const MyArr2D & AE,
                                     const double minEmission = 1e-10)
 {
-    const int C = F.size() / M;
-    const int C2 = C * C;
-    MyArr2D emitGrid = get_emission_by_grid(GL, F, ind, M, B, minEmission);
-    const int nGrids = emitGrid.cols();
-    MyArr2D alpha(C2, nGrids), beta(C2, nGrids), ae(C2, nGrids);
-    int z1, z2, z12;
-    MyArr1D sumTmp1(C); // store sum over internal loop for alpha
-    MyArr1D sumTmp2(C); // store sum over internal loop for ae
-    MyArr1D cs = MyArr1D::Zero(nGrids);
-    double constTmp;
-    // ======== forward and backward recursion ===========
-    int g = 0;
-    for(z1 = 0; z1 < C; z1++)
-    {
-        for(z2 = 0; z2 < C; z2++)
-        {
-            z12 = z1 * C + z2;
-            alpha(z12, g) = emitGrid(z12, g) * PI[g * C + z1] * PI[g * C + z2];
-            ae(z12, g) = PI[g * C + z1] * PI[g * C + z2];
-            cs(g) += alpha(z12, g);
-        }
-    }
-    cs(g) = 1 / cs(g);
-    alpha.col(g) *= cs(g); // normalize it
-    // now get the rest
-    for(g = 1; g < nGrids; g++)
-    {
-        sumTmp1 = alpha.col(g - 1).reshaped(C, C).rowwise().sum() * R[g * 3 + 1];
-        sumTmp2 = ae.col(g - 1).reshaped(C, C).rowwise().sum() * R[g * 3 + 1];
-        constTmp = R[g * 3 + 2]; // since alpha.col(g).sum()==1
-        for(z1 = 0; z1 < C; z1++)
-        {
-            for(z2 = 0; z2 < C; z2++)
-            {
-                z12 = z1 * C + z2;
-                alpha(z12, g) = emitGrid(z12, g)
-                                * (alpha(z12, g - 1) * R[g * 3 + 0] + PI[g * C + z1] * sumTmp1(z2)
-                                   + PI[g * C + z2] * sumTmp1(z1) + PI[g * C + z1] * PI[g * C + z2] * constTmp);
-                cs(g) += alpha(z12, g);
-                ae(z12, g) = (ae(z12, g - 1) * R[g * 3 + 0] + PI[g * C + z1] * sumTmp2(z2)
-                              + PI[g * C + z2] * sumTmp2(z1) + PI[g * C + z1] * PI[g * C + z2] * constTmp);
-            }
-        }
-        cs(g) = 1 / cs(g);
-        alpha.col(g) *= cs(g); // normalize it
-    }
-    // TODO: cluster frequency ae can be zero for certain cluster.
-    // next backwards
-    g = nGrids - 1;
-    beta.col(g).setConstant(1.0);
-    for(g = nGrids - 2; g >= 0; g--)
-    {
-        auto beta_mult_emit = emitGrid.col(g + 1) * beta.col(g + 1);
-        sumTmp1.setZero();
-        for(constTmp = 0, z1 = 0; z1 < C; z1++)
-        {
-            for(z2 = 0; z2 < C; z2++)
-            {
-                z12 = z1 * C + z2;
-                sumTmp1(z1) += beta_mult_emit(z12) * PI[(g + 1) * C + z2] * R[(g + 1) * 3 + 1];
-                constTmp += beta_mult_emit(z12) * PI[(g + 1) * C + z1] * PI[(g + 1) * C + z2] * R[(g + 1) * 3 + 2];
-            }
-        }
-        for(z1 = 0; z1 < C; z1++)
-        {
-            for(z2 = 0; z2 < C; z2++)
-            {
-                z12 = z1 * C + z2;
-                beta(z12, g) =
-                    (beta_mult_emit(z12) * R[(g + 1) * 3 + 0] + sumTmp1(z1) + sumTmp1(z2) + constTmp) * cs(g + 1);
-            }
-        }
-    }
-    // reuse emitGrids for cluster likelihoods
-    emitGrid = alpha * beta;
-    // reuse alpha for cluster frequency
-    alpha.setZero(C, nGrids);
-    for(g = 0; g < nGrids; g++)
-    {
-        alpha.col(g) = ae.col(g).reshaped(C, C).colwise().sum();
-        alpha.col(g) /= alpha.col(g).sum();
-        for(z1 = 0; z1 < C; z1++)
-            for(z2 = 0; z2 < C; z2++)
-            {
-                z12 = z1 * C + z2;
-                emitGrid(z12, g) /= (alpha(z1, g) * alpha(z2, g));
-            }
-    }
-    emitGrid.rowwise() /= emitGrid.colwise().sum(); // norm it
-    return std::tuple(emitGrid, alpha);
+    MyArr2D emit = get_emission_by_gl(gli, P).transpose(); // CC x S
+    const auto [alpha, beta, cs] = forward_backwards_diploid(emit, R, PI);
+    // reuse emit
+    emit = (alpha * beta) / AE;
+    emit.rowwise() /= emit.colwise().sum(); // norm it
+    return emit;
 }
 
 inline auto calc_cluster_info(const int N, const MyArr2D & GZP1, const MyArr2D & GZP2)

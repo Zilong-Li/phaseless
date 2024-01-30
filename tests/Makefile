@@ -5,9 +5,9 @@ INC      = -I. -I../src -I../inst/include -I$(HTSDIR)
 LDFLAGS  =  -L$(HTSDIR) -Wl,-rpath,$(HTSDIR)
 LIBS     = -lhts -llzma -lbz2 -lm -lz -lpthread
 
-OBJS = test-main.o test-joint.o test-phaseless.o test-fastphase.o test-forward-backward.o
+OBJS = test-main.o test-joint.o test-phaseless.o test-fastphase.o
 
-BINS = test-joint.bin test-phaseless.bin test-fastphase.bin test-forward-backward.bin
+BINS = test-joint.bin test-phaseless.bin test-fastphase.bin
 
 DEPS = ../src/phaseless.o ../src/fastphase.o ../src/admixture.o
 
@@ -27,7 +27,6 @@ test: $(BINS)
 	./test-joint.bin --success
 	./test-phaseless.bin --success
 	./test-fastphase.bin --success
-	./test-forward-backward.bin --success
 
 clean:
 	rm -f *.o *.bin

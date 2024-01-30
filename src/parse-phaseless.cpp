@@ -163,25 +163,28 @@ List parse_impute_par(std::string filename, int ic = -1)
     std::unique_ptr<BigAss> genome = std::make_unique<BigAss>(alpaca::deserialize<OPTIONS, BigAss>(ifs, filesize, ec));
     ifs.close();
     assert((bool)ec == false);
-    MyArr2D alpha, beta, ae;
     Int1D ids;
     for(int ind = 0; ind < genome->nsamples; ind++) ids.push_back(ind);
     int nchunks = ic < 0 ? genome->nchunks : 1;
     int N = ids.size();
     List ret(N);
+    const int C = genome->C;
     for(auto ind : ids)
     {
         List gamma(nchunks);
         for(int c = 0; c < nchunks; c++) {
             ic = nchunks > 1 ? c : std::max(ic, c);
-            const int iM = genome->pos[ic].size();
-            const int nGrids = genome->B > 1 ? (iM + genome->B - 1) / genome->B : iM;
-            alpha.setZero(genome->C * genome->C, nGrids);
-            beta.setZero(genome->C * genome->C, nGrids);
-            get_cluster_probability(ind, iM, alpha, beta, genome->gls[ic], genome->R[ic], genome->PI[ic], genome->F[ic]);
+            const int S = genome->pos[ic].size();
+            const int nGrids = genome->B > 1 ? (S + genome->B - 1) / genome->B : S;
+            Eigen::Map<const MyArr2D> gli(genome->gls[ic].data() + ind * S * 3, S, 3);
+            Eigen::Map<const MyArr2D> P(genome->F[ic].data(), S, C);
+            Eigen::Map<const MyArr2D> PI(genome->PI[ic].data(), C, S);
+            Eigen::Map<const MyArr2D> R(genome->R[ic].data(), 3, S);
+            MyArr2D emit = get_emission_by_gl(gli, P).transpose(); // CC x S
+            const auto [alpha, beta, cs] = forward_backwards_diploid(emit, R, PI);
             gamma[c] = alpha * beta;
         }
         ret[ind] =  gamma;
     }
-    return List::create(Named("gamma")=ret, Named("ae") = genome->AE);
+    return List::create(Named("gamma")=ret);
 }

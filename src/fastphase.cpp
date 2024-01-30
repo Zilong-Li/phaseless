@@ -227,12 +227,20 @@ int run_impute_main(Options & opts)
             break;
         }
     }
-    genome->R.emplace_back(MyFloat1D(faith.R.data(), faith.R.data() + faith.R.size()));
-    genome->PI.emplace_back(MyFloat1D(faith.PI.data(), faith.PI.data() + faith.PI.size()));
-    genome->F.emplace_back(MyFloat1D(faith.F.data(), faith.F.data() + faith.F.size()));
-    // reuse Ezj
+    // reuse Ezj for AE
     faith.Ezj = get_cluster_frequency(faith.R, faith.PI);
-    genome->AE.emplace_back(MyFloat1D(faith.Ezj.data(), faith.Ezj.data() + faith.Ezj.size()));
+    for(int ic = 0; ic < genome->nchunks; ic++)
+    {
+        const int S = faith.pos_chunk[ic + 1] - faith.pos_chunk[ic];
+        MyArr2D out = faith.Ezj.middleCols(faith.pos_chunk[ic], S);
+        genome->AE.emplace_back(MyFloat1D(out.data(), out.data() + out.size()));
+        out = faith.R.middleCols(faith.pos_chunk[ic], S);
+        genome->R.emplace_back(MyFloat1D(out.data(), out.data() + out.size()));
+        out = faith.PI.middleCols(faith.pos_chunk[ic], S);
+        genome->PI.emplace_back(MyFloat1D(out.data(), out.data() + out.size()));
+        out = faith.F.middleRows(faith.pos_chunk[ic], S);
+        genome->F.emplace_back(MyFloat1D(out.data(), out.data() + out.size()));
+    }
     constexpr auto OPTIONS = alpaca::options::fixed_length_encoding;
     std::ofstream ofs(opts.out + ".pars.bin", std::ios::out | std::ios::binary);
     auto bytes_written = alpaca::serialize<OPTIONS, BigAss>(*genome, ofs);
