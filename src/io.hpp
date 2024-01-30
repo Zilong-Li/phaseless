@@ -446,10 +446,10 @@ inline void update_bigass_inplace(const std::unique_ptr<BigAss> & genome)
     for(ic = 0; ic < genome->nchunks; ic++)
     {
         if(ic == 0) continue; // assume the first chunksize is not greater than the defined
-        if(genome->pos[ic - 1].size() < genome->chunksize)
+        if((int)genome->pos[ic - 1].size() < genome->chunksize)
         {
             ndiff = genome->chunksize - genome->pos[ic - 1].size();
-            if(genome->pos[ic].size() >= ndiff)
+            if((int) genome->pos[ic].size() >= ndiff)
             {
                 genome->pos[ic - 1].insert(genome->pos[ic - 1].end(), genome->pos[ic].begin(),
                                            genome->pos[ic].begin() + ndiff);
