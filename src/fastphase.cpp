@@ -42,16 +42,6 @@ void FastPhaseK2::setFlags(double tol_p, double tol_f, double tol_q, bool debug_
     NR = nR;
 }
 
-void FastPhaseK2::setStartPoint(const std::unique_ptr<BigAss> & genome)
-{
-    for(size_t ic = 0; ic < genome->pos.size(); ic++)
-    {
-        MyArr1D af = estimate_af_by_gl(genome->gls[ic], genome->nsamples, genome->pos[ic].size()).cast<MyFloat>();
-        const int S = pos_chunk[ic + 1] - pos_chunk[ic];
-        for(int s = 0; s < S; s++) F.row(pos_chunk[ic] + s) = af(s);
-    }
-}
-
 void FastPhaseK2::initIteration()
 {
     // initial temp variables
@@ -216,7 +206,6 @@ int run_impute_main(Options & opts)
     FastPhaseK2 faith(genome->nsamples, genome->nsnps, opts.C, opts.seed);
     faith.setFlags(opts.ptol, opts.ftol, opts.qtol, opts.debug, opts.nQ, opts.nP, opts.nF, opts.nR);
     faith.initRecombination(genome->pos, opts.in_rfile);
-    if(opts.eAF) faith.setStartPoint(genome);
     double loglike, diff, prevlike{std::numeric_limits<double>::lowest()};
     for(int it = 0; SIG_COND && it <= opts.nimpute; it++)
     {

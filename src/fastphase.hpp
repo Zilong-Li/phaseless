@@ -55,7 +55,6 @@ class FastPhaseK2
 
     void initRecombination(const Int2D & pos, std::string rfile = "", int B = 1, double Ne = 20000);
     void setFlags(double, double, double, bool, bool, bool, bool, bool);
-    void setStartPoint(const std::unique_ptr<BigAss> & genome);
     void protectPars();
     void initIteration();
     void updateIteration();
