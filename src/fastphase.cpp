@@ -42,6 +42,26 @@ void FastPhaseK2::setFlags(double tol_p, double tol_f, double tol_q, bool debug_
     NR = nR;
 }
 
+void FastPhaseK2::refillHaps()
+{
+    // bin hapsum per 100 snps ?
+    for(int c = 0; c < C; c++)
+    {
+        for(int m = 0; m < M; m++)
+        {
+            if(HapSum(c, m) >= minHapfreq) continue;
+            MyArr1D h = HapSum.col(m);
+            h(c) = 0; // do not re-sample current
+            h /= h.sum();
+            MyFloat1D p(h.data(), h.data() + h.size());
+            std::discrete_distribution<int> distribution{p.begin(), p.end()};
+            int choice = distribution(rng);
+            assert(choice != c);
+            F(m, c) = F(m, choice);
+        }
+    }
+}
+
 void FastPhaseK2::initIteration()
 {
     // initial temp variables
@@ -49,6 +69,21 @@ void FastPhaseK2::initIteration()
     Ezg1.setZero(C, M); // reset pos(Z,g)
     Ezg2.setZero(C, M); // reset pos(Z,g)
     HapSum.setZero(C, M); // reset post(Z,j)
+}
+
+void FastPhaseK2::updateIteration()
+{
+    // update R
+    if(!NR) er = 1.0 - Ezj.colwise().sum() / N;
+    // update F
+    if(!NP) F = (Ezg2 / (Ezg1 + Ezg2)).transpose();
+    // update PI
+    if(!NF)
+    {
+        PI = Ezj;
+        PI.rowwise() /= PI.colwise().sum();
+    }
+    protectPars();
 }
 
 void FastPhaseK2::protectPars()
@@ -90,21 +125,6 @@ void FastPhaseK2::protectPars()
     }
     // norm HapSum
     HapSum.rowwise() /= HapSum.colwise().sum();
-}
-
-void FastPhaseK2::updateIteration()
-{
-    // update R
-    if(!NR) er = 1.0 - Ezj.colwise().sum() / N;
-    // update F
-    if(!NP) F = (Ezg2 / (Ezg1 + Ezg2)).transpose();
-    // update PI
-    if(!NF)
-    {
-        PI = Ezj;
-        PI.rowwise() /= PI.colwise().sum();
-    }
-    protectPars();
 }
 
 /*
@@ -221,11 +241,12 @@ int run_impute_main(Options & opts)
         prevlike = loglike;
         cao.print(tim.date(), "run whole genome, iteration", it, ", likelihoods =", loglike, ", diff =", diff, ", time",
                   tim.reltime(), " sec");
-        if(diff < opts.ltol)
-        {
-            cao.print(tim.date(), "hit stopping criteria, diff =", std::scientific, diff, " <", opts.ltol);
-            break;
-        }
+        // if(diff < opts.ltol)
+        // {
+        //     cao.print(tim.date(), "hit stopping criteria, diff =", std::scientific, diff, " <", opts.ltol);
+        //     break;
+        // }
+        if(it > 4 && it < 30 && it % 4 == 1) faith.refillHaps();
     }
     // reuse Ezj for AE
     if(opts.eHap)
@@ -262,7 +283,7 @@ int run_impute_main(Options & opts)
     orecomb << faith.R.transpose().format(fmt) << "\n";
     std::ofstream opi(opts.out + ".pi");
     opi << faith.PI.transpose().format(fmt) << "\n";
-    std::ofstream ohap(opts.out + ".hapsum");
+    std::ofstream ohap(opts.out + ".hapfreq");
     ohap << faith.HapSum.transpose().format(fmt) << "\n";
     std::ofstream oae(opts.out + ".ae");
     oae << faith.Ezj.transpose().format(fmt) << "\n";

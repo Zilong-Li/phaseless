@@ -21,6 +21,7 @@ class FastPhaseK2
     double alleleEmitThreshold{1e-6}; // threshold for P
     double clusterFreqThreshold{1e-6}; // threshold for F
     double admixtureThreshold{1e-6}; // threshold for Q
+    double minHapfreq{0.01}; // min haplotype frequency, or min(1/(10*C), 1/100)
 
   public:
     FastPhaseK2(int n, int m, int c, int seed) : N(n), M(m), C(c), CC(c * c)
@@ -55,6 +56,7 @@ class FastPhaseK2
 
     void initRecombination(const Int2D & pos, std::string rfile = "", int B = 1, double Ne = 20000);
     void setFlags(double, double, double, bool, bool, bool, bool, bool);
+    void refillHaps(); // re-sample F for sites with hapfreq < minHapfreq
     void protectPars();
     void initIteration();
     void updateIteration();
