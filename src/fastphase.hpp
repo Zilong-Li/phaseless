@@ -18,8 +18,8 @@ class FastPhaseK2
     std::default_random_engine rng = std::default_random_engine{};
     // BOUNDING
     double minRate{0.1}, maxRate{100}; // threshold for R
-    double alleleEmitThreshold{1e-6}; // threshold for P
-    double clusterFreqThreshold{1e-6}; // threshold for F
+    double alleleEmitThreshold{1e-4}; // threshold for P
+    double clusterFreqThreshold{1e-4}; // threshold for F
     double admixtureThreshold{1e-6}; // threshold for Q
     double minHapfreq{0.01}; // min haplotype frequency, or min(1/(10*C), 1/100)
 
@@ -32,6 +32,7 @@ class FastPhaseK2
         PI.rowwise() /= PI.colwise().sum(); // normalize it per site
         R = MyArr2D(3, M);
         GP.setZero(M * 3, N);
+        minHapfreq = std::min(1.0 / (10 * C), minHapfreq);
     }
     ~FastPhaseK2() {}
 

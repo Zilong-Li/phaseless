@@ -48,11 +48,11 @@ int main(int argc, char * argv[])
         .scan<'g', double>();
     program.add_argument("-P", "--ptol")
         .help("lower boundary for P")
-        .default_value(1e-6)
+        .default_value(1e-4)
         .scan<'g', double>();
     program.add_argument("-F", "--ftol")
         .help("lower boundary for F")
-        .default_value(1e-6)
+        .default_value(1e-4)
         .scan<'g', double>();
     program.add_argument("-Q", "--qtol")
         .help("lower boundary for Q")

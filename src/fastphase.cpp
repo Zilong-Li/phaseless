@@ -246,7 +246,7 @@ int run_impute_main(Options & opts)
         //     cao.print(tim.date(), "hit stopping criteria, diff =", std::scientific, diff, " <", opts.ltol);
         //     break;
         // }
-        if(it > 4 && it < 30 && it % 4 == 1) faith.refillHaps();
+        if(it > 4 && it < opts.nimpute && it % 4 == 1) faith.refillHaps();
     }
     // reuse Ezj for AE
     if(opts.eHap)
