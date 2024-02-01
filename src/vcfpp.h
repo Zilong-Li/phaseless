@@ -2,7 +2,7 @@
  * @file        https://github.com/Zilong-Li/vcfpp/vcfpp.h
  * @author      Zilong Li
  * @email       zilong.dk@gmail.com
- * @version     v0.3.1
+ * @version     v0.3.3
  * @breif       a single C++ file for manipulating VCF
  * Copyright (C) 2022-2023.The use of this code is governed by the LICENSE file.
  ******************************************************************************/
@@ -22,7 +22,7 @@
  * \section install_sec Installation
  *
  * - <EM> include "vcfpp.h" </EM> to your program and compile it by <EM> g++ my.cpp -std=c++11 -Wall -I. -lhts
- * -lz -lm -lbz2 -llzma -lcurl </EM>
+ * - </EM>
  * - make sure you have https://github.com/samtools/htslib installed on your system and the it is in your
  * environment.
  *
@@ -87,12 +87,6 @@ using isValidGT = typename std::enable_if<std::is_same<T, std::vector<bool>>::va
                                           bool>::type;
 
 template<typename T>
-using isGtVector = typename std::enable_if<
-    std::is_same<T, std::vector<bool>>::value || std::is_same<T, std::vector<char>>::value
-        || std::is_same<T, std::string>::value || std::is_same<T, std::vector<int>>::value,
-    bool>::type;
-
-template<typename T>
 using isFormatVector = typename std::enable_if<std::is_same<T, std::vector<float>>::value
                                                    || std::is_same<T, std::vector<char>>::value
                                                    || std::is_same<T, std::vector<int>>::value,
@@ -147,8 +141,8 @@ inline std::vector<std::string> split_string(const std::string & s, const std::s
 
 /**
  * @class BcfHeader
- * @brief Object represents the header in VCF
- * @note  nothing important
+ * @brief Object represents header of the VCF, offering methods to access and modify the tags
+ * @note  BcfHeader has 3 friends, BcfReader, BcfWriter and BcfRecord.
  **/
 class BcfHeader
 {
@@ -165,7 +159,7 @@ class BcfHeader
 
     ~BcfHeader() {}
 
-    /** @brief print out the header */
+    /** @brief stream out the header */
     friend std::ostream & operator<<(std::ostream & out, const BcfHeader & h)
     {
         out << h.asString();
@@ -354,8 +348,8 @@ class BcfHeader
 
 /**
  * @class BcfRecord
- * @brief Object represents a record in VCF
- * @note  the object is constructed using a BcfHeader object and needs to be filled in by calling
+ * @brief Object represents a variant record in the VCF, offering methods to access and modify fields.
+ * @note  BcfRecord has to be associated with a BcfHeader object and needs to be filled in by calling
  *BcfReader.getNextVariant function.
  **/
 class BcfRecord
@@ -381,7 +375,10 @@ class BcfRecord
     std::vector<char> isGenoMissing;
 
   public:
-    /** @brief initilize a BcfRecord object using a given BcfHeader object. */
+    /// empty constructor. call init() afterwards
+    BcfRecord() {}
+
+    /// constructor with a given BcfHeader object
     BcfRecord(const BcfHeader & h) : header(h)
     {
         nsamples = header.nSamples();
@@ -390,6 +387,15 @@ class BcfRecord
     }
 
     ~BcfRecord() {}
+
+    /// initilize a BcfRecord object using a given BcfHeader object
+    void init(const BcfHeader & h)
+    {
+        header = h;
+        nsamples = header.nSamples();
+        typeOfGT.resize(nsamples);
+        gtPhase.resize(nsamples, 0);
+    }
 
     /** @brief stream out the variant */
     friend std::ostream & operator<<(std::ostream & out, const BcfRecord & v)
@@ -409,13 +415,12 @@ class BcfRecord
     }
 
     /**
-     * @brief fill in the input vector with genotypes of 0 and 1. only works for ploidy<=2. genotypes with
-missing allele is coded as heterozygous
-     * @param v valid input are vector<bool> vector<char> type
+     * @brief fill in the input vector with genotypes of 0 and 1. only works for ploidy<=2. Genotypes with
+     * missing allele is coded as heterozygous
+     * @param v valid input includes vector<bool> and vector<char> type
      * @return bool
-     * @note user can use isNoneMissing() to check if there is genotype with missingness. then one can decide
-if the default behaviour of this function is desired. Alternatively, user can use vector<int> as the input
-type as noted in the other overloading function.
+     * @note  use isNoneMissing() to check if all genotypes are with no missingness. Alternatively, one can
+     * use vector<int> as the input type as noted in the other overloading function getGenotypes().
      * */
     template<typename T>
     isValidGT<T> getGenotypes(T & v)
@@ -475,7 +480,7 @@ type as noted in the other overloading function.
     }
 
     /**
-     * @brief fill in the input vector with genotyps, 0, 1 or -9 (missing).
+     * @brief fill in the input vector with genotype values, 0, 1 or -9 (missing).
      * @param v valid input is vector<int> type
      * @return bool
      * @note this function provides full capability to handl all kinds of genotypes in multi-ploidy data with
@@ -485,7 +490,9 @@ type as noted in the other overloading function.
     {
         ndst = 0;
         ret = bcf_get_genotypes(header.hdr, line, &gts, &ndst);
-        if(ret <= 0) throw std::runtime_error("genotypes not present");
+        if(ret <= 0)
+            throw std::runtime_error(
+                "genotypes not present. make sure you initilized the variant object first\n");
         v.resize(ret);
         isGenoMissing.assign(nsamples, 0);
         nploidy = ret / nsamples;
@@ -567,7 +574,7 @@ type as noted in the other overloading function.
     bool getFORMAT(std::string tag, std::vector<std::string> & v)
     {
         fmt = bcf_get_fmt(header.hdr, line, tag.c_str());
-        if(!fmt) throw std::runtime_error("there is no " + tag + " in FORMAT of this variant.\n");
+        if(!fmt) throw std::runtime_error("there is no " + tag + " in FORMAT for this variant of ID=" + ID());
         nvalues = fmt->n;
         // if ndst < (fmt->n+1)*nsmpl; then realloc is involved
         ret = -1, ndst = 0;
@@ -722,7 +729,7 @@ type as noted in the other overloading function.
             return true;
     }
 
-    /** remove the given tag from INFO*/
+    /// remove the given tag from INFO of the variant
     void removeINFO(std::string tag)
     {
         ret = -1;
@@ -740,23 +747,24 @@ type as noted in the other overloading function.
     }
 
     /**
-     * @brief set genotypes from scratch assume genotype not present
-     * @param v valid input includevector<bool>, vector<char>, vector<int>, std::string
+     * @brief set genotypes from scratch even if genotypes not present
+     * @param v  the genotypes of vector<int> type
      * @return bool
      * */
-    template<class T>
-    isGtVector<T> setGenotypes(const T & v)
+    bool setGenotypes(const std::vector<int> & v)
     {
         // bcf_gt_type
         int i, j, k;
         nploidy = v.size() / nsamples;
-        gts = (int *)malloc(nsamples * nploidy * sizeof(int));
+        gts = (int32_t *)malloc(v.size() * sizeof(int32_t));
         for(i = 0; i < nsamples; i++)
         {
             for(j = 0; j < nploidy; j++)
             {
                 k = i * nploidy + j;
-                if(gtPhase[i])
+                if(v[k] == -9 || v[k] == bcf_int32_missing)
+                    gts[k] = bcf_gt_missing;
+                else if(gtPhase[i])
                     gts[k] = bcf_gt_phased(v[k]);
                 else
                     gts[k] = bcf_gt_unphased(v[k]);
@@ -769,45 +777,27 @@ type as noted in the other overloading function.
     }
 
     /**
-     * @brief update genotypes for current record, assume genotypes present
-     * @param v valid input includevector<bool>, vector<char>, vector<int>, std::string
-     * @return bool
-     * */
-    template<class T>
-    isGtVector<T> updateGenotypes(const T & v)
-    {
-        // bcf_gt_type
-        ndst = 0;
-        ret = bcf_get_genotypes(header.hdr, line, &gts, &ndst);
-        if(ret <= 0) throw std::runtime_error("genotypes not present for current record.\n");
-        assert(ret == v.size());
-        nploidy = ret / nsamples;
-        int i, j, k;
-        for(i = 0; i < nsamples; i++)
-        {
-            for(j = 0; j < nploidy; j++)
-            {
-                k = i * nploidy + j;
-                if(gtPhase[i])
-                    gts[k] = bcf_gt_phased(v[k]);
-                else
-                    gts[k] = bcf_gt_unphased(v[k]);
-            }
-        }
-        if(bcf_update_genotypes(header.hdr, line, gts, ret) < 0)
-            throw std::runtime_error("couldn't set genotypes correctly.\n");
-        else
-            return true;
-    }
-
-    /**
      * @brief set phasing status for all diploid samples using given vector
      * @param v valid input includes vector<char>
      * */
     void setPhasing(const std::vector<char> & v)
     {
-        assert(v.size() == nsamples);
+        assert((int)v.size() == nsamples);
         gtPhase = v;
+    }
+
+    /// remove the given tag from FORMAT of the variant
+    void removeFORMAT(std::string tag)
+    {
+        ret = -1;
+        int tag_id = bcf_hdr_id2int(header.hdr, BCF_DT_ID, tag.c_str());
+        if(bcf_hdr_id2type(header.hdr, BCF_HL_FMT, tag_id) == (BCF_HT_INT & 0xff))
+            ret = bcf_update_format_int32(header.hdr, line, tag.c_str(), NULL, 0);
+        else if(bcf_hdr_id2type(header.hdr, BCF_HL_FMT, tag_id) == (BCF_HT_STR & 0xff))
+            ret = bcf_update_format_char(header.hdr, line, tag.c_str(), NULL, 0);
+        else if(bcf_hdr_id2type(header.hdr, BCF_HL_FMT, tag_id) == (BCF_HT_REAL & 0xff))
+            ret = bcf_update_format_float(header.hdr, line, tag.c_str(), NULL, 0);
+        if(ret < 0) throw std::runtime_error("couldn't remove " + tag + " correctly.\n");
     }
 
     /**
@@ -1030,12 +1020,6 @@ type as noted in the other overloading function.
         return line->pos + 1;
     }
 
-    /** @brief modify position given 1-based value */
-    inline void setAlleleStr(const char * alleles_string)
-    {
-        bcf_update_alleles_str(header.hdr, line, alleles_string);
-    }
-
     /** @brief modify CHROM value */
     inline void setCHR(const char * chr)
     {
@@ -1046,6 +1030,18 @@ type as noted in the other overloading function.
     inline void setPOS(int64_t p)
     {
         line->pos = p - 1;
+    }
+
+    /** @brief update ID */
+    inline void setID(const char * s)
+    {
+        bcf_update_id(header.hdr, line, s);
+    }
+
+    /** @brief set REF and ALT alleles given a string seperated by comma */
+    inline void setRefAlt(const char * alleles_string)
+    {
+        bcf_update_alleles_str(header.hdr, line, alleles_string);
     }
 
     /** @brief return 0-base start of the variant (can be any type) */
@@ -1212,12 +1208,6 @@ type as noted in the other overloading function.
         nploidy = v;
     }
 
-    /// return the shape of current tag in FORMAT (nsamples x nvalues)
-    inline std::tuple<int, int> shapeOfQuery() const
-    {
-        return std::make_tuple(nsamples, nvalues);
-    }
-
     /**
      * @brief vector of nsamples length. keep track of the type of genotype (one of GT_HOM_RR, GT_HET_RA,
      *        GT_HOM_AA, GT_HET_AA, GT_HAPL_R, GT_HAPL_A or GT_UNKN).
@@ -1237,8 +1227,7 @@ type as noted in the other overloading function.
 
 /**
  * @class BcfReader
- * @brief Stream in variants from vcf/bcf file or stdin
- * @note  nothing important
+ * @brief Stream in variants from compressed/uncompressed VCF/BCF file or stdin
  **/
 class BcfReader
 {
@@ -1252,11 +1241,11 @@ class BcfReader
     bool isBcf; // if the input file is bcf or vcf;
 
   public:
-    /** @brief a BcfHeader object */
+    /// a BcfHeader object
     BcfHeader header;
-    /** @brief number of samples in the VCF */
+    /// number of samples in the VCF
     int nsamples;
-    /** @brief number of samples in the VCF */
+    /// number of samples in the VCF
     std::vector<std::string> SamplesName;
 
     /// Construct an empty BcfReader
@@ -1296,10 +1285,8 @@ class BcfReader
     BcfReader(const std::string & file, const std::string & region, const std::string & samples) : fname(file)
     {
         open(file);
-        header.setSamples(samples);
-        nsamples = bcf_hdr_nsamples(header.hdr);
         if(!region.empty()) setRegion(region);
-        SamplesName = header.getSamples();
+        if(!samples.empty()) setSamples(samples);
     }
 
     /// return a BcfHeader object
@@ -1353,6 +1340,18 @@ class BcfReader
         while(getNextVariant(r)) c++;
         setRegion(region); // reset the region
         return c;
+    }
+
+    /**
+     * @brief explicitly stream to specific samples
+     * @param samples the string is bcftools-like format, which is comma separated list of samples to include
+     * (or exclude with "^" prefix).
+     * */
+    void setSamples(const std::string & samples)
+    {
+        header.setSamples(samples);
+        nsamples = bcf_hdr_nsamples(header.hdr);
+        SamplesName = header.getSamples();
     }
 
     /**
@@ -1424,8 +1423,7 @@ class BcfReader
 
 /**
  * @class BcfWriter
- * @brief Stream out variants to vcf/bcf file or stdout
- * @note  nothing important
+ * @brief Stream out variants to compressed/uncompressed VCF/BCF file or stdout
  **/
 class BcfWriter
 {

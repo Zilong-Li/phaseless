@@ -239,7 +239,7 @@ int run_impute_main(Options & opts)
     for(int it = 0; SIG_COND && it <= opts.nimpute; it++)
     {
         tim.clock();
-        if(it > 4 && it < opts.nimpute && it % 4 == 1) faith.refillHaps();
+        if(it > 4 && it < opts.nimpute / 2 && it % 4 == 1) faith.refillHaps();
         faith.initIteration();
         for(int i = 0; i < faith.N; i++)
             res.emplace_back(
@@ -266,6 +266,7 @@ int run_impute_main(Options & opts)
     {
         faith.Ezj = get_cluster_frequency(faith.R, faith.PI);
     }
+    auto bw = make_bcfwriter(opts.out + ".vcf.gz", genome->chrs, genome->sampleids);
     for(int ic = 0; ic < genome->nchunks; ic++)
     {
         const int S = faith.pos_chunk[ic + 1] - faith.pos_chunk[ic];
@@ -277,6 +278,8 @@ int run_impute_main(Options & opts)
         genome->PI.emplace_back(MyFloat1D(out.data(), out.data() + out.size()));
         out = faith.F.middleRows(faith.pos_chunk[ic], S);
         genome->F.emplace_back(MyFloat1D(out.data(), out.data() + out.size()));
+        out = faith.GP.middleRows(faith.pos_chunk[ic], S * 3);
+        write_bigass_to_bcf(bw, out.data(), genome->chrs[ic], genome->pos[ic]);
     }
     constexpr auto OPTIONS = alpaca::options::fixed_length_encoding;
     std::ofstream ofs(opts.out + ".pars.bin", std::ios::out | std::ios::binary);

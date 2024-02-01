@@ -156,7 +156,7 @@ int main(int argc, char * argv[])
         .scan<'i', int>();
     cmd_impute.add_argument("-n", "--threads")
         .help("number of threads")
-        .default_value(1)
+        .default_value(10)
         .scan<'i', int>();
     cmd_impute.add_argument("-o", "--out")
         .help("output prefix")
