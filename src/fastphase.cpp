@@ -239,7 +239,7 @@ int run_impute_main(Options & opts)
     for(int it = 0; SIG_COND && it <= opts.nimpute; it++)
     {
         tim.clock();
-        if(it > 4 && it < opts.nimpute / 2 && it % 4 == 1) faith.refillHaps();
+        if(opts.refillHaps && it > 4 && it < opts.nimpute / 2 && it % 4 == 1) faith.refillHaps();
         faith.initIteration();
         for(int i = 0; i < faith.N; i++)
             res.emplace_back(

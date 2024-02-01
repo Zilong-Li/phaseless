@@ -180,6 +180,10 @@ int main(int argc, char * argv[])
         .help("write Hapsum instead of AE into parse.bin")
         .default_value(false)
         .implicit_value(true);
+    cmd_impute.add_argument("--refill-haps")
+        .help("refill infrequently used haplotype clusters")
+        .default_value(false)
+        .implicit_value(true);
     cmd_impute.add_argument("--minRecombRate")
         .help("min recombination rate to determine if a SNP should be collapsed")
         .default_value(1e-4)
@@ -293,6 +297,7 @@ int main(int argc, char * argv[])
             opts.single_chunk = cmd_impute.get<bool>("--single-chunk");
             opts.eHap = cmd_impute.get<bool>("--write-hapsum");
             opts.collapse = cmd_impute.get<bool>("--collapse");
+            opts.refillHaps = cmd_impute.get<bool>("--refill-haps");
             opts.tol_r = cmd_impute.get<double>("--minRecombRate");
             if(opts.single_chunk) opts.chunksize = INT_MAX;
             if((opts.in_beagle.empty() && opts.in_vcf.empty()) || cmd_impute.get<bool>("--help"))
