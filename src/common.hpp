@@ -91,13 +91,13 @@ inline MatrixType RandomUniform(const Eigen::Index numRows,
 struct Options
 {
     int ichunk{0}, chunksize{10000}, K{2}, C{10}, nadmix{1000}, nimpute{40}, nthreads{1}, seed{999};
-    int gridsize{1};
+    int gridsize{1}, refillHaps{0};
     double ltol{1e-1}, info{0}, tol_pi{0.99}, tol_r{1e-5};
     double ptol{1e-6}; // threshold for P
     double ftol{1e-6}; // threshold for F
     double qtol{1e-6}; // threshold for Q
     bool noaccel{0}, noscreen{0}, single_chunk{0}, debug{0}, collapse{0};
-    bool nQ{0}, nP{0}, nF{0}, nR{0}, aQ{0}, oVCF{0}, eHap{0}, refillHaps{0};
+    bool nQ{0}, nP{0}, nF{0}, nR{0}, aQ{0}, oVCF{0}, eHap{0};
     std::string out, in_beagle, in_vcf, in_bin, in_impute, in_joint;
     std::string samples{""}, region{""}, in_plink{""}, in_qfile{""}, in_pfile{""}, in_rfile{""};
     std::string opts_in_effect{"Options in effect:\n   "};

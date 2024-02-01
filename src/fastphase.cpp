@@ -42,7 +42,7 @@ void FastPhaseK2::setFlags(double tol_p, double tol_f, double tol_q, bool debug_
     NR = nR;
 }
 
-void FastPhaseK2::refillHaps()
+void FastPhaseK2::refillHaps(int strategy)
 {
     int s{0};
     for(int c = 0; c < C; c++)
@@ -58,8 +58,19 @@ void FastPhaseK2::refillHaps()
             std::discrete_distribution<int> distribution{p.begin(), p.end()};
             int choice = distribution(rng);
             assert(choice != c);
-            h.maxCoeff(&choice); // if no binning, this may be better
-            F(m, c) = F(m, choice);
+            if(strategy == 1)
+            {
+                F(m, c) = alleleEmitThreshold;
+            }
+            else if(strategy == 2)
+            {
+                h.maxCoeff(&choice); // if no binning, this may be better
+                F(m, c) = F(m, choice);
+            }
+            else
+            {
+                F(m, c) = F(m, choice);
+            }
             s++;
         }
     }
@@ -239,7 +250,7 @@ int run_impute_main(Options & opts)
     for(int it = 0; SIG_COND && it <= opts.nimpute; it++)
     {
         tim.clock();
-        if(opts.refillHaps && it > 4 && it < opts.nimpute / 2 && it % 4 == 1) faith.refillHaps();
+        if(opts.refillHaps && it > 4 && it < opts.nimpute / 2 && it % 4 == 1) faith.refillHaps(opts.refillHaps);
         faith.initIteration();
         for(int i = 0; i < faith.N; i++)
             res.emplace_back(

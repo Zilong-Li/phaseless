@@ -57,7 +57,7 @@ class FastPhaseK2
 
     void initRecombination(const Int2D & pos, std::string rfile = "", int B = 1, double Ne = 20000);
     void setFlags(double, double, double, bool, bool, bool, bool, bool);
-    void refillHaps(); // re-sample F for sites with hapfreq < minHapfreq
+    void refillHaps(int); // re-sample F for sites with hapfreq < minHapfreq
     void protectPars();
     void initIteration();
     void updateIteration();
