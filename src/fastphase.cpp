@@ -44,9 +44,10 @@ void FastPhaseK2::setFlags(double tol_p, double tol_f, double tol_q, bool debug_
 
 void FastPhaseK2::refillHaps()
 {
-    // bin hapsum per 100 snps ?
+    int s{0};
     for(int c = 0; c < C; c++)
     {
+        // bin hapsum per 100 snps ?
         for(int m = 0; m < M; m++)
         {
             if(HapSum(c, m) >= minHapfreq) continue;
@@ -57,9 +58,12 @@ void FastPhaseK2::refillHaps()
             std::discrete_distribution<int> distribution{p.begin(), p.end()};
             int choice = distribution(rng);
             assert(choice != c);
+            h.maxCoeff(&choice); // if no binning, this may be better
             F(m, c) = F(m, choice);
+            s++;
         }
     }
+    cao.warn("refill ", 100 * s / (C * M), "% infrequently used haps");
 }
 
 void FastPhaseK2::initIteration()
@@ -93,7 +97,7 @@ void FastPhaseK2::protectPars()
     {
         if(F.isNaN().any())
         {
-            if(debug) cao.warn("NaN in F in FastPhaseK2 model. will fill it with AF");
+            cao.warn("NaN in F in FastPhaseK2 model. will fill it with AF");
             if(AF.size() == 0) cao.error("AF is not assigned!\n");
             for(int i = 0; i < M; i++) F.row(i) = F.row(i).isNaN().select(AF(i), F.row(i));
         }
@@ -120,7 +124,7 @@ void FastPhaseK2::protectPars()
         if(PI.isNaN().any()) cao.warn("NaN in PI. reset cluster frequency to ", clusterFreqThreshold);
         PI = (PI < clusterFreqThreshold).select(clusterFreqThreshold, PI);
         PI = (PI > 1 - clusterFreqThreshold).select(1 - clusterFreqThreshold, PI);
-        // re-normalize F per site. hope should work well. otherwise do the complicated.
+        // re-normalize F per site. hope should work okay. otherwise do the complicated.
         PI.rowwise() /= PI.colwise().sum();
     }
     // norm HapSum
@@ -162,7 +166,7 @@ double FastPhaseK2::hmmIterWithJumps(const MyFloat1D & GL, const int ic, const i
                                       .sum();
             if(s > 0) alphatmp(z1) = alpha(Eigen::seqN(z1, C, C), s - 1).sum() * R(1, m);
             if(s == 0) ind_post_zj(z1, s) = (alpha.col(0) * beta.col(0)).segment(z1 * C, C).sum();
-            if(finalIter) callGenoLoopC(ind, s, z1, gli, gamma_div_emit);
+            if(finalIter) callGenoLoopC(z1, m, ind, gli.row(s), F.row(m), gamma_div_emit);
         }
         if(s == 0) continue;
         alphatmp += PI.col(m) * R(2, m) * 1.0; // inner alpha.col(s-1).sum == 1
@@ -181,19 +185,24 @@ double FastPhaseK2::hmmIterWithJumps(const MyFloat1D & GL, const int ic, const i
     return (1 / cs).log().sum();
 }
 
-void FastPhaseK2::callGenoLoopC(int ind, int s, int z1, const MyArr2D & gli, const MyArr1D & gamma_div_emit)
+void FastPhaseK2::callGenoLoopC(int z1,
+                                int m,
+                                int ind,
+                                const MyArr1D & gli,
+                                const MyArr1D & p,
+                                const MyArr1D & gamma_div_emit)
 {
     MyArr1D tmp_zg(4);
     for(int z2 = 0; z2 < C; z2++)
     {
         int z12 = z1 * C + z2;
-        tmp_zg(0) = gli(s, 0) * (1 - F(s, z1)) * (1 - F(s, z2));
-        tmp_zg(1) = gli(s, 1) * (1 - F(s, z1)) * F(s, z2);
-        tmp_zg(2) = gli(s, 1) * F(s, z1) * (1 - F(s, z2));
-        tmp_zg(3) = gli(s, 2) * F(s, z1) * F(s, z2);
-        GP(3 * s + 0, ind) += gamma_div_emit(z12) * tmp_zg(0);
-        GP(3 * s + 1, ind) += gamma_div_emit(z12) * (tmp_zg(1) + tmp_zg(2));
-        GP(3 * s + 2, ind) += gamma_div_emit(z12) * tmp_zg(3);
+        tmp_zg(0) = gli(0) * (1 - p(z1)) * (1 - p(z2));
+        tmp_zg(1) = gli(1) * (1 - p(z1)) * p(z2);
+        tmp_zg(2) = gli(1) * p(z1) * (1 - p(z2));
+        tmp_zg(3) = gli(2) * p(z1) * p(z2);
+        GP(3 * m + 0, ind) += gamma_div_emit(z12) * tmp_zg(0);
+        GP(3 * m + 1, ind) += gamma_div_emit(z12) * (tmp_zg(1) + tmp_zg(2));
+        GP(3 * m + 2, ind) += gamma_div_emit(z12) * tmp_zg(3);
     }
 }
 
@@ -230,9 +239,11 @@ int run_impute_main(Options & opts)
     for(int it = 0; SIG_COND && it <= opts.nimpute; it++)
     {
         tim.clock();
+        if(it > 4 && it < opts.nimpute && it % 4 == 1) faith.refillHaps();
         faith.initIteration();
         for(int i = 0; i < faith.N; i++)
-            res.emplace_back(pool.enqueue(&FastPhaseK2::runAllChunks, &faith, std::ref(genome->gls), i, false));
+            res.emplace_back(
+                pool.enqueue(&FastPhaseK2::runAllChunks, &faith, std::ref(genome->gls), i, it == opts.nimpute));
         loglike = 0;
         for(auto && ll : res) loglike += ll.get();
         res.clear(); // clear future and renew
@@ -241,12 +252,6 @@ int run_impute_main(Options & opts)
         prevlike = loglike;
         cao.print(tim.date(), "run whole genome, iteration", it, ", likelihoods =", loglike, ", diff =", diff, ", time",
                   tim.reltime(), " sec");
-        // if(diff < opts.ltol)
-        // {
-        //     cao.print(tim.date(), "hit stopping criteria, diff =", std::scientific, diff, " <", opts.ltol);
-        //     break;
-        // }
-        if(it > 4 && it < opts.nimpute && it % 4 == 1) faith.refillHaps();
     }
     // reuse Ezj for AE
     if(opts.eHap)

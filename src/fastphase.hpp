@@ -61,7 +61,7 @@ class FastPhaseK2
     void protectPars();
     void initIteration();
     void updateIteration();
-    void callGenoLoopC(int, int, int, const MyArr2D &, const MyArr1D &);
+    void callGenoLoopC(int, int, int, const MyArr1D &, const MyArr1D &, const MyArr1D &);
     double hmmIterWithJumps(const MyFloat1D &, const int, const int, bool);
     double runAllChunks(const MyFloat2D &, const int, bool);
 };
