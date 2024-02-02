@@ -30,18 +30,17 @@ int main(int argc, char * argv[])
 
     // clang-format off
     ArgumentParser program("phaseless", VERSION, default_arguments::version);
+    program.add_epilog("This project is still under development!\n"
+                       "Contact: zilong.dk@gmail.com");
     program.add_argument("-D","--debug")
         .help("enable debug mode")
-        .default_value(false)
-        .implicit_value(true);
+        .flag();
     program.add_argument("-S", "--no-stdout")
         .help("disable print log to screen")
-        .default_value(false)
-        .implicit_value(true);
+        .flag();
     program.add_argument("-a", "--no-accel")
         .help("disable accelerated EM")
-        .default_value(false)
-        .implicit_value(true);
+        .flag();
     program.add_argument("-l", "--ltol")
         .help("convergence tolerance of difference in log likelihoods")
         .default_value(1e-1)
@@ -68,12 +67,10 @@ int main(int argc, char * argv[])
         .implicit_value(true);
     program.add_argument("-r", "--NR")
         .help("disable updating R")
-        .default_value(false)
-        .implicit_value(true);
+        .flag();
     program.add_argument("-f","--NF")
         .help("disable updating F")
-        .default_value(false)
-        .implicit_value(true);
+        .flag();
     program.add_argument("--qfile")
         .help("read Q file as the start point")
         .default_value(std::string{""});
@@ -114,16 +111,13 @@ int main(int argc, char * argv[])
         .scan<'i', int>();
     cmd_joint.add_argument("-S", "--single-chunk")
         .help("treat input as big single chunk")
-        .default_value(false)
-        .implicit_value(true);
+        .flag();
     cmd_joint.add_argument("-V", "--vcf")
         .help("output the VCF file")
-        .default_value(false)
-        .implicit_value(true);
+        .flag();
     cmd_joint.add_argument("-Q", "--aQ")
         .help("aphla is accelarated with Q only")
-        .default_value(false)
-        .implicit_value(true);
+        .flag();
     cmd_joint.add_argument("-d","--seed")
         .help("seed for reproducibility")
         .default_value(999)
@@ -138,8 +132,7 @@ int main(int argc, char * argv[])
         .scan<'i', int>();
     cmd_impute.add_argument("-C", "--collapse")
         .help("collapse SNPs in a reasonable window")
-        .default_value(false)
-        .implicit_value(true);
+        .flag();
     cmd_impute.add_argument("-B", "--grid-size")
         .help("number of SNPs (>1) in each grid. 1 disables collapsing")
         .default_value(1)
@@ -149,6 +142,7 @@ int main(int argc, char * argv[])
         .default_value(std::string{""});
     cmd_impute.add_argument("-g", "--beagle")
         .help("gziped beagle format as input")
+        .required()
         .default_value(std::string{""});
     cmd_impute.add_argument("-i", "--iterations")
         .help("number of EM iterations")
@@ -170,18 +164,20 @@ int main(int argc, char * argv[])
         .scan<'i', int>();
     cmd_impute.add_argument("-S", "--single-chunk")
         .help("treat input as big single chunk")
-        .default_value(false)
-        .implicit_value(true);
+        .flag();
     cmd_impute.add_argument("-d","--seed")
         .help("seed for reproducibility")
         .default_value(999)
         .scan<'i', int>();
     cmd_impute.add_argument("--write-hapsum")
         .help("write Hapsum instead of AE into parse.bin")
-        .default_value(false)
-        .implicit_value(true);
+        .flag();
     cmd_impute.add_argument("--refill-haps")
-        .help("refill infrequently used haplotype clusters.\n                         0: disable this;\n                         1: reset P to min allele emission probability for that haplotype cluster;\n                         2: re-sample P by copying from haplotype with the highest probability;\n                         3: re-sample P by copying from others with respect to their probability.")
+        .help("refill infrequently used haplotype clusters.\n"
+              "1: reset P to min allele emission probability for that haplotype cluster\n"
+              "2: re-sample P by copying from haplotype with the highest probability\n"
+              "3: re-sample P by copying from others with respect to their probability\n"
+              "0: disable this")
         .default_value(0)
         .scan<'i', int>();
     cmd_impute.add_argument("--minRecombRate")
@@ -226,8 +222,7 @@ int main(int argc, char * argv[])
         .default_value(std::string{"convert"});
     cmd_convert.add_argument("-p", "--plink2beagle")
         .help("use plink1 file as input without .bed")
-        .default_value(false)
-        .implicit_value(true);
+        .flag();
     cmd_convert.add_argument("-n", "--threads")
         .help("number of threads")
         .default_value(4)
@@ -327,7 +322,6 @@ int main(int argc, char * argv[])
         }
         else
         {
-            cao.cerr("Contact: Zilong Li (zilong.dk@gmail.com)\n");
             cao.cerr(program.help().str());
             std::exit(1);
         }
