@@ -29,7 +29,7 @@ class Admixture
         Q.rowwise() /= Q.colwise().sum(); // normalize Q per individual
         F = RandomUniform<MyArr2D, std::default_random_engine>(C * K, M, rng, clusterFreqThreshold,
                                                                1 - clusterFreqThreshold);
-        normalizeF();
+        for(int k = 0; k < K; k++) F.middleRows(k * C, C).rowwise() /= F.middleRows(k * C, C).colwise().sum();
     }
 
     ~Admixture() {}
@@ -37,6 +37,7 @@ class Admixture
     // SHARED VARIBALES
     const int N, M, C, K; // M: number of grids in total,  C2 = C x C
     MyArr2D F; // (C x K) x M
+    MyArr2D P; // C x M, for each k, F <= P
     MyArr2D Q; // K x N
     MyArr2D Ekc; // (C * K) x M, expected number of alleles per c per k
     MyArr2D NormF; // K x M
@@ -46,7 +47,7 @@ class Admixture
     void protectPars();
     void normalizeF();
     void setFlags(bool, bool);
-    void setStartPoint(std::string qfile);
+    void setStartPoint(const std::unique_ptr<BigAss> & genome, std::string qfile);
     void writeQ(std::string out);
     double runNativeWithBigAss(int ind, const std::unique_ptr<BigAss> & genome);
     double runOptimalWithBigAss(int ind, const std::unique_ptr<BigAss> & genome);

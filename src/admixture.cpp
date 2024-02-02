@@ -162,19 +162,33 @@ void Admixture::protectPars()
     }
 
     if(F.isNaN().any()) cao.error("NaN in F\n");
-    F = (F < clusterFreqThreshold).select(clusterFreqThreshold, F); // lower bound
-    F = (F > 1 - clusterFreqThreshold).select(1 - clusterFreqThreshold, F); // upper bound
+    // F = (F < clusterFreqThreshold).select(clusterFreqThreshold, F); // lower bound
+    // F = (F > 1 - clusterFreqThreshold).select(1 - clusterFreqThreshold, F); // upper bound
     normalizeF();
 }
 
 void Admixture::normalizeF()
 {
-    for(int k = 0; k < K; k++) // normalize F per snp per k
+    for(int k = 0; k < K; k++)
+    {
+        for(int c = 0; c < C; c++)
+            for(int m = 0; m < M; m++)
+                if(F(k * C + c, m) < P(c, m)) F(k * C + c, m) = P(c, m);
         F.middleRows(k * C, C).rowwise() /= F.middleRows(k * C, C).colwise().sum();
+    }
 }
 
-void Admixture::setStartPoint(std::string qfile)
+void Admixture::setStartPoint(const std::unique_ptr<BigAss> & genome, std::string qfile)
 {
+    P = MyArr2D(C, M);
+    for(int ic = 0, m = 0; ic < genome->nchunks; ic++)
+    {
+        const int S = genome->pos[ic].size();
+        Eigen::Map<const MyArr2D> AE(genome->AE[ic].data(), C * C, S);
+        for(int s = 0; s < S; s++) P.col(m + s) = AE.col(s).reshaped(C, C).colwise().sum();
+        m += S;
+    }
+
     if(!qfile.empty()) load_csv(Q, qfile);
 }
 
@@ -219,7 +233,7 @@ int run_admix_main(Options & opts)
     cao.warn(tim.date(), "-> running admixture with seed =", opts.seed);
     Admixture admixer(genome->nsamples, genome->G, genome->C, opts.K, opts.seed);
     admixer.setFlags(opts.debug, opts.nQ);
-    admixer.setStartPoint(opts.in_qfile);
+    admixer.setStartPoint(genome, opts.in_qfile);
     vector<future<double>> llike;
     if(!opts.noaccel)
     {
