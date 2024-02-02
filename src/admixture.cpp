@@ -354,6 +354,9 @@ int run_admix_main(Options & opts)
     }
     cao.done(tim.date(), "admixture done and outputting");
     admixer.writeQ(opts.out + ".Q");
+    Eigen::IOFormat fmt(6, Eigen::DontAlignCols, " ", "\n");
+    std::ofstream of(opts.out + ".F");
+    of << admixer.F.transpose().format(fmt) << "\n";
     cao.done(tim.date(), "-> good job. have a nice day, bye!");
 
     return 0;
