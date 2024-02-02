@@ -1128,7 +1128,8 @@ private:
         if (range.m_max == (std::numeric_limits<std::size_t>::max)()) {
           stream << "[nargs: " << range.m_min << " or more] ";
         } else {
-          stream << "[nargs=" << range.m_min << ".." << range.m_max << "] ";
+            if (!(range.m_min == 0 && range.m_max == 1))
+              stream << "[nargs=" << range.m_min << ".." << range.m_max << "] ";
         }
       }
       return stream;

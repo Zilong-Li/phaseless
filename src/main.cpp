@@ -59,12 +59,10 @@ int main(int argc, char * argv[])
         .scan<'g', double>();
     program.add_argument("-q","--NQ")
         .help("disable updating Q")
-        .default_value(false)
-        .implicit_value(true);
+        .flag();
     program.add_argument("-p", "--NP")
         .help("disable updating P")
-        .default_value(false)
-        .implicit_value(true);
+        .flag();
     program.add_argument("-r", "--NR")
         .help("disable updating R")
         .flag();
