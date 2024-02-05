@@ -20,6 +20,7 @@ class Admixture
     double admixtureThreshold{1e-6}; // threshold for Q
     bool debug = false;
     bool nonewQ = false;
+    bool cF = false;
 
   public:
     Admixture(int n, int m, int c, int k, int seed) : N(n), M(m), C(c), K(k)
@@ -46,7 +47,7 @@ class Admixture
     void updateIteration();
     void protectPars();
     void constrainF();
-    void setFlags(bool, bool);
+    void setFlags(bool, bool, bool);
     void setStartPoint(const std::unique_ptr<BigAss> & genome, std::string qfile);
     void writeQ(std::string out);
     double runNativeWithBigAss(int ind, const std::unique_ptr<BigAss> & genome);

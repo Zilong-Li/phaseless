@@ -41,22 +41,6 @@ int main(int argc, char * argv[])
     program.add_argument("-a", "--no-accel")
         .help("disable accelerated EM")
         .flag();
-    program.add_argument("-l", "--ltol")
-        .help("convergence tolerance of difference in log likelihoods")
-        .default_value(1e-1)
-        .scan<'g', double>();
-    program.add_argument("-P", "--ptol")
-        .help("lower boundary for P")
-        .default_value(1e-4)
-        .scan<'g', double>();
-    program.add_argument("-F", "--ftol")
-        .help("lower boundary for F")
-        .default_value(1e-4)
-        .scan<'g', double>();
-    program.add_argument("-Q", "--qtol")
-        .help("lower boundary for Q")
-        .default_value(1e-6)
-        .scan<'g', double>();
     program.add_argument("-q","--NQ")
         .help("disable updating Q")
         .flag();
@@ -69,9 +53,25 @@ int main(int argc, char * argv[])
     program.add_argument("-f","--NF")
         .help("disable updating F")
         .flag();
-    program.add_argument("--output-F")
+    program.add_argument("-F","--write-F")
         .help("output F")
         .flag();
+    program.add_argument("--ltol")
+        .help("convergence tolerance for difference in log likelihoods")
+        .default_value(1e-2)
+        .scan<'g', double>();
+    program.add_argument("--ptol")
+        .help("lower boundary for P")
+        .default_value(1e-6)
+        .scan<'g', double>();
+    program.add_argument("--ftol")
+        .help("lower boundary for F")
+        .default_value(1e-9)
+        .scan<'g', double>();
+    program.add_argument("--qtol")
+        .help("lower boundary for Q")
+        .default_value(1e-9)
+        .scan<'g', double>();
     program.add_argument("--qfile")
         .help("read Q file as the start point")
         .default_value(std::string{""});
@@ -198,11 +198,11 @@ int main(int argc, char * argv[])
         .scan<'i', int>();
     cmd_admix.add_argument("-i", "--iterations")
         .help("number of maximun EM iterations")
-        .default_value(1000)
+        .default_value(2000)
         .scan<'i', int>();
     cmd_admix.add_argument("-n", "--threads")
         .help("number of threads")
-        .default_value(4)
+        .default_value(10)
         .scan<'i', int>();
     cmd_admix.add_argument("-o", "--out")
         .help("output prefix")
@@ -211,7 +211,9 @@ int main(int argc, char * argv[])
         .help("seed for reproducibility")
         .default_value(999)
         .scan<'i', int>();
-    // cmd_admix.add_parents(program);
+    cmd_admix.add_argument("-F", "--constrain-F")
+        .help("apply constraint on F so that it is not smaller than cluster frequency in fastphase model")
+        .flag();
 
     argparse::ArgumentParser cmd_convert("convert", VERSION, default_arguments::help);
     cmd_convert.add_description("different file format converter");
@@ -258,7 +260,7 @@ int main(int argc, char * argv[])
         opts.nP = program.get<bool>("--NP");
         opts.nR = program.get<bool>("--NR");
         opts.nF = program.get<bool>("--NF");
-        opts.oF = program.get<bool>("--output-F");
+        opts.oF = program.get<bool>("--write-F");
         opts.ltol = program.get<double>("--ltol");
         opts.noaccel = program.get<bool>("--no-accel");
 
@@ -309,6 +311,7 @@ int main(int argc, char * argv[])
             opts.K = cmd_admix.get<int>("-k");
             opts.nthreads = cmd_admix.get<int>("--threads");
             opts.nadmix = cmd_admix.get<int>("--iterations");
+            opts.cF = cmd_admix.get<bool>("--constrain-F");
             if(opts.in_bin.empty() || cmd_admix.get<bool>("--help")) throw std::runtime_error(cmd_admix.help().str());
             run_admix_main(opts);
         }

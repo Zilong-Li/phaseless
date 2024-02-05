@@ -171,9 +171,12 @@ void Admixture::constrainF()
 {
     for(int k = 0; k < K; k++)
     {
-        for(int c = 0; c < C; c++)
-            for(int m = 0; m < M; m++)
-                if(F(k * C + c, m) < P(c, m)) F(k * C + c, m) = P(c, m);
+        if(cF)
+        {
+            for(int c = 0; c < C; c++)
+                for(int m = 0; m < M; m++)
+                    if(F(k * C + c, m) < P(c, m)) F(k * C + c, m) = P(c, m);
+        }
         F.middleRows(k * C, C).rowwise() /= F.middleRows(k * C, C).colwise().sum();
     }
 }
@@ -201,10 +204,11 @@ void Admixture::writeQ(std::string out)
     ofs.close();
 }
 
-void Admixture::setFlags(bool debug_, bool nonewQ_)
+void Admixture::setFlags(bool debug_, bool nonewQ_, bool cF_)
 {
     debug = debug_;
     nonewQ = nonewQ_;
+    cF = cF_;
 }
 
 int run_admix_main(Options & opts)
@@ -232,7 +236,7 @@ int run_admix_main(Options & opts)
 
     cao.warn(tim.date(), "-> running admixture with seed =", opts.seed);
     Admixture admixer(genome->nsamples, genome->G, genome->C, opts.K, opts.seed);
-    admixer.setFlags(opts.debug, opts.nQ);
+    admixer.setFlags(opts.debug, opts.nQ, opts.cF);
     admixer.setStartPoint(genome, opts.in_qfile);
     vector<future<double>> llike;
     if(!opts.noaccel)
