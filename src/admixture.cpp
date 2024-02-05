@@ -162,8 +162,11 @@ void Admixture::protectPars()
     }
 
     if(F.isNaN().any()) cao.error("NaN in F\n");
-    // F = (F < clusterFreqThreshold).select(clusterFreqThreshold, F); // lower bound
-    // F = (F > 1 - clusterFreqThreshold).select(1 - clusterFreqThreshold, F); // upper bound
+    if(!cF)
+    {
+        F = (F < clusterFreqThreshold).select(clusterFreqThreshold, F); // lower bound
+        F = (F > 1 - clusterFreqThreshold).select(1 - clusterFreqThreshold, F); // upper bound
+    }
     constrainF();
 }
 
