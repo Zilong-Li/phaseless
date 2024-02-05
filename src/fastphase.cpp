@@ -241,7 +241,6 @@ int run_impute_main(Options & opts)
 
     std::unique_ptr<BigAss> genome = std::make_unique<BigAss>();
     init_bigass(genome, opts);
-    Eigen::IOFormat fmt(6, Eigen::DontAlignCols, " ", "\n");
     vector<future<double>> res;
     FastPhaseK2 faith(genome->nsamples, genome->nsnps, opts.C, opts.seed);
     faith.setFlags(opts.ptol, opts.ftol, opts.qtol, opts.debug, opts.nQ, opts.nP, opts.nF, opts.nR);

@@ -45,7 +45,7 @@ class Admixture
     void initIteration();
     void updateIteration();
     void protectPars();
-    void normalizeF();
+    void constrainF();
     void setFlags(bool, bool);
     void setStartPoint(const std::unique_ptr<BigAss> & genome, std::string qfile);
     void writeQ(std::string out);

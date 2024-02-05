@@ -276,7 +276,6 @@ int run_phaseless_main(Options & opts)
 
     std::unique_ptr<BigAss> genome = std::make_unique<BigAss>();
     init_bigass(genome, opts);
-    Eigen::IOFormat fmt(6, Eigen::DontAlignCols, " ", "\n");
     vector<future<double>> res;
     std::ofstream oanc(opts.out + ".Q");
     std::ofstream op(opts.out + ".P");

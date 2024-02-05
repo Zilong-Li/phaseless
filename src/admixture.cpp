@@ -164,10 +164,10 @@ void Admixture::protectPars()
     if(F.isNaN().any()) cao.error("NaN in F\n");
     // F = (F < clusterFreqThreshold).select(clusterFreqThreshold, F); // lower bound
     // F = (F > 1 - clusterFreqThreshold).select(1 - clusterFreqThreshold, F); // upper bound
-    normalizeF();
+    constrainF();
 }
 
-void Admixture::normalizeF()
+void Admixture::constrainF()
 {
     for(int k = 0; k < K; k++)
     {
@@ -354,9 +354,11 @@ int run_admix_main(Options & opts)
     }
     cao.done(tim.date(), "admixture done and outputting");
     admixer.writeQ(opts.out + ".Q");
-    Eigen::IOFormat fmt(6, Eigen::DontAlignCols, " ", "\n");
-    std::ofstream of(opts.out + ".F");
-    of << admixer.F.transpose().format(fmt) << "\n";
+    if(opts.oF)
+    {
+        std::ofstream of(opts.out + ".F");
+        of << admixer.F.transpose().format(fmt) << "\n";
+    }
     cao.done(tim.date(), "-> good job. have a nice day, bye!");
 
     return 0;

@@ -69,6 +69,9 @@ int main(int argc, char * argv[])
     program.add_argument("-f","--NF")
         .help("disable updating F")
         .flag();
+    program.add_argument("--output-F")
+        .help("output F")
+        .flag();
     program.add_argument("--qfile")
         .help("read Q file as the start point")
         .default_value(std::string{""});
@@ -255,6 +258,7 @@ int main(int argc, char * argv[])
         opts.nP = program.get<bool>("--NP");
         opts.nR = program.get<bool>("--NR");
         opts.nF = program.get<bool>("--NF");
+        opts.oF = program.get<bool>("--output-F");
         opts.ltol = program.get<double>("--ltol");
         opts.noaccel = program.get<bool>("--no-accel");
 
