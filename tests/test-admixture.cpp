@@ -48,7 +48,9 @@ TEST_CASE("phaseless naive vs dump dataset 1", "[test-phaseless]")
     }
     double llike1, llike2;
     Admixture admixer1(genome->nsamples, genome->nsnps, genome->C, K, seed);
+    admixer1.setStartPoint(genome, opts.in_qfile);
     Admixture admixer2(genome->nsamples, genome->nsnps, genome->C, K, seed);
+    admixer2.setStartPoint(genome, opts.in_qfile);
     for(int it = 0; it < nadmix; it++)
     {
         llike1 = 0;
