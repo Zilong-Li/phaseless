@@ -194,6 +194,16 @@ void Admixture::setStartPoint(const std::unique_ptr<BigAss> & genome, std::strin
         for(int s = 0; s < S; s++) P.col(m + s) = AE.col(s).reshaped(C, C).colwise().sum();
         m += S;
     }
+    if(cF)
+    {
+        for(int k = 0; k < K; k++)
+        {
+            for(int c = 0; c < C; c++)
+                for(int m = 0; m < M; m++)
+                    if(F(k * C + c, m) < P(c, m)) F(k * C + c, m) = P(c, m);
+            F.middleRows(k * C, C).rowwise() /= F.middleRows(k * C, C).colwise().sum();
+        }
+    }
 
     if(!qfile.empty()) load_csv(Q, qfile);
 }
