@@ -44,6 +44,7 @@ inline void handler(int s)
 }
 
 // STD TYPES
+using Char1D = std::vector<char>;
 using Int1D = std::vector<int>;
 using Int2D = std::vector<Int1D>;
 using Int3D = std::vector<Int2D>;
@@ -112,8 +113,9 @@ struct Options
 struct BigAss
 {
     int chunksize, nsamples, nsnps, nchunks, B, C, G;
-    MyFloat2D PI, F, R, AE; // M x C, 3 x M, fastphase pars
+    MyFloat2D PI, P, R, AE; // M x C, 3 x M, fastphase pars
     Int1D ends; // chunk index where each chromo ends
+    Char1D collapse; // indicators for collapsing
     String1D sampleids, chrs;
     Int2D pos; // store position of markers of each chunk
     MyFloat2D gls; // store gl(N, M*3) of each chunk

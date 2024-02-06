@@ -73,16 +73,16 @@ void FastPhaseK2::refillHaps(int strategy)
             assert(choice != c);
             if(strategy == 1)
             {
-                F(m, c) = alleleEmitThreshold;
+                P(m, c) = alleleEmitThreshold;
             }
             else if(strategy == 2)
             {
                 h.maxCoeff(&choice); // if no binning, this may be better
-                F(m, c) = F(m, choice);
+                P(m, c) = P(m, choice);
             }
             else
             {
-                F(m, c) = F(m, choice);
+                P(m, c) = P(m, choice);
             }
             s++;
         }
@@ -104,7 +104,7 @@ void FastPhaseK2::updateIteration()
     // update R
     if(!NR) er = 1.0 - Ezj.colwise().sum() / N;
     // update F
-    if(!NP) F = (Ezg2 / (Ezg1 + Ezg2)).transpose();
+    if(!NP) P = (Ezg2 / (Ezg1 + Ezg2)).transpose();
     // update PI
     if(!NF)
     {
@@ -119,15 +119,15 @@ void FastPhaseK2::protectPars()
     // protect F
     if(!NP)
     {
-        if(F.isNaN().any())
+        if(P.isNaN().any())
         {
             cao.warn("NaN in F in FastPhaseK2 model. will fill it with AF");
             if(AF.size() == 0) cao.error("AF is not assigned!\n");
-            for(int i = 0; i < M; i++) F.row(i) = F.row(i).isNaN().select(AF(i), F.row(i));
+            for(int i = 0; i < M; i++) P.row(i) = P.row(i).isNaN().select(AF(i), P.row(i));
         }
         // map F to domain but no normalization
-        F = (F < alleleEmitThreshold).select(alleleEmitThreshold, F); // lower bound
-        F = (F > 1 - alleleEmitThreshold).select(1 - alleleEmitThreshold, F); // upper bound
+        P = (P < alleleEmitThreshold).select(alleleEmitThreshold, P); // lower bound
+        P = (P > 1 - alleleEmitThreshold).select(1 - alleleEmitThreshold, P); // upper bound
     }
     // protect R
     if(!NR)
@@ -166,7 +166,7 @@ double FastPhaseK2::hmmIterWithJumps(const MyFloat1D & GL, const int ic, const i
     const int S = pos_chunk[ic + 1] - pos_chunk[ic];
     const int nGrids = grid_chunk[ic + 1] - grid_chunk[ic];
     Eigen::Map<const MyArr2D> gli(GL.data() + ind * S * 3, S, 3);
-    MyArr2D emit = get_emission_by_grid(gli, F.middleRows(pos_chunk[ic], S), collapse.segment(pos_chunk[ic], S));
+    MyArr2D emit = get_emission_by_grid(gli, P.middleRows(pos_chunk[ic], S), collapse.segment(pos_chunk[ic], S));
     int start = pos_chunk[ic], nsize = S;
     if(nGrids != S)
     {
@@ -193,13 +193,13 @@ double FastPhaseK2::hmmIterWithJumps(const MyFloat1D & GL, const int ic, const i
             for(s = se[g][0]; s <= se[g][1]; s++)
             {
                 m = s + pos_chunk[ic];
-                ind_post_zg1(z1, s) = (gamma_div_emit(Eigen::seqN(z1, C, C)) * (1 - F(m, z1))
-                                       * (gli(s, 0) * (1 - F.row(m)) + gli(s, 1) * F.row(m)).transpose())
+                ind_post_zg1(z1, s) = (gamma_div_emit(Eigen::seqN(z1, C, C)) * (1 - P(m, z1))
+                                       * (gli(s, 0) * (1 - P.row(m)) + gli(s, 1) * P.row(m)).transpose())
                                           .sum();
-                ind_post_zg2(z1, s) = (gamma_div_emit(Eigen::seqN(z1, C, C)) * (F(m, z1))
-                                       * (gli(s, 1) * (1 - F.row(m)) + gli(s, 2) * F.row(m)).transpose())
+                ind_post_zg2(z1, s) = (gamma_div_emit(Eigen::seqN(z1, C, C)) * (P(m, z1))
+                                       * (gli(s, 1) * (1 - P.row(m)) + gli(s, 2) * P.row(m)).transpose())
                                           .sum();
-                if(finalIter) callGenoLoopC(z1, m, ind, gli.row(s), F.row(m), gamma_div_emit);
+                if(finalIter) callGenoLoopC(z1, m, ind, gli.row(s), P.row(m), gamma_div_emit);
             }
             if(g == 0) ind_post_zj(z1, g) = (alpha.col(g) * beta.col(g)).segment(z1 * C, C).sum();
             if(g > 0) alphatmp(z1) = alpha(Eigen::seqN(z1, C, C), g - 1).sum() * R(1, gg);
@@ -302,6 +302,7 @@ int run_impute_main(Options & opts)
         faith.Ezj = get_cluster_frequency(faith.R, faith.PI);
     }
     auto bw = make_bcfwriter(opts.out + ".vcf.gz", genome->chrs, genome->sampleids);
+    genome->collapse = Char1D(faith.collapse.data(), faith.collapse.data() + faith.collapse.size());
     for(int ic = 0; ic < genome->nchunks; ic++)
     {
         const int S = faith.pos_chunk[ic + 1] - faith.pos_chunk[ic];
@@ -312,8 +313,8 @@ int run_impute_main(Options & opts)
         genome->R.emplace_back(MyFloat1D(out.data(), out.data() + out.size()));
         out = faith.PI.middleCols(faith.pos_chunk[ic], G);
         genome->PI.emplace_back(MyFloat1D(out.data(), out.data() + out.size()));
-        out = faith.F.middleRows(faith.pos_chunk[ic], S);
-        genome->F.emplace_back(MyFloat1D(out.data(), out.data() + out.size()));
+        out = faith.P.middleRows(faith.pos_chunk[ic], S);
+        genome->P.emplace_back(MyFloat1D(out.data(), out.data() + out.size()));
         out = faith.GP.middleRows(faith.pos_chunk[ic], S * 3);
         write_bigass_to_bcf(bw, out.data(), genome->chrs[ic], genome->pos[ic]);
     }

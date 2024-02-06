@@ -32,7 +32,7 @@ class FastPhaseK2
     {
         rng.seed(seed);
         minHapfreq = std::min(1.0 / (10 * C), minHapfreq);
-        F = RandomUniform<MyArr2D, std::default_random_engine>(M, C, rng, alleleEmitThreshold, 1 - alleleEmitThreshold);
+        P = RandomUniform<MyArr2D, std::default_random_engine>(M, C, rng, alleleEmitThreshold, 1 - alleleEmitThreshold);
         GP.setZero(M * 3, N);
         collapse = Bool1D::Constant(M, false);
     }
@@ -43,7 +43,7 @@ class FastPhaseK2
     const int N, M, C, CC; // CC = C x C
     MyArr2D GP; // N x (M x 3), genotype probabilies for all individuals
     MyArr2D PI; // C x M, cluster frequency
-    MyArr2D F; // M x C, cluster-specific allele frequence
+    MyArr2D P; // M x C, cluster-specific allele frequence
     MyArr1D er; // M, jumping rate
     MyArr2D R; // 3 x M, jumping / recombination rate
     MyArr2D Ezg1, Ezg2; // C x M

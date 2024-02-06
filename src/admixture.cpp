@@ -14,7 +14,7 @@ double Admixture::runOptimalWithBigAss(int ind, const std::unique_ptr<BigAss> & 
     MyArr2D kapa, Ekg;
     MyArr1D iQ = MyArr1D::Zero(K);
     MyArr1D Hz(C);
-    double norm = 0, llike = 0, tmp = 0, tol = 0.01;
+    double norm = 0, llike = 0, tmp = 0;
     int c1, k1, s, c2, c12;
     for(int ic = 0, m = 0; ic < genome->nchunks; ic++)
     {
@@ -22,7 +22,7 @@ double Admixture::runOptimalWithBigAss(int ind, const std::unique_ptr<BigAss> & 
         const int G = genome->B > 1 ? (S + genome->B - 1) / genome->B : S;
         assert(S == G); // only test B=1 now
         Eigen::Map<const MyArr2D> gli(genome->gls[ic].data() + ind * S * 3, S, 3);
-        Eigen::Map<const MyArr2D> P(genome->F[ic].data(), S, C);
+        Eigen::Map<const MyArr2D> P(genome->P[ic].data(), S, C);
         Eigen::Map<const MyArr2D> PI(genome->PI[ic].data(), C, S);
         Eigen::Map<const MyArr2D> R(genome->R[ic].data(), 3, S);
         Eigen::Map<const MyArr2D> AE(genome->AE[ic].data(), C * C, S);
@@ -76,7 +76,7 @@ double Admixture::runNativeWithBigAss(int ind, const std::unique_ptr<BigAss> & g
     {
         const int S = genome->pos[ic].size();
         Eigen::Map<const MyArr2D> gli(genome->gls[ic].data() + ind * S * 3, S, 3);
-        Eigen::Map<const MyArr2D> P(genome->F[ic].data(), S, C);
+        Eigen::Map<const MyArr2D> P(genome->P[ic].data(), S, C);
         Eigen::Map<const MyArr2D> PI(genome->PI[ic].data(), C, S);
         Eigen::Map<const MyArr2D> R(genome->R[ic].data(), 3, S);
         Eigen::Map<const MyArr2D> AE(genome->AE[ic].data(), C * C, S);
