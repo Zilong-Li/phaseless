@@ -208,15 +208,6 @@ void Admixture::setStartPoint(const std::unique_ptr<BigAss> & genome, std::strin
     if(!qfile.empty()) load_csv(Q, qfile);
 }
 
-void Admixture::writeQ(std::string out)
-{
-    std::ofstream ofs(out);
-    if(!ofs) cao.error(out, strerror(errno));
-    Q = (Q * 1e6).round() / 1e6;
-    ofs << std::fixed << Q.transpose() << "\n";
-    ofs.close();
-}
-
 void Admixture::setFlags(bool debug_, bool nonewQ_, bool cF_)
 {
     debug = debug_;
@@ -370,11 +361,12 @@ int run_admix_main(Options & opts)
         }
     }
     cao.done(tim.date(), "admixture done and outputting");
-    admixer.writeQ(opts.out + ".Q");
+    std::ofstream oq(opts.out + ".Q");
+    oq << std::fixed << admixer.Q.transpose().format(fmt10) << "\n";
     if(opts.oF)
     {
         std::ofstream of(opts.out + ".F");
-        of << admixer.F.transpose().format(fmt) << "\n";
+        of << admixer.F.transpose().format(fmt6) << "\n";
     }
     cao.done(tim.date(), "-> good job. have a nice day, bye!");
 

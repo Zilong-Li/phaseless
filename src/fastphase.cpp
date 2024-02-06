@@ -298,12 +298,12 @@ int run_impute_main(Options & opts)
     assert(std::filesystem::file_size(opts.out + ".pars.bin") == bytes_written);
     cao.done(tim.date(), "imputation done and outputting.", bytes_written, " bytes written to file");
     std::ofstream orecomb(opts.out + ".recomb");
-    orecomb << faith.R.transpose().format(fmt) << "\n";
+    orecomb << faith.R.transpose().format(fmt6) << "\n";
     std::ofstream opi(opts.out + ".pi");
-    opi << faith.PI.transpose().format(fmt) << "\n";
+    opi << faith.PI.transpose().format(fmt6) << "\n";
     std::ofstream ohap(opts.out + ".hapfreq");
-    ohap << faith.HapSum.transpose().format(fmt) << "\n";
+    ohap << faith.HapSum.transpose().format(fmt6) << "\n";
     std::ofstream oae(opts.out + ".ae");
-    oae << faith.Ezj.transpose().format(fmt) << "\n";
+    oae << faith.Ezj.transpose().format(fmt6) << "\n";
     return 0;
 }

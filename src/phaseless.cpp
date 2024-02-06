@@ -409,10 +409,9 @@ int run_phaseless_main(Options & opts)
             }
         }
     }
-    faith.Q = (faith.Q * 1e6).round() / 1e6;
-    oanc << std::fixed << faith.Q.transpose().format(fmt) << "\n";
+    oanc << std::fixed << faith.Q.transpose().format(fmt10) << "\n";
     oanc.close();
-    op << std::fixed << faith.P.format(fmt) << "\n";
+    op << faith.P.format(fmt6) << "\n";
     std::unique_ptr<Pars> par = std::make_unique<Pars>();
     par->init(faith.K, faith.C, faith.M, faith.N, faith.er, faith.P, faith.Q, faith.F);
     par->pos = genome->pos;

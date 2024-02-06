@@ -49,7 +49,6 @@ class Admixture
     void constrainF();
     void setFlags(bool, bool, bool);
     void setStartPoint(const std::unique_ptr<BigAss> & genome, std::string qfile);
-    void writeQ(std::string out);
     double runNativeWithBigAss(int ind, const std::unique_ptr<BigAss> & genome);
     double runOptimalWithBigAss(int ind, const std::unique_ptr<BigAss> & genome);
 };

@@ -76,7 +76,8 @@ using MyMat1D = Eigen::Matrix<MyFloat, Eigen::Dynamic, 1, Eigen::ColMajor>;
 using MyArr2D = Eigen::Array<MyFloat, Eigen::Dynamic, Eigen::Dynamic, Eigen::ColMajor>;
 using MyArr1D = Eigen::Array<MyFloat, Eigen::Dynamic, 1, Eigen::ColMajor>;
 
-inline Eigen::IOFormat fmt(6, Eigen::DontAlignCols, " ", "\n");
+inline Eigen::IOFormat fmt6(6, Eigen::DontAlignCols, " ", "\n");
+inline Eigen::IOFormat fmt10(10, Eigen::DontAlignCols, " ", "\n");
 
 template<typename MatrixType, typename RandomEngineType>
 inline MatrixType RandomUniform(const Eigen::Index numRows,
