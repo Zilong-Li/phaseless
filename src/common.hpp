@@ -47,6 +47,7 @@ inline void handler(int s)
 using Bool1D = std::vector<bool>;
 using Int1D = std::vector<int>;
 using Int2D = std::vector<Int1D>;
+using Int3D = std::vector<Int2D>;
 using Float1D = std::vector<float>;
 using Float2D = std::vector<Float1D>;
 using Double1D = std::vector<double>;

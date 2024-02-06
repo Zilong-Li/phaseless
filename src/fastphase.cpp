@@ -8,19 +8,39 @@
 
 using namespace std;
 
-void FastPhaseK2::initRecombination(const Int2D & pos, std::string rfile, int B, double Ne)
+void FastPhaseK2::initRecombination(const Int2D & pos, std::string rfile, int B_, double Ne)
 {
     nGen = 4 * Ne / C;
+    B = B_;
     int nchunks = pos.size();
     pos_chunk.resize(nchunks + 1);
-    int i{0}, ss{0};
     dist.reserve(M);
-    for(i = 0; i < nchunks; i++)
+    Int1D tmpdist;
+    int i{0}, ss{0};
+    for(i = 0, G = 0; i < nchunks; i++)
+    {
+        if(B > 1)
+            G += (pos[i].size() + B - 1) / B;
+        else
+            G += pos[i].size();
+    }
+    R = MyArr2D(3, G);
+    PI = MyArr2D::Ones(C, G);
+    PI.rowwise() /= PI.colwise().sum(); // normalize it per site
+    for(i = 0, ss = 0; i < nchunks; i++)
     {
         pos_chunk[i] = ss;
-        auto tmp = calc_position_distance(pos[i]);
-        dist.insert(dist.end(), tmp.begin(), tmp.end());
-        R.middleCols(ss, pos[i].size()) = calc_transRate_diploid(tmp, nGen);
+        if(B > 1)
+        {
+            grids.emplace_back(divide_pos_into_grid(pos[i], B));
+            tmpdist = calc_grid_distance(grids[i]);
+        }
+        else
+        {
+            tmpdist = calc_position_distance(pos[i]);
+        }
+        R.middleCols(ss, tmpdist.size()) = calc_transRate_diploid(tmpdist, nGen);
+        dist.insert(dist.end(), tmpdist.begin(), tmpdist.end());
         ss += pos[i].size();
     }
     pos_chunk[nchunks] = ss; // add sentinel
@@ -28,6 +48,7 @@ void FastPhaseK2::initRecombination(const Int2D & pos, std::string rfile, int B,
     er = R.row(0).sqrt();
     protect_er(er);
     R = er2R(er);
+    cao.warn("init done");
 }
 
 void FastPhaseK2::setFlags(double tol_p, double tol_f, double tol_q, bool debug_, bool nQ, bool nP, bool nF, bool nR)
@@ -150,7 +171,7 @@ void FastPhaseK2::protectPars()
 */
 double FastPhaseK2::hmmIterWithJumps(const MyFloat1D & GL, const int ic, const int ind, bool finalIter)
 {
-    const int S = pos_chunk[ic + 1] - pos_chunk[ic];
+    const int S = pos_chunk[ic + 1] - pos_chunk[ic]; // could be num of grids if B > 1
     Eigen::Map<const MyArr2D> gli(GL.data() + ind * S * 3, S, 3);
     MyArr2D emit = get_emission_by_gl(gli, F.middleRows(pos_chunk[ic], S)).transpose(); // CC x S
     const auto [alpha, beta, cs] =
