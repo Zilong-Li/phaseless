@@ -180,7 +180,6 @@ int main(int argc, char * argv[])
               "3: re-sample P by copying from others with respect to their probability\n"
               "0: disable this")
         .default_value(0)
-        .choices(0, 1, 2, 3)
         .scan<'i', int>();
     cmd_impute.add_argument("--minRecombRate")
         .help("min recombination rate to determine if a SNP should be collapsed")
