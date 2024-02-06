@@ -12,43 +12,32 @@ void FastPhaseK2::initRecombination(const Int2D & pos, std::string rfile, int B_
 {
     nGen = 4 * Ne / C;
     B = B_;
+    if(B == 2) cao.error("-B can not be 2");
     int nchunks = pos.size();
     pos_chunk.resize(nchunks + 1);
-    dist.reserve(M);
-    Int1D tmpdist;
-    int i{0}, ss{0};
-    for(i = 0, G = 0; i < nchunks; i++)
-    {
-        if(B > 1)
-            G += (pos[i].size() + B - 1) / B;
-        else
-            G += pos[i].size();
-    }
+    int i{0}, ss{0}, sg{0};
+    // how many grids in total 
+    for(i = 0, G = 0; i < nchunks; i++) G += B > 1 ? (pos[i].size() + B - 1) / B : pos[i].size();
     R = MyArr2D(3, G);
     PI = MyArr2D::Ones(C, G);
     PI.rowwise() /= PI.colwise().sum(); // normalize it per site
-    for(i = 0, ss = 0; i < nchunks; i++)
+    dist.reserve(M);
+    Int1D tmpdist;
+    for(i = 0, ss = 0, sg = 0; i < nchunks; i++)
     {
         pos_chunk[i] = ss;
-        if(B > 1)
-        {
-            grids.emplace_back(divide_pos_into_grid(pos[i], B));
-            tmpdist = calc_grid_distance(grids[i]);
-        }
-        else
-        {
-            tmpdist = calc_position_distance(pos[i]);
-        }
-        R.middleCols(ss, tmpdist.size()) = calc_transRate_diploid(tmpdist, nGen);
+        collapse.segment(ss, pos[i].size()) = find_grid_to_collapse(pos[i], B);
+        tmpdist = calc_grid_distance(pos[i], collapse);
+        R.middleCols(sg, tmpdist.size()) = calc_transRate_diploid(tmpdist, nGen);
         dist.insert(dist.end(), tmpdist.begin(), tmpdist.end());
         ss += pos[i].size();
+        sg += tmpdist.size();
     }
     pos_chunk[nchunks] = ss; // add sentinel
     if(!rfile.empty()) load_csv(R, rfile, true);
     er = R.row(0).sqrt();
     protect_er(er);
     R = er2R(er);
-    cao.warn("init done");
 }
 
 void FastPhaseK2::setFlags(double tol_p, double tol_f, double tol_q, bool debug_, bool nQ, bool nP, bool nF, bool nR)

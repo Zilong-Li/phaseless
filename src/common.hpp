@@ -44,7 +44,6 @@ inline void handler(int s)
 }
 
 // STD TYPES
-using Bool1D = std::vector<bool>;
 using Int1D = std::vector<int>;
 using Int2D = std::vector<Int1D>;
 using Int3D = std::vector<Int2D>;
@@ -61,6 +60,8 @@ using Mat2D = Eigen::Matrix<double, Eigen::Dynamic, Eigen::Dynamic, Eigen::ColMa
 using Mat1D = Eigen::Matrix<double, Eigen::Dynamic, 1, Eigen::ColMajor>;
 using Arr2D = Eigen::Array<double, Eigen::Dynamic, Eigen::Dynamic, Eigen::ColMajor>;
 using Arr1D = Eigen::Array<double, Eigen::Dynamic, 1, Eigen::ColMajor>;
+using Bool1D = Eigen::Array<bool, Eigen::Dynamic, 1, Eigen::ColMajor>;
+using Bool2D = std::vector<Bool1D>;
 
 // MY TYPES
 #ifdef USE_FLOAT
@@ -225,6 +226,35 @@ inline Int1D calc_position_distance(const Int1D & markers)
     return dl;
 }
 
+inline Int1D calc_grid_distance(const Int1D & pos, const Bool1D & collapse)
+{
+    // B = 1
+    if((collapse == true).count() == 0) return calc_position_distance(pos);
+    // B > 1, split pos into grids
+    const int G = ((collapse == true).count() + 1) / 2;
+    Int2D gpos(G);
+    int s, e, g, m = pos.size();
+    for(s = 0, e = 1, g = 0; g < G; g++)
+    {
+        for(;; e++)
+            if(collapse[e] == true) break;
+        if(g == G - 1) e = m - 1;
+        gpos[g] = Int1D(pos.begin() + s, pos.begin() + e + 1);
+        // cao.cerr("size of g:", gpos[g].size(), ",s:",s, ",e:",e);
+        // for(auto j : gpos[g]) cao.cerr(j);
+        s = e + 1 >= m ? m - 1 : e + 1;
+        e = s + 1 >= m ? m - 1 : s + 1;
+    }
+    Int1D dl(G);
+    dl[0] = 0;
+    for(g = 1; g < G; g++)
+    {
+        // cao.cerr(g, ":", gpos[g][gpos[g].size() / 2], ",", gpos[g - 1][gpos[g - 1].size() / 2]);
+        dl[g] = gpos[g][gpos[g].size() / 2] - gpos[g - 1][gpos[g - 1].size() / 2];
+    }
+    return dl;
+}
+
 inline MyArr2D er2R(const MyArr1D & er)
 {
     MyArr2D R(3, er.size());
@@ -294,23 +324,19 @@ inline MyArr2D get_emission_by_gl(const MyArr2D & gli, const MyArr2D & P, double
 ** @param P    cluster-specific allele frequence (M, C)
 ** @return emission probability (M, C2)
 */
-inline MyArr2D get_emission_by_grid(const MyFloat1D & GL,
-                                    const MyFloat1D & P,
-                                    int ind,
-                                    int M,
-                                    int B,
+inline MyArr2D get_emission_by_grid(const MyArr2D & gli,
+                                    const MyArr2D & P,
+                                    const Int2D & grids,
                                     double minEmission = 1e-10)
 {
-    const int C = P.size() / M;
-    const int C2 = C * C;
-    const int nGrids = B > 1 ? (M + B - 1) / B : M;
-    MyArr2D emitGrid = MyArr2D::Ones(C2, nGrids);
-    int z1, z2, z12, i, s, e, g, g1, g2;
-    int igs = ind * M * 3;
+    const int C = P.cols();
+    const int nGrids = grids.size();
+    MyArr2D emitGrid = MyArr2D::Ones(C * C, nGrids);
+    int z1, z2, z12, i, s, e, g, g1, g2, m;
     for(g = 0; g < nGrids; g++)
     {
-        s = g * B;
-        e = g == nGrids - 1 ? M - 1 : B * (g + 1) - 1;
+        s = grids[g][0];
+        e = grids[g][grids[g].size()];
         for(z1 = 0; z1 < C; z1++)
         {
             for(z2 = 0; z2 < C; z2++)
@@ -319,12 +345,13 @@ inline MyArr2D get_emission_by_grid(const MyFloat1D & GL,
                 for(i = s; i <= e; i++)
                 {
                     double emit = 0;
+                    m = i + grids[g].size();
                     for(g1 = 0; g1 <= 1; g1++)
                     {
                         for(g2 = 0; g2 <= 1; g2++)
                         {
-                            emit += GL[igs + (g1 + g2) * M + i] * (g1 * P[z1 * M + i] + (1 - g1) * (1 - P[z1 * M + i]))
-                                    * (g2 * P[z2 * M + i] + (1 - g2) * (1 - P[z2 * M + i]));
+                            emit += gli(m, g1 + g2) * (g1 * P(m, z1) + (1 - g1) * (1 - P(m, z1)))
+                                    * (g2 * P(m, z2) + (1 - g2) * (1 - P(m, z2)));
                         }
                     }
                     emitGrid(z12, g) *= emit;
@@ -500,19 +527,32 @@ inline Arr1D estimate_af_by_gl(const MyFloat1D & GL, int N, int M, int niter = 1
     return af_est;
 }
 
-inline Int2D divide_pos_into_grid(const Int1D & pos, int B)
+// grid size must be >=3
+inline Bool1D find_grid_to_collapse(const Int1D & pos, int B)
 {
     int M = pos.size();
-    int G = (M + B - 1) / B;
-    Int2D grids(G);
+    Bool1D collapse = Bool1D::Constant(M, false);
+    if(B == 1) return collapse;
+    int G = (M + B - 1) / B; // get ceiling number
     int g, s, e;
     for(g = 0; g < G; g++)
     {
         s = g * B;
         e = g == G - 1 ? M - 1 : B * (g + 1) - 1;
-        grids[g] = Int1D(pos.begin() + s, pos.begin() + e + 1);
+        collapse(s) = true;
+        collapse(e) = true;
     }
-    return grids;
+    return collapse;
+}
+
+inline Bool1D find_grid_to_collapse(const MyArr2D & R, double tol_r = 1e-6)
+{
+    Bool1D collapse = Bool1D::Constant(R.cols(), false);
+    for(auto i = 0; i < R.cols(); i++)
+    {
+        if(std::sqrt(R(2, i)) < tol_r) collapse(i) = true;
+    }
+    return collapse;
 }
 
 inline Int2D divide_pos_into_grid(const Int1D & pos, const Bool1D & collapse)
@@ -535,31 +575,6 @@ inline Int2D divide_pos_into_grid(const Int1D & pos, const Bool1D & collapse)
     }
 
     return grids;
-}
-
-inline Bool1D find_chunk_to_collapse(const MyArr2D & R, double tol_r = 1e-6)
-{
-    Bool1D collapse(R.cols(), false); // M sites
-    for(auto i = 0; i < R.cols(); i++)
-    {
-        if(std::sqrt(R(2, i)) < tol_r) collapse[i] = true;
-    }
-    return collapse;
-}
-
-/*
-** @params pos     snp position, first dim is each grid, second dim is snps in
-*that grid
-*/
-inline Int1D calc_grid_distance(const Int2D & pos)
-{
-    Int1D dl(pos.size());
-    dl[0] = 0;
-    for(auto i = 1; i < pos.size(); i++)
-    {
-        dl[i] = pos[i][pos[i].size() / 2] - pos[i - 1][pos[i - 1].size() / 2];
-    }
-    return dl;
 }
 
 /*

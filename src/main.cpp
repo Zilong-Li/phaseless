@@ -135,7 +135,7 @@ int main(int argc, char * argv[])
         .help("collapse SNPs in a reasonable window")
         .flag();
     cmd_impute.add_argument("-B", "--grid-size")
-        .help("number of SNPs (>1) in each grid. 1 disables collapsing")
+        .help("number of SNPs (>=3) in each grid. 1 disables collapsing")
         .default_value(1)
         .scan<'i', int>();
     cmd_impute.add_argument("-f", "--vcf")
@@ -180,6 +180,7 @@ int main(int argc, char * argv[])
               "3: re-sample P by copying from others with respect to their probability\n"
               "0: disable this")
         .default_value(0)
+        .choices(0, 1, 2, 3)
         .scan<'i', int>();
     cmd_impute.add_argument("--minRecombRate")
         .help("min recombination rate to determine if a SNP should be collapsed")

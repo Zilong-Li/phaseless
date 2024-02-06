@@ -34,6 +34,7 @@ class FastPhaseK2
         minHapfreq = std::min(1.0 / (10 * C), minHapfreq);
         F = RandomUniform<MyArr2D, std::default_random_engine>(M, C, rng, alleleEmitThreshold, 1 - alleleEmitThreshold);
         GP.setZero(M * 3, N);
+        collapse = Bool1D::Constant(M, false);
     }
     ~FastPhaseK2() {}
 
@@ -51,6 +52,7 @@ class FastPhaseK2
     Int1D dist; // physical position distance between two markers
     Int1D pos_chunk; // store the start pos of each chunk in the full scale
     Int3D grids; // physical position of each grid for each chunk
+    Bool1D collapse;
     MyArr1D AF;
 
     void initRecombination(const Int2D & pos, std::string rfile = "", int B_ = 1, double Ne = 20000);
