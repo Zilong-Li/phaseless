@@ -274,6 +274,7 @@ inline Int2D split_pos_into_grid(const Int1D & pos, const Bool1D & collapse)
 
 inline Int1D calc_grid_distance(const Int1D & pos, const Bool1D & collapse)
 {
+    assert(pos.size() == collapse.size());
     // B = 1
     if((collapse == true).count() == 0) return calc_position_distance(pos);
     // B > 1, split pos into grids

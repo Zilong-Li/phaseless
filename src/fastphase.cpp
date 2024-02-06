@@ -22,16 +22,16 @@ void FastPhaseK2::initRecombination(const Int2D & pos, std::string rfile, int B_
     R = MyArr2D(3, G);
     PI = MyArr2D::Ones(C, G);
     PI.rowwise() /= PI.colwise().sum(); // normalize it per site
-    dist.reserve(M);
+    dist.reserve(G);
     Int1D tmpdist;
     for(i = 0, ss = 0, sg = 0; i < nchunks; i++)
     {
         pos_chunk[i] = ss;
         grid_chunk[i] = sg;
         collapse.segment(ss, pos[i].size()) = find_grid_to_collapse(pos[i], B);
-        tmpdist = calc_grid_distance(pos[i], collapse);
-        R.middleCols(sg, tmpdist.size()) = calc_transRate_diploid(tmpdist, nGen);
+        tmpdist = calc_grid_distance(pos[i], collapse.segment(ss, pos[i].size()));
         dist.insert(dist.end(), tmpdist.begin(), tmpdist.end());
+        R.middleCols(sg, tmpdist.size()) = calc_transRate_diploid(tmpdist, nGen);
         ss += pos[i].size();
         sg += tmpdist.size();
     }
@@ -58,13 +58,14 @@ void FastPhaseK2::setFlags(double tol_p, double tol_f, double tol_q, bool debug_
 void FastPhaseK2::refillHaps(int strategy)
 {
     int s{0};
+    int nchunks = pos_chunk.size() - 1;
     for(int c = 0; c < C; c++)
     {
         // bin hapsum per 100 snps ?
-        for(int m = 0; m < M; m++)
+        for(int ic = 0, g = 0; ic < nchunks; ic++)
         {
-            if(HapSum(c, m) >= minHapfreq) continue;
-            MyArr1D h = HapSum.col(m);
+            if(HapSum(c, g) >= minHapfreq) continue;
+            MyArr1D h = HapSum.col(g);
             h(c) = 0; // do not re-sample current
             h /= h.sum();
             MyFloat1D p(h.data(), h.data() + h.size());
@@ -73,16 +74,16 @@ void FastPhaseK2::refillHaps(int strategy)
             assert(choice != c);
             if(strategy == 1)
             {
-                P(m, c) = alleleEmitThreshold;
+                P(g, c) = alleleEmitThreshold;
             }
             else if(strategy == 2)
             {
                 h.maxCoeff(&choice); // if no binning, this may be better
-                P(m, c) = P(m, choice);
+                P(g, c) = P(g, choice);
             }
             else
             {
-                P(m, c) = P(m, choice);
+                P(g, c) = P(g, choice);
             }
             s++;
         }
@@ -166,13 +167,13 @@ double FastPhaseK2::hmmIterWithJumps(const MyFloat1D & GL, const int ic, const i
     const int S = pos_chunk[ic + 1] - pos_chunk[ic];
     const int nGrids = grid_chunk[ic + 1] - grid_chunk[ic];
     Eigen::Map<const MyArr2D> gli(GL.data() + ind * S * 3, S, 3);
-    MyArr2D emit = get_emission_by_grid(gli, P.middleRows(pos_chunk[ic], S), collapse.segment(pos_chunk[ic], S));
     int start = pos_chunk[ic], nsize = S;
     if(nGrids != S)
     {
         start = grid_chunk[ic];
         nsize = nGrids;
     }
+    MyArr2D emit = get_emission_by_grid(gli, P.middleRows(pos_chunk[ic], S), collapse.segment(pos_chunk[ic], S));
     const auto [alpha, beta, cs] =
         forward_backwards_diploid(emit, R.middleCols(start, nsize), PI.middleCols(start, nsize));
     if(!((1 - ((alpha * beta).colwise().sum())).abs() < 1e-9).all())
@@ -215,7 +216,7 @@ double FastPhaseK2::hmmIterWithJumps(const MyFloat1D & GL, const int ic, const i
         Ezg1.middleCols(pos_chunk[ic], S) += ind_post_zg1;
         Ezg2.middleCols(pos_chunk[ic], S) += ind_post_zg2;
         Ezj.middleCols(grid_chunk[ic], nGrids) += ind_post_zj;
-        HapSum.middleCols(pos_chunk[ic], nGrids) += gammaC;
+        HapSum.middleCols(grid_chunk[ic], nGrids) += gammaC;
     }
 
     return (1 / cs).log().sum();
@@ -310,11 +311,11 @@ int run_impute_main(Options & opts)
     {
         const int S = faith.pos_chunk[ic + 1] - faith.pos_chunk[ic];
         const int G = faith.grid_chunk[ic + 1] - faith.grid_chunk[ic];
-        MyArr2D out = faith.Ezj.middleCols(faith.pos_chunk[ic], G);
+        MyArr2D out = faith.Ezj.middleCols(faith.grid_chunk[ic], G);
         genome->AE.emplace_back(MyFloat1D(out.data(), out.data() + out.size()));
-        out = faith.R.middleCols(faith.pos_chunk[ic], G);
+        out = faith.R.middleCols(faith.grid_chunk[ic], G);
         genome->R.emplace_back(MyFloat1D(out.data(), out.data() + out.size()));
-        out = faith.PI.middleCols(faith.pos_chunk[ic], G);
+        out = faith.PI.middleCols(faith.grid_chunk[ic], G);
         genome->PI.emplace_back(MyFloat1D(out.data(), out.data() + out.size()));
         out = faith.P.middleRows(faith.pos_chunk[ic], S);
         genome->P.emplace_back(MyFloat1D(out.data(), out.data() + out.size()));
