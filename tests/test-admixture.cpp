@@ -34,17 +34,19 @@ TEST_CASE("phaseless naive vs dump dataset 1", "[test-phaseless]")
     }
     // reuse Ezj for AE
     faith.Ezj = get_cluster_frequency(faith.R, faith.PI);
+    genome->collapse = Char1D(faith.collapse.data(), faith.collapse.data() + faith.collapse.size());
     for(int ic = 0; ic < genome->nchunks; ic++)
     {
         const int S = faith.pos_chunk[ic + 1] - faith.pos_chunk[ic];
-        MyArr2D out = faith.Ezj.middleCols(faith.pos_chunk[ic], S);
+        const int G = faith.grid_chunk[ic + 1] - faith.grid_chunk[ic];
+        MyArr2D out = faith.Ezj.middleCols(faith.pos_chunk[ic], G);
         genome->AE.emplace_back(MyFloat1D(out.data(), out.data() + out.size()));
-        out = faith.R.middleCols(faith.pos_chunk[ic], S);
+        out = faith.R.middleCols(faith.pos_chunk[ic], G);
         genome->R.emplace_back(MyFloat1D(out.data(), out.data() + out.size()));
-        out = faith.PI.middleCols(faith.pos_chunk[ic], S);
+        out = faith.PI.middleCols(faith.pos_chunk[ic], G);
         genome->PI.emplace_back(MyFloat1D(out.data(), out.data() + out.size()));
-        out = faith.F.middleRows(faith.pos_chunk[ic], S);
-        genome->F.emplace_back(MyFloat1D(out.data(), out.data() + out.size()));
+        out = faith.P.middleRows(faith.pos_chunk[ic], S);
+        genome->P.emplace_back(MyFloat1D(out.data(), out.data() + out.size()));
     }
     double llike1, llike2;
     Admixture admixer1(genome->nsamples, genome->nsnps, genome->C, K, seed);

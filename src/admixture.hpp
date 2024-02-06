@@ -23,12 +23,12 @@ class Admixture
     bool cF = false;
 
   public:
-    Admixture(int n, int m, int c, int k, int seed) : N(n), M(m), C(c), K(k)
+    Admixture(int n, int m, int c, int k, int seed) : N(n), G(m), C(c), K(k)
     {
         rng.seed(seed);
         Q = RandomUniform<MyArr2D, std::default_random_engine>(K, N, rng, admixtureThreshold, 1 - admixtureThreshold);
         Q.rowwise() /= Q.colwise().sum(); // normalize Q per individual
-        F = RandomUniform<MyArr2D, std::default_random_engine>(C * K, M, rng, clusterFreqThreshold,
+        F = RandomUniform<MyArr2D, std::default_random_engine>(C * K, G, rng, clusterFreqThreshold,
                                                                1 - clusterFreqThreshold);
         for(int k = 0; k < K; k++) F.middleRows(k * C, C).rowwise() /= F.middleRows(k * C, C).colwise().sum();
     }
@@ -36,12 +36,14 @@ class Admixture
     ~Admixture() {}
 
     // SHARED VARIBALES
-    const int N, M, C, K; // M: number of grids in total,  C2 = C x C
+    const int N, G, C, K; // M: number of grids in total
     MyArr2D F; // (C x K) x M
     MyArr2D P; // C x M, for each k, F <= P
     MyArr2D Q; // K x N
     MyArr2D Ekc; // (C * K) x M, expected number of alleles per c per k
     MyArr2D NormF; // K x M
+    Bool1D collapse;
+    Int1D grids;
 
     void initIteration();
     void updateIteration();

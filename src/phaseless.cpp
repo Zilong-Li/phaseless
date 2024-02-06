@@ -237,7 +237,7 @@ double Phaseless::runForwardBackwards(const int ind, const int ic, const MyFloat
 {
     const int S = pos_chunk[ic + 1] - pos_chunk[ic];
     Eigen::Map<const MyArr2D> gli(GL.data() + ind * S * 3, S, 3);
-    MyArr2D emit = get_emission_by_gl(gli, P.middleRows(pos_chunk[ic], S)).transpose(); // CC x S
+    MyArr2D emit = get_emission_by_gl(gli, P.middleRows(pos_chunk[ic], S)); // CC x S
     // first get H ie old PI in fastphase
     MyArr2D H = MyArr2D::Zero(C, S);
     int z1, y1, s;

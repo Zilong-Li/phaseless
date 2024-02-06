@@ -15,24 +15,23 @@ double Admixture::runOptimalWithBigAss(int ind, const std::unique_ptr<BigAss> & 
     MyArr1D iQ = MyArr1D::Zero(K);
     MyArr1D Hz(C);
     double norm = 0, llike = 0, tmp = 0;
-    int c1, k1, s, c2, c12;
-    for(int ic = 0, m = 0; ic < genome->nchunks; ic++)
+    int c1, k1, s, c2, c12, ss, ic, g;
+    for(ic = 0, g = 0, ss = 0; ic < genome->nchunks; ic++)
     {
         const int S = genome->pos[ic].size();
-        const int G = genome->B > 1 ? (S + genome->B - 1) / genome->B : S;
-        assert(S == G); // only test B=1 now
+        const int nGrids = grids[ic];
         Eigen::Map<const MyArr2D> gli(genome->gls[ic].data() + ind * S * 3, S, 3);
         Eigen::Map<const MyArr2D> P(genome->P[ic].data(), S, C);
-        Eigen::Map<const MyArr2D> PI(genome->PI[ic].data(), C, S);
-        Eigen::Map<const MyArr2D> R(genome->R[ic].data(), 3, S);
-        Eigen::Map<const MyArr2D> AE(genome->AE[ic].data(), C * C, S);
-        const auto cl = get_cluster_likelihoods(gli, P, R, PI, AE);
-        const int nGrids = cl.cols();
+        Eigen::Map<const MyArr2D> PI(genome->PI[ic].data(), C, nGrids);
+        Eigen::Map<const MyArr2D> R(genome->R[ic].data(), 3, nGrids);
+        Eigen::Map<const MyArr2D> AE(genome->AE[ic].data(), C * C, nGrids);
+        const auto cl = get_cluster_likelihoods(gli, P, R, PI, AE, collapse.segment(ss, S));
+        ss += S;
         kapa.setZero(C * K, nGrids); // C x K x M layout
         Ekg.setZero(K, nGrids);
-        for(s = 0; s < nGrids; s++, m++)
+        for(s = 0; s < nGrids; s++, g++)
         {
-            for(c1 = 0; c1 < C; c1++) Hz(c1) = (Q.col(ind) * F(Eigen::seqN(c1, K, C), m)).sum();
+            for(c1 = 0; c1 < C; c1++) Hz(c1) = (Q.col(ind) * F(Eigen::seqN(c1, K, C), g)).sum();
             for(norm = 0, c1 = 0; c1 < C; c1++)
             {
                 for(tmp = 0, c2 = 0; c2 < C; c2++)
@@ -44,7 +43,7 @@ double Admixture::runOptimalWithBigAss(int ind, const std::unique_ptr<BigAss> & 
                     tmp += xz * zy;
                 }
                 norm += tmp;
-                kapa(Eigen::seqN(c1, K, C), s) = (Q.col(ind) * F(Eigen::seqN(c1, K, C), m)) * tmp / Hz(c1);
+                kapa(Eigen::seqN(c1, K, C), s) = (Q.col(ind) * F(Eigen::seqN(c1, K, C), g)) * tmp / Hz(c1);
             }
             llike += log(norm);
             kapa.col(s) /= kapa.col(s).sum();
@@ -53,12 +52,12 @@ double Admixture::runOptimalWithBigAss(int ind, const std::unique_ptr<BigAss> & 
         iQ += Ekg.rowwise().sum();
         { // for update F
             std::scoped_lock<std::mutex> lock(mutex_it); // sum over all samples
-            Ekc.middleCols(m - nGrids, nGrids) += 2 * kapa;
-            NormF.middleCols(m - nGrids, nGrids) += Ekg;
+            Ekc.middleCols(g - nGrids, nGrids) += 2 * kapa;
+            NormF.middleCols(g - nGrids, nGrids) += Ekg;
         }
     }
     // update Q, iQ.sum() should be 2M
-    if(!nonewQ) Q.col(ind) = iQ / (2 * M);
+    if(!nonewQ) Q.col(ind) = iQ / (2 * G);
 
     return llike;
 }
@@ -70,21 +69,22 @@ double Admixture::runNativeWithBigAss(int ind, const std::unique_ptr<BigAss> & g
     MyArr2D Ekg, iEkc;
     double norm = 0, llike = 0;
     int c1, c2, c12, cc;
-    int k1, k2, k12, s;
+    int k1, k2, k12, s, ss, ic, g;
     MyArr1D iQ = MyArr1D::Zero(K);
-    for(int ic = 0, m = 0; ic < genome->nchunks; ic++)
+    for(ic = 0, g = 0, ss = 0; ic < genome->nchunks; ic++)
     {
         const int S = genome->pos[ic].size();
+        const int nGrids = grids[ic];
         Eigen::Map<const MyArr2D> gli(genome->gls[ic].data() + ind * S * 3, S, 3);
         Eigen::Map<const MyArr2D> P(genome->P[ic].data(), S, C);
-        Eigen::Map<const MyArr2D> PI(genome->PI[ic].data(), C, S);
-        Eigen::Map<const MyArr2D> R(genome->R[ic].data(), 3, S);
-        Eigen::Map<const MyArr2D> AE(genome->AE[ic].data(), C * C, S);
-        const auto cl = get_cluster_likelihoods(gli, P, R, PI, AE);
-        const int nGrids = cl.cols();
+        Eigen::Map<const MyArr2D> PI(genome->PI[ic].data(), C, nGrids);
+        Eigen::Map<const MyArr2D> R(genome->R[ic].data(), 3, nGrids);
+        Eigen::Map<const MyArr2D> AE(genome->AE[ic].data(), C * C, nGrids);
+        const auto cl = get_cluster_likelihoods(gli, P, R, PI, AE, collapse.segment(ss, S));
+        ss += S;
         iEkc.setZero(C * K, nGrids);
         Ekg.setZero(K, nGrids);
-        for(s = 0; s < nGrids; s++, m++)
+        for(s = 0; s < nGrids; s++, g++)
         {
             for(norm = 0, cc = 0, c1 = 0; c1 < C; c1++)
             {
@@ -97,7 +97,7 @@ double Admixture::runNativeWithBigAss(int ind, const std::unique_ptr<BigAss> & g
                         for(k2 = 0; k2 < K; k2++)
                         {
                             k12 = k1 * K + k2;
-                            w(cc, k12) = xz * F(k1 * C + c1, m) * Q(k1, ind) * F(k2 * C + c2, m) * Q(k2, ind);
+                            w(cc, k12) = xz * F(k1 * C + c1, g) * Q(k1, ind) * F(k2 * C + c2, g) * Q(k2, ind);
                             if(c1 != c2) w(cc, k12) *= 2;
                             norm += w(cc, k12);
                         }
@@ -129,20 +129,20 @@ double Admixture::runNativeWithBigAss(int ind, const std::unique_ptr<BigAss> & g
         iQ += Ekg.rowwise().sum();
         {
             std::scoped_lock<std::mutex> lock(mutex_it); // sum over all samples
-            Ekc.middleCols(m - nGrids, nGrids) += iEkc;
-            NormF.middleCols(m - nGrids, nGrids) += Ekg;
+            Ekc.middleCols(g - nGrids, nGrids) += iEkc;
+            NormF.middleCols(g - nGrids, nGrids) += Ekg;
         }
     }
     // update Q, iQ.sum() should be 2M
-    if(!nonewQ) Q.col(ind) = iQ / (2 * M);
+    if(!nonewQ) Q.col(ind) = iQ / (2 * G);
 
     return llike;
 }
 
 void Admixture::initIteration()
 {
-    Ekc.setZero(C * K, M);
-    NormF.setZero(K, M);
+    Ekc.setZero(C * K, G);
+    NormF.setZero(K, G);
 }
 
 void Admixture::updateIteration()
@@ -177,8 +177,8 @@ void Admixture::constrainF()
         if(cF)
         {
             for(int c = 0; c < C; c++)
-                for(int m = 0; m < M; m++)
-                    if(F(k * C + c, m) < P(c, m)) F(k * C + c, m) = P(c, m);
+                for(int g = 0; g < G; g++)
+                    if(F(k * C + c, g) < P(c, g)) F(k * C + c, g) = P(c, g);
         }
         F.middleRows(k * C, C).rowwise() /= F.middleRows(k * C, C).colwise().sum();
     }
@@ -186,25 +186,22 @@ void Admixture::constrainF()
 
 void Admixture::setStartPoint(const std::unique_ptr<BigAss> & genome, std::string qfile)
 {
-    P = MyArr2D(C, M);
-    for(int ic = 0, m = 0; ic < genome->nchunks; ic++)
+    P = MyArr2D(C, G);
+    collapse = Bool1D::Constant(genome->nsnps, false);
+    int ic{0}, m{0};
+    for(auto c : genome->collapse) collapse(ic++) = (c == 1);
+    grids.resize(genome->nchunks);
+    for(ic = 0, m = 0; ic < genome->nchunks; ic++)
     {
         const int S = genome->pos[ic].size();
-        Eigen::Map<const MyArr2D> AE(genome->AE[ic].data(), C * C, S);
-        for(int s = 0; s < S; s++) P.col(m + s) = AE.col(s).reshaped(C, C).colwise().sum();
-        m += S;
+        const auto se = find_grid_start_end(collapse.segment(m, S));
+        const int iG = se.size();
+        grids[ic] = iG;
+        Eigen::Map<const MyArr2D> AE(genome->AE[ic].data(), C * C, iG);
+        for(int g = 0; g < iG; g++) P.col(m + g) = AE.col(g).reshaped(C, C).colwise().sum();
+        m += iG;
     }
-    if(cF)
-    {
-        for(int k = 0; k < K; k++)
-        {
-            for(int c = 0; c < C; c++)
-                for(int m = 0; m < M; m++)
-                    if(F(k * C + c, m) < P(c, m)) F(k * C + c, m) = P(c, m);
-            F.middleRows(k * C, C).rowwise() /= F.middleRows(k * C, C).colwise().sum();
-        }
-    }
-
+    assert(m == G);
     if(!qfile.empty()) load_csv(Q, qfile);
 }
 
@@ -236,10 +233,9 @@ int run_admix_main(Options & opts)
     cao.done(tim.date(), filesize, " bytes deserialized from file. skip imputation, ec", ec);
     cao.print(tim.date(), "parsing input -> C =", genome->C, ", N =", genome->nsamples, ", M =", genome->nsnps,
               ", nchunks =", genome->nchunks, ", B =", genome->B, ", G =", genome->G);
-    assert(opts.K < genome->C);
 
-    cao.warn(tim.date(), "-> running admixture with seed =", opts.seed);
     Admixture admixer(genome->nsamples, genome->G, genome->C, opts.K, opts.seed);
+    cao.warn(tim.date(), "-> running admixture with seed =", opts.seed);
     admixer.setFlags(opts.debug, opts.nQ, opts.cF);
     admixer.setStartPoint(genome, opts.in_qfile);
     vector<future<double>> llike;

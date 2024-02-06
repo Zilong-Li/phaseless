@@ -24,8 +24,6 @@ class FastPhaseK2
     double minHapfreq{0.01}; // min haplotype frequency, or min(1/(10*C), 1/100)
     // FLAGS
     bool debug{0}, local{0}, post{1}, NQ{0}, NF{0}, NP{1}, NR{1};
-    int G{0}, B{1}; // G: number of grids after collapsing block
-    double nGen;
 
   public:
     FastPhaseK2(int n, int m, int c, int seed) : N(n), M(m), C(c), CC(c * c)
@@ -40,6 +38,8 @@ class FastPhaseK2
 
 
     // SHARED VARIBALES
+    int G{0}, B{1}; // G: number of grids after collapsing block
+    double nGen;
     const int N, M, C, CC; // CC = C x C
     MyArr2D GP; // N x (M x 3), genotype probabilies for all individuals
     MyArr2D PI; // C x M, cluster frequency
@@ -51,7 +51,6 @@ class FastPhaseK2
     MyArr2D HapSum; // C x M, sum(gammaK) for all inds
     Int1D dist; // physical position distance between two markers
     Int1D pos_chunk, grid_chunk; // store the start pos of each chunk in the full scale
-    Int3D grids; // physical position of each grid for each chunk
     Bool1D collapse;
     MyArr1D AF;
 

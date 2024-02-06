@@ -270,6 +270,9 @@ int run_impute_main(Options & opts)
     FastPhaseK2 faith(genome->nsamples, genome->nsnps, opts.C, opts.seed);
     faith.setFlags(opts.ptol, opts.ftol, opts.qtol, opts.debug, opts.nQ, opts.nP, opts.nF, opts.nR);
     faith.initRecombination(genome->pos, opts.in_rfile, opts.gridsize);
+    genome->G = faith.G;
+    cao.print(tim.date(), "parsing input -> C =", genome->C, ", N =", genome->nsamples, ", M =", genome->nsnps,
+              ", nchunks =", genome->nchunks, ", B =", opts.gridsize, ", G =", genome->G, ", seed =", opts.seed);
     double loglike, diff, prevlike{std::numeric_limits<double>::lowest()};
     for(int it = 0; SIG_COND && it <= opts.nimpute; it++)
     {

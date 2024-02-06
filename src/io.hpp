@@ -569,9 +569,6 @@ inline void init_bigass(const std::unique_ptr<BigAss> & genome, const Options & 
     genome->G = G;
     if(genome->B == 1 && genome->G != genome->nsnps)
         cao.error("number of grids should be same as snps if B=1");
-    cao.print(tim.date(), "parsing input -> C =", genome->C, ", N =", genome->nsamples,
-              ", M =", genome->nsnps, ", nchunks =", genome->nchunks, ", B =", opts.gridsize,
-              ", seed =", opts.seed);
     cao.done(tim.date(), "elapsed time for parsing beagle file", std::fixed, tim.reltime(), " secs");
 }
 

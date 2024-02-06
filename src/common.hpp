@@ -231,20 +231,30 @@ inline Int1D calc_position_distance(const Int1D & markers)
 // the form is [s,e]
 inline Int2D find_grid_start_end(const Bool1D & collapse)
 {
-    const int G = ((collapse == true).count() + 1) / 2;
-    Int2D gpos(G, Int1D(2));
+    int G = ((collapse == true).count() + 1) / 2;
     int s, e, g, m = collapse.size();
+    bool b1 = ((collapse == true).count() == 0);
+    if(b1) G = m;
+    Int2D gpos(G, Int1D(2));
     for(s = 0, e = 1, g = 0; g < G; g++)
     {
-        for(;; e++)
-            if(collapse[e] == true) break;
-        if(g == G - 1) e = m - 1;
-        gpos[g][0] = s;
-        gpos[g][1] = e;
-        // cao.cerr("size of g:", gpos[g].size(), ",s:",s, ",e:",e);
-        // for(auto j : gpos[g]) cao.cerr(j);
-        s = e + 1 >= m ? m - 1 : e + 1;
-        e = s + 1 >= m ? m - 1 : s + 1;
+        if(b1)
+        {
+            gpos[g][0] = g;
+            gpos[g][1] = g;
+        }
+        else
+        {
+            for(;; e++)
+                if(collapse[e] == true) break;
+            if(g == G - 1) e = m - 1;
+            gpos[g][0] = s;
+            gpos[g][1] = e;
+            // cao.cerr("size of g:", gpos[g].size(), ",s:",s, ",e:",e);
+            // for(auto j : gpos[g]) cao.cerr(j);
+            s = e + 1 >= m ? m - 1 : e + 1;
+            e = s + 1 >= m ? m - 1 : s + 1;
+        }
     }
     return gpos;
 }
@@ -498,9 +508,10 @@ inline auto get_cluster_likelihoods(const MyArr2D & gli,
                                     const MyArr2D & R,
                                     const MyArr2D & PI,
                                     const MyArr2D & AE,
+                                    const Bool1D & collapse,
                                     const double minEmission = 1e-10)
 {
-    MyArr2D emit = get_emission_by_gl(gli, P).transpose(); // CC x S
+    MyArr2D emit = get_emission_by_grid(gli, P, collapse); // CC x S
     const auto [alpha, beta, cs] = forward_backwards_diploid(emit, R, PI);
     // reuse emit
     emit = (alpha * beta) / AE;
@@ -579,7 +590,7 @@ inline Bool1D find_grid_to_collapse(const MyArr2D & R, double tol_r = 1e-6)
 
 inline Int2D divide_pos_into_grid(const Int1D & pos, const Bool1D & collapse)
 {
-    assert(pos.size() == collapse.size());
+    assert((int)pos.size() == (int)collapse.size());
     Int2D grids;
     for(auto i = 0; i < collapse.size(); i++)
     {
