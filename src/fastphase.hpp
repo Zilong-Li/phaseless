@@ -50,7 +50,7 @@ class FastPhaseK2
     MyArr2D Ezj; // C x M, E(Z=z,J=1|X,par), expectation of switch into state k
     MyArr2D HapSum; // C x M, sum(gammaK) for all inds
     Int1D dist; // physical position distance between two markers
-    Int1D pos_chunk; // store the start pos of each chunk in the full scale
+    Int1D pos_chunk, grid_chunk; // store the start pos of each chunk in the full scale
     Int3D grids; // physical position of each grid for each chunk
     Bool1D collapse;
     MyArr1D AF;

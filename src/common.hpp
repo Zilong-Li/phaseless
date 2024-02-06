@@ -226,30 +226,51 @@ inline Int1D calc_position_distance(const Int1D & markers)
     return dl;
 }
 
-inline Int1D calc_grid_distance(const Int1D & pos, const Bool1D & collapse)
+// the form is [s,e]
+inline Int2D find_grid_start_end(const Bool1D & collapse)
 {
-    // B = 1
-    if((collapse == true).count() == 0) return calc_position_distance(pos);
-    // B > 1, split pos into grids
     const int G = ((collapse == true).count() + 1) / 2;
-    Int2D gpos(G);
-    int s, e, g, m = pos.size();
+    Int2D gpos(G, Int1D(2));
+    int s, e, g, m = collapse.size();
     for(s = 0, e = 1, g = 0; g < G; g++)
     {
         for(;; e++)
             if(collapse[e] == true) break;
         if(g == G - 1) e = m - 1;
-        gpos[g] = Int1D(pos.begin() + s, pos.begin() + e + 1);
+        gpos[g][0] = s;
+        gpos[g][1] = e;
         // cao.cerr("size of g:", gpos[g].size(), ",s:",s, ",e:",e);
         // for(auto j : gpos[g]) cao.cerr(j);
         s = e + 1 >= m ? m - 1 : e + 1;
         e = s + 1 >= m ? m - 1 : s + 1;
     }
+    return gpos;
+}
+
+inline Int2D split_pos_into_grid(const Int1D & pos, const Bool1D & collapse)
+{
+    const auto se = find_grid_start_end(collapse);
+    const int G = se.size();
+    Int2D gpos(G);
+    for(int g = 0; g < G; g++)
+    {
+        // here we want [s, e)
+        gpos[g] = Int1D(pos.begin() + se[g][0], pos.begin() + se[g][1] + 1);
+    }
+    return gpos;
+}
+
+inline Int1D calc_grid_distance(const Int1D & pos, const Bool1D & collapse)
+{
+    // B = 1
+    if((collapse == true).count() == 0) return calc_position_distance(pos);
+    // B > 1, split pos into grids
+    Int2D gpos = split_pos_into_grid(pos, collapse);
+    const int G = gpos.size();
     Int1D dl(G);
     dl[0] = 0;
-    for(g = 1; g < G; g++)
+    for(int g = 1; g < G; g++)
     {
-        // cao.cerr(g, ":", gpos[g][gpos[g].size() / 2], ",", gpos[g - 1][gpos[g - 1].size() / 2]);
         dl[g] = gpos[g][gpos[g].size() / 2] - gpos[g - 1][gpos[g - 1].size() / 2];
     }
     return dl;
@@ -316,7 +337,7 @@ inline MyArr2D get_emission_by_gl(const MyArr2D & gli, const MyArr2D & P, double
         }
     // emitDip = emitDip.colwise() / emitDip.rowwise().maxCoeff(); // normalize
     // emitDip = (emitDip < minEmission).select(minEmission, emitDip);
-    return emitDip;
+    return emitDip.transpose();
 }
 
 /*
@@ -326,35 +347,34 @@ inline MyArr2D get_emission_by_gl(const MyArr2D & gli, const MyArr2D & P, double
 */
 inline MyArr2D get_emission_by_grid(const MyArr2D & gli,
                                     const MyArr2D & P,
-                                    const Int2D & grids,
+                                    const Bool1D & collapse,
                                     double minEmission = 1e-10)
 {
+    if((collapse == true).count() == 0) return get_emission_by_gl(gli, P, minEmission);
     const int C = P.cols();
-    const int nGrids = grids.size();
-    MyArr2D emitGrid = MyArr2D::Ones(C * C, nGrids);
-    int z1, z2, z12, i, s, e, g, g1, g2, m;
+    const auto se = find_grid_start_end(collapse);
+    const int nGrids = se.size();
+    MyArr2D emit = MyArr2D::Ones(C * C, nGrids);
+    int z1, z2, z12, g, g1, g2, m;
     for(g = 0; g < nGrids; g++)
     {
-        s = grids[g][0];
-        e = grids[g][grids[g].size()];
         for(z1 = 0; z1 < C; z1++)
         {
             for(z2 = 0; z2 < C; z2++)
             {
                 z12 = z1 * C + z2;
-                for(i = s; i <= e; i++)
+                for(m = se[g][0]; m <= se[g][1]; m++)
                 {
-                    double emit = 0;
-                    m = i + grids[g].size();
+                    double iemit = 0;
                     for(g1 = 0; g1 <= 1; g1++)
                     {
                         for(g2 = 0; g2 <= 1; g2++)
                         {
-                            emit += gli(m, g1 + g2) * (g1 * P(m, z1) + (1 - g1) * (1 - P(m, z1)))
-                                    * (g2 * P(m, z2) + (1 - g2) * (1 - P(m, z2)));
+                            iemit += gli(m, g1 + g2) * (g1 * P(m, z1) + (1 - g1) * (1 - P(m, z1)))
+                                     * (g2 * P(m, z2) + (1 - g2) * (1 - P(m, z2)));
                         }
                     }
-                    emitGrid(z12, g) *= emit;
+                    emit(z12, g) *= iemit;
                 }
             }
         }
@@ -362,7 +382,7 @@ inline MyArr2D get_emission_by_grid(const MyArr2D & gli,
         // emitGrid.col(g) /= emitGrid.col(g).maxCoeff();
         // emitGrid.col(g) = (emitGrid.col(g) < minEmission).select(minEmission, emitGrid.col(g));
     }
-    return emitGrid;
+    return emit;
 }
 
 /*

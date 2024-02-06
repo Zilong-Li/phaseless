@@ -15,8 +15,9 @@ void FastPhaseK2::initRecombination(const Int2D & pos, std::string rfile, int B_
     if(B == 2) cao.error("-B can not be 2");
     int nchunks = pos.size();
     pos_chunk.resize(nchunks + 1);
+    grid_chunk.resize(nchunks + 1);
     int i{0}, ss{0}, sg{0};
-    // how many grids in total 
+    // how many grids in total
     for(i = 0, G = 0; i < nchunks; i++) G += B > 1 ? (pos[i].size() + B - 1) / B : pos[i].size();
     R = MyArr2D(3, G);
     PI = MyArr2D::Ones(C, G);
@@ -26,6 +27,7 @@ void FastPhaseK2::initRecombination(const Int2D & pos, std::string rfile, int B_
     for(i = 0, ss = 0, sg = 0; i < nchunks; i++)
     {
         pos_chunk[i] = ss;
+        grid_chunk[i] = sg;
         collapse.segment(ss, pos[i].size()) = find_grid_to_collapse(pos[i], B);
         tmpdist = calc_grid_distance(pos[i], collapse);
         R.middleCols(sg, tmpdist.size()) = calc_transRate_diploid(tmpdist, nGen);
@@ -34,6 +36,7 @@ void FastPhaseK2::initRecombination(const Int2D & pos, std::string rfile, int B_
         sg += tmpdist.size();
     }
     pos_chunk[nchunks] = ss; // add sentinel
+    grid_chunk[nchunks] = sg; // add sentinel
     if(!rfile.empty()) load_csv(R, rfile, true);
     er = R.row(0).sqrt();
     protect_er(er);
@@ -90,10 +93,10 @@ void FastPhaseK2::refillHaps(int strategy)
 void FastPhaseK2::initIteration()
 {
     // initial temp variables
-    Ezj.setZero(C, M); // reset post(Z,j)
     Ezg1.setZero(C, M); // reset pos(Z,g)
     Ezg2.setZero(C, M); // reset pos(Z,g)
-    HapSum.setZero(C, M); // reset post(Z,j)
+    Ezj.setZero(C, G); // reset post(Z,j)
+    HapSum.setZero(C, G); // reset post(Z,j)
 }
 
 void FastPhaseK2::updateIteration()
@@ -160,47 +163,59 @@ void FastPhaseK2::protectPars()
 */
 double FastPhaseK2::hmmIterWithJumps(const MyFloat1D & GL, const int ic, const int ind, bool finalIter)
 {
-    const int S = pos_chunk[ic + 1] - pos_chunk[ic]; // could be num of grids if B > 1
+    const int S = pos_chunk[ic + 1] - pos_chunk[ic];
+    const int nGrids = grid_chunk[ic + 1] - grid_chunk[ic];
     Eigen::Map<const MyArr2D> gli(GL.data() + ind * S * 3, S, 3);
-    MyArr2D emit = get_emission_by_gl(gli, F.middleRows(pos_chunk[ic], S)).transpose(); // CC x S
+    MyArr2D emit = get_emission_by_grid(gli, F.middleRows(pos_chunk[ic], S), collapse.segment(pos_chunk[ic], S));
+    int start = pos_chunk[ic], nsize = S;
+    if(nGrids != S)
+    {
+        start = grid_chunk[ic];
+        nsize = nGrids;
+    }
     const auto [alpha, beta, cs] =
-        forward_backwards_diploid(emit, R.middleCols(pos_chunk[ic], S), PI.middleCols(pos_chunk[ic], S));
+        forward_backwards_diploid(emit, R.middleCols(start, nsize), PI.middleCols(start, nsize));
     if(!((1 - ((alpha * beta).colwise().sum())).abs() < 1e-9).all())
         cao.error((alpha * beta).colwise().sum(), "\ngamma sum is not 1.0!\n");
     // now get posterios
-    MyArr2D ind_post_zg1(C, S), ind_post_zg2(C, S), ind_post_zj(C, S), gammaC(C, S);
+    MyArr2D ind_post_zg1(C, S), ind_post_zg2(C, S), ind_post_zj(C, nGrids), gammaC(C, nGrids);
     MyArr1D gamma_div_emit(CC), beta_mult_emit(CC);
     MyArr1D alphatmp(C);
-    int z1, m, s;
-    for(s = 0; s < S; s++)
+    int z1, m, s, g{0}, gg{0};
+    const auto se = find_grid_start_end(collapse.segment(pos_chunk[ic], S));
+    for(g = 0; g < nGrids; g++)
     {
-        m = s + pos_chunk[ic];
-        gamma_div_emit = (alpha.col(s) * beta.col(s)) / emit.col(s); // C2
-        gammaC.col(s) = (alpha.col(s) * beta.col(s)).reshaped(C, C).colwise().sum();
+        gg = g + grid_chunk[ic];
+        gamma_div_emit = (alpha.col(g) * beta.col(g)) / emit.col(g); // C2
+        gammaC.col(g) = (alpha.col(g) * beta.col(g)).reshaped(C, C).colwise().sum();
         for(z1 = 0; z1 < C; z1++)
         {
-            ind_post_zg1(z1, s) = (gamma_div_emit(Eigen::seqN(z1, C, C)) * (1 - F(m, z1))
-                                   * (gli(s, 0) * (1 - F.row(m)) + gli(s, 1) * F.row(m)).transpose())
-                                      .sum();
-            ind_post_zg2(z1, s) = (gamma_div_emit(Eigen::seqN(z1, C, C)) * (F(m, z1))
-                                   * (gli(s, 1) * (1 - F.row(m)) + gli(s, 2) * F.row(m)).transpose())
-                                      .sum();
-            if(s > 0) alphatmp(z1) = alpha(Eigen::seqN(z1, C, C), s - 1).sum() * R(1, m);
-            if(s == 0) ind_post_zj(z1, s) = (alpha.col(0) * beta.col(0)).segment(z1 * C, C).sum();
-            if(finalIter) callGenoLoopC(z1, m, ind, gli.row(s), F.row(m), gamma_div_emit);
+            for(s = se[g][0]; s <= se[g][1]; s++)
+            {
+                m = s + pos_chunk[ic];
+                ind_post_zg1(z1, s) = (gamma_div_emit(Eigen::seqN(z1, C, C)) * (1 - F(m, z1))
+                                       * (gli(s, 0) * (1 - F.row(m)) + gli(s, 1) * F.row(m)).transpose())
+                                          .sum();
+                ind_post_zg2(z1, s) = (gamma_div_emit(Eigen::seqN(z1, C, C)) * (F(m, z1))
+                                       * (gli(s, 1) * (1 - F.row(m)) + gli(s, 2) * F.row(m)).transpose())
+                                          .sum();
+                if(finalIter) callGenoLoopC(z1, m, ind, gli.row(s), F.row(m), gamma_div_emit);
+            }
+            if(g == 0) ind_post_zj(z1, g) = (alpha.col(g) * beta.col(g)).segment(z1 * C, C).sum();
+            if(g > 0) alphatmp(z1) = alpha(Eigen::seqN(z1, C, C), g - 1).sum() * R(1, gg);
         }
-        if(s == 0) continue;
-        alphatmp += PI.col(m) * R(2, m) * 1.0; // inner alpha.col(s-1).sum == 1
-        beta_mult_emit = emit.col(s) * beta.col(s); // C2
+        if(g == 0) continue;
+        alphatmp += PI.col(gg) * R(2, gg) * 1.0; // inner alpha.col(s-1).sum == 1
+        beta_mult_emit = emit.col(g) * beta.col(g); // C2
         for(z1 = 0; z1 < C; z1++)
-            ind_post_zj(z1, s) = cs(s) * (PI(z1, m) * alphatmp * beta_mult_emit(Eigen::seqN(z1, C, C))).sum();
+            ind_post_zj(z1, g) = cs(g) * (PI(z1, gg) * alphatmp * beta_mult_emit(Eigen::seqN(z1, C, C))).sum();
     }
     { // sum over all samples for updates
         std::scoped_lock<std::mutex> lock(mutex_it);
-        Ezj.middleCols(pos_chunk[ic], S) += ind_post_zj;
         Ezg1.middleCols(pos_chunk[ic], S) += ind_post_zg1;
         Ezg2.middleCols(pos_chunk[ic], S) += ind_post_zg2;
-        HapSum.middleCols(pos_chunk[ic], S) += gammaC;
+        Ezj.middleCols(grid_chunk[ic], nGrids) += ind_post_zj;
+        HapSum.middleCols(pos_chunk[ic], nGrids) += gammaC;
     }
 
     return (1 / cs).log().sum();
@@ -254,7 +269,7 @@ int run_impute_main(Options & opts)
     vector<future<double>> res;
     FastPhaseK2 faith(genome->nsamples, genome->nsnps, opts.C, opts.seed);
     faith.setFlags(opts.ptol, opts.ftol, opts.qtol, opts.debug, opts.nQ, opts.nP, opts.nF, opts.nR);
-    faith.initRecombination(genome->pos, opts.in_rfile);
+    faith.initRecombination(genome->pos, opts.in_rfile, opts.gridsize);
     double loglike, diff, prevlike{std::numeric_limits<double>::lowest()};
     for(int it = 0; SIG_COND && it <= opts.nimpute; it++)
     {
@@ -290,11 +305,12 @@ int run_impute_main(Options & opts)
     for(int ic = 0; ic < genome->nchunks; ic++)
     {
         const int S = faith.pos_chunk[ic + 1] - faith.pos_chunk[ic];
-        MyArr2D out = faith.Ezj.middleCols(faith.pos_chunk[ic], S);
+        const int G = faith.grid_chunk[ic + 1] - faith.grid_chunk[ic];
+        MyArr2D out = faith.Ezj.middleCols(faith.pos_chunk[ic], G);
         genome->AE.emplace_back(MyFloat1D(out.data(), out.data() + out.size()));
-        out = faith.R.middleCols(faith.pos_chunk[ic], S);
+        out = faith.R.middleCols(faith.pos_chunk[ic], G);
         genome->R.emplace_back(MyFloat1D(out.data(), out.data() + out.size()));
-        out = faith.PI.middleCols(faith.pos_chunk[ic], S);
+        out = faith.PI.middleCols(faith.pos_chunk[ic], G);
         genome->PI.emplace_back(MyFloat1D(out.data(), out.data() + out.size()));
         out = faith.F.middleRows(faith.pos_chunk[ic], S);
         genome->F.emplace_back(MyFloat1D(out.data(), out.data() + out.size()));
