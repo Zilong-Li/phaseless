@@ -334,23 +334,23 @@ inline MyArr2D get_emission_by_gl(const MyArr2D & gli, const MyArr2D & P, double
     int k1, k2, g1, g2;
     const int M = P.rows();
     const int C = P.cols();
-    MyArr2D emitDip(M, C * C); // emission probabilies, nsnps x (C x C)
+    MyArr2D emit(M, C * C); // emission probabilies, nsnps x (C x C)
     for(k1 = 0; k1 < C; k1++)
         for(k2 = 0; k2 < C; k2++)
         {
-            emitDip.col(k1 * C + k2).setZero();
+            emit.col(k1 * C + k2).setZero();
             for(g1 = 0; g1 <= 1; g1++)
             {
                 for(g2 = 0; g2 <= 1; g2++)
                 {
-                    emitDip.col(k1 * C + k2) += gli.col(g1 + g2) * (g1 * P.col(k1) + (1 - g1) * (1 - P.col(k1)))
-                                                * (g2 * P.col(k2) + (1 - g2) * (1 - P.col(k2)));
+                    emit.col(k1 * C + k2) += gli.col(g1 + g2) * (g1 * P.col(k1) + (1 - g1) * (1 - P.col(k1)))
+                                             * (g2 * P.col(k2) + (1 - g2) * (1 - P.col(k2)));
                 }
             }
         }
-    // emitDip = emitDip.colwise() / emitDip.rowwise().maxCoeff(); // normalize
-    // emitDip = (emitDip < minEmission).select(minEmission, emitDip);
-    return emitDip.transpose();
+    emit = emit.colwise() / emit.rowwise().maxCoeff(); // normalize
+    emit = (emit < minEmission).select(minEmission, emit);
+    return emit.transpose();
 }
 
 /*
@@ -392,8 +392,8 @@ inline MyArr2D get_emission_by_grid(const MyArr2D & gli,
             }
         }
         // apply bounding
-        // emitGrid.col(g) /= emitGrid.col(g).maxCoeff();
-        // emitGrid.col(g) = (emitGrid.col(g) < minEmission).select(minEmission, emitGrid.col(g));
+        emit.col(g) /= emit.col(g).maxCoeff();
+        emit.col(g) = (emit.col(g) < minEmission).select(minEmission, emit.col(g));
     }
     return emit;
 }
