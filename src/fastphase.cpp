@@ -184,6 +184,7 @@ double FastPhaseK2::hmmIterWithJumps(const MyFloat1D & GL, const int ic, const i
         nsize = nGrids;
     }
     MyArr2D emit_grid = get_emission_by_grid(gli, P.middleRows(pos_chunk[ic], S), collapse.segment(pos_chunk[ic], S));
+    MyArr2D emit = get_emission_by_gl(gli, P.middleRows(pos_chunk[ic], S));
     const auto [alpha, beta, cs] =
         forward_backwards_diploid(emit_grid, R.middleCols(start, nsize), PI.middleCols(start, nsize));
     if(!((1 - ((alpha * beta).colwise().sum())).abs() < 1e-9).all())
@@ -199,13 +200,14 @@ double FastPhaseK2::hmmIterWithJumps(const MyFloat1D & GL, const int ic, const i
         gg = g + grid_chunk[ic];
         gammaC.col(g) = (alpha.col(g) * beta.col(g)).reshaped(C, C).colwise().sum();
         igamma = alpha.col(g) * beta.col(g);
-        gamma_div_emit = igamma / emit_grid.col(g); // C2
+        if(B == 1) gamma_div_emit = igamma / emit_grid.col(g);
         for(z1 = 0; z1 < C; z1++)
         {
             for(s = se[g][0]; s <= se[g][1]; s++)
             {
                 m = s + pos_chunk[ic];
-                if(B > 1) gamma_div_emit = igamma / get_emission_by_site(gli.row(s), P.row(m));
+                // if(B > 1) gamma_div_emit = igamma / get_emission_by_site(gli.row(s), P.row(m));
+                if(B > 1) gamma_div_emit = igamma / emit.col(s);
                 ind_post_zg1(z1, s) = (gamma_div_emit(Eigen::seqN(z1, C, C)) * (1 - P(m, z1))
                                        * (gli(s, 0) * (1 - P.row(m)) + gli(s, 1) * P.row(m)).transpose())
                                           .sum();
