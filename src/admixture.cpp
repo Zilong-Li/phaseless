@@ -188,20 +188,21 @@ void Admixture::setStartPoint(const std::unique_ptr<BigAss> & genome, std::strin
 {
     P = MyArr2D(C, G);
     collapse = Bool1D::Constant(genome->nsnps, false);
-    int ic{0}, m{0};
+    int ic{0}, sg{0}, ss{0};
     for(auto c : genome->collapse) collapse(ic++) = (c == 1);
     grids.resize(genome->nchunks);
-    for(ic = 0, m = 0; ic < genome->nchunks; ic++)
+    for(ic = 0, sg = 0, ss = 0; ic < genome->nchunks; ic++)
     {
         const int S = genome->pos[ic].size();
-        const auto se = find_grid_start_end(collapse.segment(m, S));
+        const auto se = find_grid_start_end(collapse.segment(ss, S));
         const int iG = se.size();
         grids[ic] = iG;
         Eigen::Map<const MyArr2D> AE(genome->AE[ic].data(), C * C, iG);
-        for(int g = 0; g < iG; g++) P.col(m + g) = AE.col(g).reshaped(C, C).colwise().sum();
-        m += iG;
+        for(int g = 0; g < iG; g++) P.col(sg + g) = AE.col(g).reshaped(C, C).colwise().sum();
+        sg += iG;
+        ss += S;
     }
-    assert(m == G);
+    assert(sg == G);
     if(!qfile.empty()) load_csv(Q, qfile);
 }
 
