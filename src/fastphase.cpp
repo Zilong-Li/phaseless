@@ -57,35 +57,45 @@ void FastPhaseK2::setFlags(double tol_p, double tol_f, double tol_q, bool debug_
 
 void FastPhaseK2::refillHaps(int strategy)
 {
-    int s{0};
+    int s{0}, ic{0}, g{0}, i{0};
     int nchunks = pos_chunk.size() - 1;
-    for(int c = 0; c < C; c++)
+    // bin hapsum per 100 snps ?
+    for(ic = 0; ic < nchunks; ic++)
     {
-        // bin hapsum per 100 snps ?
-        for(int ic = 0, g = 0; ic < nchunks; ic++)
+        const int S = pos_chunk[ic + 1] - pos_chunk[ic];
+        const auto se = find_grid_start_end(collapse.segment(pos_chunk[ic], S));
+        for(g = 0; g < (int)se.size(); g++)
         {
-            if(HapSum(c, g) >= minHapfreq) continue;
-            MyArr1D h = HapSum.col(g);
-            h(c) = 0; // do not re-sample current
-            h /= h.sum();
-            MyFloat1D p(h.data(), h.data() + h.size());
-            std::discrete_distribution<int> distribution{p.begin(), p.end()};
-            int choice = distribution(rng);
-            assert(choice != c);
-            if(strategy == 1)
+            for(int c = 0; c < C; c++)
             {
-                P(g, c) = alleleEmitThreshold;
+
+                if(HapSum(c, g) >= minHapfreq) continue;
+                MyArr1D h = HapSum.col(g);
+                h(c) = 0; // do not re-sample current
+                h /= h.sum();
+                MyFloat1D p(h.data(), h.data() + h.size());
+                std::discrete_distribution<int> distribution{p.begin(), p.end()};
+                int choice = distribution(rng);
+                assert(choice != c);
+                // now go through all sites in the grid
+                for(i = se[g][0]; i <= se[g][1]; i++)
+                {
+                    if(strategy == 1)
+                    {
+                        P(i + pos_chunk[ic], c) = alleleEmitThreshold;
+                    }
+                    else if(strategy == 2)
+                    {
+                        h.maxCoeff(&choice); // if no binning, this may be better
+                        P(i + pos_chunk[ic], c) = P(g, choice);
+                    }
+                    else
+                    {
+                        P(i + pos_chunk[ic], c) = P(g, choice);
+                    }
+                    s++;
+                }
             }
-            else if(strategy == 2)
-            {
-                h.maxCoeff(&choice); // if no binning, this may be better
-                P(g, c) = P(g, choice);
-            }
-            else
-            {
-                P(g, c) = P(g, choice);
-            }
-            s++;
         }
     }
     cao.warn("refill ", 100 * s / (C * M), "% infrequently used haps");
