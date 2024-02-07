@@ -183,27 +183,29 @@ double FastPhaseK2::hmmIterWithJumps(const MyFloat1D & GL, const int ic, const i
         start = grid_chunk[ic];
         nsize = nGrids;
     }
-    MyArr2D emit = get_emission_by_grid(gli, P.middleRows(pos_chunk[ic], S), collapse.segment(pos_chunk[ic], S));
+    MyArr2D emit_grid = get_emission_by_grid(gli, P.middleRows(pos_chunk[ic], S), collapse.segment(pos_chunk[ic], S));
     const auto [alpha, beta, cs] =
-        forward_backwards_diploid(emit, R.middleCols(start, nsize), PI.middleCols(start, nsize));
+        forward_backwards_diploid(emit_grid, R.middleCols(start, nsize), PI.middleCols(start, nsize));
     if(!((1 - ((alpha * beta).colwise().sum())).abs() < 1e-9).all())
         cao.error((alpha * beta).colwise().sum(), "\ngamma sum is not 1.0!\n");
     // now get posterios
     MyArr2D ind_post_zg1(C, S), ind_post_zg2(C, S), ind_post_zj(C, nGrids), gammaC(C, nGrids);
-    MyArr1D gamma_div_emit(CC), beta_mult_emit(CC);
+    MyArr1D gamma_div_emit(CC), beta_mult_emit(CC), igamma(CC);
     MyArr1D alphatmp(C);
     int z1, m, s, g{0}, gg{0};
     const auto se = find_grid_start_end(collapse.segment(pos_chunk[ic], S));
     for(g = 0; g < nGrids; g++)
     {
         gg = g + grid_chunk[ic];
-        gamma_div_emit = (alpha.col(g) * beta.col(g)) / emit.col(g); // C2
         gammaC.col(g) = (alpha.col(g) * beta.col(g)).reshaped(C, C).colwise().sum();
+        igamma = alpha.col(g) * beta.col(g);
+        gamma_div_emit = igamma / emit_grid.col(g); // C2
         for(z1 = 0; z1 < C; z1++)
         {
             for(s = se[g][0]; s <= se[g][1]; s++)
             {
                 m = s + pos_chunk[ic];
+                if(B > 1) gamma_div_emit = igamma / get_emission_by_site(gli.row(s), P.row(m));
                 ind_post_zg1(z1, s) = (gamma_div_emit(Eigen::seqN(z1, C, C)) * (1 - P(m, z1))
                                        * (gli(s, 0) * (1 - P.row(m)) + gli(s, 1) * P.row(m)).transpose())
                                           .sum();
@@ -217,7 +219,7 @@ double FastPhaseK2::hmmIterWithJumps(const MyFloat1D & GL, const int ic, const i
         }
         if(g == 0) continue;
         alphatmp += PI.col(gg) * R(2, gg) * 1.0; // inner alpha.col(s-1).sum == 1
-        beta_mult_emit = emit.col(g) * beta.col(g); // C2
+        beta_mult_emit = emit_grid.col(g) * beta.col(g); // C2
         for(z1 = 0; z1 < C; z1++)
             ind_post_zj(z1, g) = cs(g) * (PI(z1, gg) * alphatmp * beta_mult_emit(Eigen::seqN(z1, C, C))).sum();
     }

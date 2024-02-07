@@ -348,9 +348,33 @@ inline MyArr2D get_emission_by_gl(const MyArr2D & gli, const MyArr2D & P, double
                 }
             }
         }
-    emit = emit.colwise() / emit.rowwise().maxCoeff(); // normalize
+    // emit = emit.colwise() / emit.rowwise().maxCoeff(); // normalize
     emit = (emit < minEmission).select(minEmission, emit);
     return emit.transpose();
+}
+
+inline MyArr1D get_emission_by_site(const MyArr1D & gli, const MyArr1D & P, double minEmission = 1e-10)
+{
+    const int C = P.size();
+    MyArr1D emit = MyArr1D::Zero(C * C);
+    int z1, z2, z12, g1, g2;
+    for(z1 = 0; z1 < C; z1++)
+    {
+        for(z2 = 0; z2 < C; z2++)
+        {
+            z12 = z1 * C + z2;
+            for(g1 = 0; g1 <= 1; g1++)
+            {
+                for(g2 = 0; g2 <= 1; g2++)
+                {
+                    emit(z12) +=
+                        gli(g1 + g2) * (g1 * P(z1) + (1 - g1) * (1 - P(z1))) * (g2 * P(z2) + (1 - g2) * (1 - P(z2)));
+                }
+            }
+        }
+    }
+    emit = (emit < minEmission).select(minEmission, emit);
+    return emit;
 }
 
 /*
@@ -392,7 +416,7 @@ inline MyArr2D get_emission_by_grid(const MyArr2D & gli,
             }
         }
         // apply bounding
-        emit.col(g) /= emit.col(g).maxCoeff();
+        emit.col(g) /= emit.col(g).sum();
         emit.col(g) = (emit.col(g) < minEmission).select(minEmission, emit.col(g));
     }
     return emit;
