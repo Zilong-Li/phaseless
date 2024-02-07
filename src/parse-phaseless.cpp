@@ -59,7 +59,7 @@ List parse_joint_post(std::string filename, int chunk = 0)
         for(int ind = 0; ind < par->N; ind++)
         {
             Eigen::Map<const MyArr2D> gli(par->gls[ic].data() + ind * S * 3, S, 3);
-            MyArr2D emit = get_emission_by_gl(gli, P.middleRows(pos_chunk - S, S)).transpose(); // CC x S
+            MyArr2D emit = get_emission_by_gl(gli, P.middleRows(pos_chunk - S, S));
             // first get H ie old PI in fastphase
             MyArr2D H = MyArr2D::Zero(C, S);
             int z1, y1, s; // m * C + z1
@@ -166,22 +166,28 @@ List parse_impute_par(std::string filename, int ic = -1)
     for(int ind = 0; ind < genome->nsamples; ind++) ids.push_back(ind);
     int nchunks = ic < 0 ? genome->nchunks : 1;
     int N = ids.size();
-    List ret(N);
     const int C = genome->C;
+    Bool1D collapse = Bool1D::Constant(genome->nsnps, false);
+    int j{0};
+    for(auto c : genome->collapse) collapse(j++) = (c == 1);
+    List ret(N);
     for(auto ind : ids)
     {
         List gamma(nchunks);
-        for(int c = 0; c < nchunks; c++) {
+        for(int c = 0, ss = 0; c < nchunks; c++) {
             ic = nchunks > 1 ? c : std::max(ic, c);
             const int S = genome->pos[ic].size();
-            const int nGrids = genome->B > 1 ? (S + genome->B - 1) / genome->B : S;
+            const auto se = find_grid_start_end(collapse.segment(ss, S));
+            const int G = se.size();
             Eigen::Map<const MyArr2D> gli(genome->gls[ic].data() + ind * S * 3, S, 3);
-            Eigen::Map<const MyArr2D> P(genome->F[ic].data(), S, C);
-            Eigen::Map<const MyArr2D> PI(genome->PI[ic].data(), C, S);
-            Eigen::Map<const MyArr2D> R(genome->R[ic].data(), 3, S);
-            MyArr2D emit = get_emission_by_gl(gli, P).transpose(); // CC x S
+            Eigen::Map<const MyArr2D> P(genome->P[ic].data(), S, C);
+            Eigen::Map<const MyArr2D> PI(genome->PI[ic].data(), C, G);
+            Eigen::Map<const MyArr2D> R(genome->R[ic].data(), 3, G);
+            // Eigen::Map<const MyArr2D> AE(genome->AE[ic].data(), C, G);
+            MyArr2D emit = get_emission_by_grid(gli, P, collapse.segment(ss, S));
             const auto [alpha, beta, cs] = forward_backwards_diploid(emit, R, PI);
             gamma[c] = alpha * beta;
+            ss += S;
         }
         ret[ind] =  gamma;
     }
