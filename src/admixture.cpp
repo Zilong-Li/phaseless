@@ -162,24 +162,26 @@ void Admixture::protectPars()
     }
 
     if(F.isNaN().any()) cao.error("NaN in F\n");
-    if(!cF)
+    if(cF)
+    {
+        constrainF();
+    }
+    else
     {
         F = (F < clusterFreqThreshold).select(clusterFreqThreshold, F); // lower bound
         F = (F > 1 - clusterFreqThreshold).select(1 - clusterFreqThreshold, F); // upper bound
+        for(int k = 0; k < K; k++) F.middleRows(k * C, C).rowwise() /= F.middleRows(k * C, C).colwise().sum();
     }
-    constrainF();
 }
 
+// need to fix the cluster ordering
 void Admixture::constrainF()
 {
     for(int k = 0; k < K; k++)
     {
-        if(cF)
-        {
-            for(int c = 0; c < C; c++)
-                for(int g = 0; g < G; g++)
-                    if(F(k * C + c, g) < P(c, g)) F(k * C + c, g) = P(c, g);
-        }
+        for(int c = 0; c < C; c++)
+            for(int g = 0; g < G; g++)
+                if(F(k * C + c, g) < P(c, g)) F(k * C + c, g) = P(c, g);
         F.middleRows(k * C, C).rowwise() /= F.middleRows(k * C, C).colwise().sum();
     }
 }
