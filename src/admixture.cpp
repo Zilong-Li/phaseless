@@ -245,7 +245,7 @@ int run_admix_main(Options & opts)
     if(!opts.noaccel)
     {
         MyArr2D F0, Q0, F1, Q1, F2, Q2, Ft, Qt;
-        const int istep{4};
+        const double istep{4};
         double alpha{std::numeric_limits<double>::lowest()}, qdiff, ldiff, stepMax{4}, alphaMax{1280};
         double prevlike{std::numeric_limits<double>::lowest()}, logcheck{0}, loglike{0};
         for(int it = 0; SIG_COND && (it < opts.nadmix / 4); it++)
@@ -282,9 +282,12 @@ int run_admix_main(Options & opts)
                           opts.ltol);
                 break;
             }
-            // save for later comparison
-            Ft = admixer.F;
-            Qt = admixer.Q;
+            if(!opts.force)
+            {
+                // save for later comparison
+                Ft = admixer.F;
+                Qt = admixer.Q;
+            }
             // accel iteration with steplen
             alpha = ((F1 - F0).square().sum() + (Q1 - Q0).square().sum())
                     / ((admixer.F - 2 * F1 + F0).square().sum() + (admixer.Q - 2 * Q1 + Q0).square().sum());
@@ -307,29 +310,32 @@ int run_admix_main(Options & opts)
             for(auto && ll : llike) loglike += ll.get();
             llike.clear(); // clear future and renew
             admixer.updateIteration();
-            // save current pars
-            F2 = admixer.F;
-            Q2 = admixer.Q;
-            // check if normal third iter is better
-            admixer.Q = Qt;
-            admixer.F = Ft;
-            admixer.initIteration();
-            for(int i = 0; i < genome->nsamples; i++)
-                llike.emplace_back(poolit.enqueue(&Admixture::runOptimalWithBigAss, &admixer, i, std::ref(genome)));
-            logcheck = 0;
-            for(auto && ll : llike) logcheck += ll.get();
-            llike.clear(); // clear future and renew
-            admixer.updateIteration();
-            if(logcheck - loglike > 0.1)
-            {
-                stepMax = istep;
-                cao.warn(tim.date(), "reset stepMax to 4, normal EM yields better likelihoods than the accelerated EM.",
-                         logcheck, " -", loglike, " > 0.1");
-            }
-            else
-            {
-                admixer.Q = Q2;
-                admixer.F = F2;
+            if(!opts.force)
+            { // save current pars
+                F2 = admixer.F;
+                Q2 = admixer.Q;
+                // check if normal third iter is better
+                admixer.Q = Qt;
+                admixer.F = Ft;
+                admixer.initIteration();
+                for(int i = 0; i < genome->nsamples; i++)
+                    llike.emplace_back(poolit.enqueue(&Admixture::runOptimalWithBigAss, &admixer, i, std::ref(genome)));
+                logcheck = 0;
+                for(auto && ll : llike) logcheck += ll.get();
+                llike.clear(); // clear future and renew
+                admixer.updateIteration();
+                if(logcheck - loglike > 0.1)
+                {
+                    stepMax = istep;
+                    cao.warn(tim.date(),
+                             "reset stepMax to 4, normal EM yields better likelihoods than the accelerated EM.",
+                             logcheck, " -", loglike, " > 0.1");
+                }
+                else
+                {
+                    admixer.Q = Q2;
+                    admixer.F = F2;
+                }
             }
         }
     }

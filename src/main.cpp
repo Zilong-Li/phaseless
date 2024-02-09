@@ -211,6 +211,9 @@ int main(int argc, char * argv[])
         .help("seed for reproducibility")
         .default_value(999)
         .scan<'i', int>();
+    cmd_admix.add_argument("-f", "--force-accept")
+        .help("always accept the acceleration solution")
+        .flag();
     cmd_admix.add_argument("-F", "--constrain-F")
         .help("apply constraint on F so that it is not smaller than cluster frequency in fastphase model")
         .flag();
@@ -312,6 +315,7 @@ int main(int argc, char * argv[])
             opts.nthreads = cmd_admix.get<int>("--threads");
             opts.nadmix = cmd_admix.get<int>("--iterations");
             opts.cF = cmd_admix.get<bool>("--constrain-F");
+            opts.force = cmd_admix.get<bool>("--force-accept");
             if(opts.in_bin.empty() || cmd_admix.get<bool>("--help")) throw std::runtime_error(cmd_admix.help().str());
             run_admix_main(opts);
         }
