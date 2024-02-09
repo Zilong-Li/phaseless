@@ -248,7 +248,7 @@ int run_admix_main(Options & opts)
         const double istep{4};
         double alpha{std::numeric_limits<double>::lowest()}, qdiff, ldiff, stepMax{4}, alphaMax{1280};
         double prevlike{std::numeric_limits<double>::lowest()}, logcheck{0}, loglike{0};
-        for(int it = 0; SIG_COND && (it < opts.nadmix / 4); it++)
+        for(int it = 0; SIG_COND && (it < opts.nadmix / 3); it++)
         {
             // first accel iteration
             admixer.initIteration();
@@ -273,7 +273,7 @@ int run_admix_main(Options & opts)
             admixer.updateIteration();
             ldiff = it ? loglike - prevlike : NAN;
             prevlike = loglike;
-            cao.print(tim.date(), "SqS3 iteration", it * 4 + 1, ", diff(Q) =", std::scientific, qdiff,
+            cao.print(tim.date(), "SqS3 iteration", it * 3 + 1, ", diff(Q) =", std::scientific, qdiff,
                       ", alpha=", alpha, ", likelihoods =", std::fixed, loglike, ", diff(likelihoods)=", ldiff,
                       ", elapsed", tim.reltime(), " sec");
             if(ldiff < opts.ltol)
