@@ -15,8 +15,8 @@ double Admixture::runOptimalWithBigAss(int ind, const std::unique_ptr<BigAss> & 
     MyArr1D iQ = MyArr1D::Zero(K);
     MyArr1D Hz(C);
     double norm = 0, llike = 0, tmp = 0;
-    int c1, k1, s, c2, c12, ss, ic, g;
-    for(ic = 0, g = 0, ss = 0; ic < genome->nchunks; ic++)
+    int c1, k1, s, c2, c12;
+    for(int ic = 0, g = 0, ss = 0; ic < genome->nchunks; ic++)
     {
         const int S = genome->pos[ic].size();
         const int nGrids = grids[ic];
@@ -69,9 +69,9 @@ double Admixture::runNativeWithBigAss(int ind, const std::unique_ptr<BigAss> & g
     MyArr2D Ekg, iEkc;
     double norm = 0, llike = 0;
     int c1, c2, c12, cc;
-    int k1, k2, k12, s, ss, ic, g;
+    int k1, k2, k12, s;
     MyArr1D iQ = MyArr1D::Zero(K);
-    for(ic = 0, g = 0, ss = 0; ic < genome->nchunks; ic++)
+    for(int ic = 0, g = 0, ss = 0; ic < genome->nchunks; ic++)
     {
         const int S = genome->pos[ic].size();
         const int nGrids = grids[ic];
