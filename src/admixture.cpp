@@ -38,7 +38,7 @@ double Admixture::runOptimalWithBigAss(int ind, const std::unique_ptr<BigAss> & 
                 {
                     c12 = c1 * C + c2;
                     double xz = cl(c12, s);
-                    if(AE(c1, s) < magicTol || AE(c2, s) < magicTol) xz = 0.0;
+                    if(AE(c12, s) < magicTol) xz = 0.0;
                     double zy = Hz(c1) * Hz(c2);
                     tmp += xz * zy;
                 }
@@ -92,7 +92,7 @@ double Admixture::runNativeWithBigAss(int ind, const std::unique_ptr<BigAss> & g
                 {
                     c12 = c1 * C + c2;
                     double xz = cl(c12, s);
-                    if(AE(c1, s) < magicTol || AE(c2, s) < magicTol) xz = 0.0;
+                    if(AE(c12, s) < magicTol) xz = 0.0;
                     for(k1 = 0; k1 < K; k1++)
                     {
                         for(k2 = 0; k2 < K; k2++)
