@@ -16,9 +16,9 @@ class Admixture
     // randon engine
     std::default_random_engine rng = std::default_random_engine{};
     // BOUNDING
-    double clusterFreqThreshold{1e-6}; // threshold for F
-    double admixtureThreshold{1e-6}; // threshold for Q
-    double magicTol{1e-2}; // threshold for cluster frequency estimated from fastphase
+    double clusterFreqThreshold{1e-9}; // threshold for F
+    double admixtureThreshold{1e-9}; // threshold for Q
+    double magicTol{0.0}; // threshold for cluster frequency estimated from fastphase
     bool debug = false;
     bool nonewQ = false;
     bool cF = false;
