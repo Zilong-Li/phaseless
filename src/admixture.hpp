@@ -18,6 +18,7 @@ class Admixture
     // BOUNDING
     double clusterFreqThreshold{1e-6}; // threshold for F
     double admixtureThreshold{1e-6}; // threshold for Q
+    double magicTol{1e-2}; // threshold for cluster frequency estimated from fastphase
     bool debug = false;
     bool nonewQ = false;
     bool cF = false;
@@ -49,7 +50,7 @@ class Admixture
     void updateIteration();
     void protectPars();
     void constrainF();
-    void setFlags(bool, bool, bool);
+    void setFlags(double, double, double, bool, bool, bool);
     void setStartPoint(const std::unique_ptr<BigAss> & genome, std::string qfile);
     double runNativeWithBigAss(int ind, const std::unique_ptr<BigAss> & genome);
     double runOptimalWithBigAss(int ind, const std::unique_ptr<BigAss> & genome);

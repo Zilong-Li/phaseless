@@ -217,6 +217,10 @@ int main(int argc, char * argv[])
     cmd_admix.add_argument("-F", "--constrain-F")
         .help("apply constraint on F so that it is not smaller than cluster frequency in fastphase model")
         .flag();
+    cmd_admix.add_argument("-P", "--min-P")
+        .help("set cluster likelihood to zeros if P (in fastphase) < min-P")
+        .default_value(0.0)
+        .scan<'g', double>();
 
     argparse::ArgumentParser cmd_convert("convert", VERSION, default_arguments::help);
     cmd_convert.add_description("different file format converter");
@@ -308,6 +312,7 @@ int main(int argc, char * argv[])
         }
         else if(program.is_subcommand_used(cmd_admix))
         {
+            opts.ptol = cmd_admix.get<double>("--min-P");
             opts.in_bin.assign(cmd_admix.get("--bin"));
             opts.out.assign(cmd_admix.get("--out"));
             opts.seed = cmd_admix.get<int>("--seed");

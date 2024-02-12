@@ -38,7 +38,7 @@ double Admixture::runOptimalWithBigAss(int ind, const std::unique_ptr<BigAss> & 
                 {
                     c12 = c1 * C + c2;
                     double xz = cl(c12, s);
-                    // if(cf(c1, s) < tol || cf(c2, s) < tol) xz = 0.0;
+                    if(AE(c1, s) < magicTol || AE(c2, s) < magicTol) xz = 0.0;
                     double zy = Hz(c1) * Hz(c2);
                     tmp += xz * zy;
                 }
@@ -92,6 +92,7 @@ double Admixture::runNativeWithBigAss(int ind, const std::unique_ptr<BigAss> & g
                 {
                     c12 = c1 * C + c2;
                     double xz = cl(c12, s);
+                    if(AE(c1, s) < magicTol || AE(c2, s) < magicTol) xz = 0.0;
                     for(k1 = 0; k1 < K; k1++)
                     {
                         for(k2 = 0; k2 < K; k2++)
@@ -208,8 +209,11 @@ void Admixture::setStartPoint(const std::unique_ptr<BigAss> & genome, std::strin
     if(!qfile.empty()) load_csv(Q, qfile);
 }
 
-void Admixture::setFlags(bool debug_, bool nonewQ_, bool cF_)
+void Admixture::setFlags(double cftol, double Ftol, double Qtol, bool debug_, bool nonewQ_, bool cF_)
 {
+    magicTol = cftol;
+    clusterFreqThreshold = Ftol;
+    admixtureThreshold = Qtol;
     debug = debug_;
     nonewQ = nonewQ_;
     cF = cF_;
@@ -239,7 +243,7 @@ int run_admix_main(Options & opts)
 
     Admixture admixer(genome->nsamples, genome->G, genome->C, opts.K, opts.seed);
     cao.warn(tim.date(), "-> running admixture with seed =", opts.seed);
-    admixer.setFlags(opts.debug, opts.nQ, opts.cF);
+    admixer.setFlags(opts.ptol, opts.ftol, opts.qtol, opts.debug, opts.nQ, opts.cF);
     admixer.setStartPoint(genome, opts.in_qfile);
     vector<future<double>> llike;
     if(!opts.noaccel)
