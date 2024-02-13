@@ -57,20 +57,19 @@ void FastPhaseK2::setFlags(double tol_p, double tol_f, double tol_q, bool debug_
 
 void FastPhaseK2::refillHaps(int strategy)
 {
-    int s{0}, ic{0}, g{0}, i{0};
+    int s{0}, c{0}, ic{0}, g{0}, i{0}, sg{0};
     int nchunks = pos_chunk.size() - 1;
     // bin hapsum per 100 snps ?
-    for(ic = 0; ic < nchunks; ic++)
+    for(c = 0; c < C; c++)
     {
-        const int S = pos_chunk[ic + 1] - pos_chunk[ic];
-        const auto se = find_grid_start_end(collapse.segment(pos_chunk[ic], S));
-        for(g = 0; g < (int)se.size(); g++)
+        for(ic = 0, sg = 0; ic < nchunks; ic++)
         {
-            for(int c = 0; c < C; c++)
+            const int S = pos_chunk[ic + 1] - pos_chunk[ic];
+            const auto se = find_grid_start_end(collapse.segment(pos_chunk[ic], S));
+            for(g = 0; g < (int)se.size(); g++, sg++)
             {
-
-                if(HapSum(c, g) >= minHapfreq) continue;
-                MyArr1D h = HapSum.col(g);
+                if(HapSum(c, sg) >= minHapfreq) continue;
+                MyArr1D h = HapSum.col(sg);
                 h(c) = 0; // do not re-sample current
                 h /= h.sum();
                 MyFloat1D p(h.data(), h.data() + h.size());
@@ -87,11 +86,11 @@ void FastPhaseK2::refillHaps(int strategy)
                     else if(strategy == 2)
                     {
                         h.maxCoeff(&choice); // if no binning, this may be better
-                        P(i + pos_chunk[ic], c) = P(g, choice);
+                        P(i + pos_chunk[ic], c) = P(i + pos_chunk[ic], choice);
                     }
                     else
                     {
-                        P(i + pos_chunk[ic], c) = P(g, choice);
+                        P(i + pos_chunk[ic], c) = P(i + pos_chunk[ic], choice);
                     }
                     s++;
                 }
