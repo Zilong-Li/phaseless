@@ -277,8 +277,6 @@ int run_phaseless_main(Options & opts)
     std::unique_ptr<BigAss> genome = std::make_unique<BigAss>();
     init_bigass(genome, opts);
     vector<future<double>> res;
-    std::ofstream oanc(opts.out + ".Q");
-    std::ofstream op(opts.out + ".P");
     Phaseless faith(opts.K, opts.C, genome->nsamples, genome->nsnps, opts.seed);
     faith.setFlags(opts.ptol, opts.ftol, opts.qtol, opts.debug, opts.nQ, opts.nP, opts.nF, opts.nR);
     faith.setStartPoint(opts.in_qfile, opts.in_pfile);
@@ -409,9 +407,16 @@ int run_phaseless_main(Options & opts)
             }
         }
     }
+    std::ofstream oanc(opts.out + ".Q");
     oanc << std::fixed << faith.Q.transpose().format(fmt10) << "\n";
     oanc.close();
+    std::ofstream op(opts.out + ".P");
     op << faith.P.format(fmt6) << "\n";
+    if(opts.oF)
+    {
+        std::ofstream of(opts.out + ".F");
+        for(size_t k = 0; k < faith.F.size(); k++) of << faith.F[k].format(fmt6) << "\n";
+    }
     std::unique_ptr<Pars> par = std::make_unique<Pars>();
     par->init(faith.K, faith.C, faith.M, faith.N, faith.er, faith.P, faith.Q, faith.F);
     par->pos = genome->pos;
