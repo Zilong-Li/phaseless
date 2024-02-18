@@ -15,8 +15,8 @@ double Admixture::runOptimalWithBigAss(int ind, const std::unique_ptr<BigAss> & 
     MyArr1D iQ = MyArr1D::Zero(K);
     MyArr1D Hz(C);
     double norm = 0, llike = 0, tmp = 0;
-    int c1, k1, s, c2, c12;
-    for(int ic = 0, g = 0, ss = 0; ic < genome->nchunks; ic++)
+    int c1, k1, s, c2, c12, ic, g, ss, ng;
+    for(ic = 0, g = 0, ss = 0, ng = 0; ic < genome->nchunks; ic++)
     {
         const int S = genome->pos[ic].size();
         const int nGrids = grids[ic];
@@ -31,21 +31,28 @@ double Admixture::runOptimalWithBigAss(int ind, const std::unique_ptr<BigAss> & 
         Ekg.setZero(K, nGrids);
         for(s = 0; s < nGrids; s++, g++)
         {
-            for(c1 = 0; c1 < C; c1++) Hz(c1) = (Q.col(ind) * F(Eigen::seqN(c1, K, C), g)).sum();
-            for(norm = 0, c1 = 0; c1 < C; c1++)
+            if(magicTol > 0 && pi.col(g).maxCoeff() < magicTol)
             {
-                for(tmp = 0, c2 = 0; c2 < C; c2++)
-                {
-                    c12 = c1 * C + c2;
-                    double xz = cl(c12, s);
-                    if(AE(c12, s) < magicTol) xz = 0.0;
-                    double zy = Hz(c1) * Hz(c2);
-                    tmp += xz * zy;
-                }
-                norm += tmp;
-                kapa(Eigen::seqN(c1, K, C), s) = (Q.col(ind) * F(Eigen::seqN(c1, K, C), g)) * tmp / Hz(c1);
+                kapa.col(s).fill(1.0);
             }
-            llike += log(norm);
+            else
+            {
+                ng++;
+                for(c1 = 0; c1 < C; c1++) Hz(c1) = (Q.col(ind) * F(Eigen::seqN(c1, K, C), g)).sum();
+                for(norm = 0, c1 = 0; c1 < C; c1++)
+                {
+                    for(tmp = 0, c2 = 0; c2 < C; c2++)
+                    {
+                        c12 = c1 * C + c2;
+                        double xz = cl(c12, s);
+                        double zy = Hz(c1) * Hz(c2);
+                        tmp += xz * zy;
+                    }
+                    norm += tmp;
+                    kapa(Eigen::seqN(c1, K, C), s) = (Q.col(ind) * F(Eigen::seqN(c1, K, C), g)) * tmp / Hz(c1);
+                }
+                llike += log(norm);
+            }
             kapa.col(s) /= kapa.col(s).sum();
             for(k1 = 0; k1 < K; k1++) Ekg(k1, s) = 2 * kapa.middleRows(k1 * C, C).col(s).sum();
         }
@@ -57,7 +64,7 @@ double Admixture::runOptimalWithBigAss(int ind, const std::unique_ptr<BigAss> & 
         }
     }
     // update Q, iQ.sum() should be 2M
-    if(!nonewQ) Q.col(ind) = iQ / (2 * G);
+    if(!nonewQ) Q.col(ind) = iQ / (2 * ng);
 
     return llike;
 }
@@ -92,7 +99,7 @@ double Admixture::runNativeWithBigAss(int ind, const std::unique_ptr<BigAss> & g
                 {
                     c12 = c1 * C + c2;
                     double xz = cl(c12, s);
-                    if(AE(c12, s) < magicTol) xz = 0.0;
+                    if(magicTol > 0 && pi.col(g).maxCoeff() < magicTol) xz = 0.0;
                     for(k1 = 0; k1 < K; k1++)
                     {
                         for(k2 = 0; k2 < K; k2++)
@@ -156,7 +163,7 @@ void Admixture::protectPars()
 {
     if(!nonewQ)
     {
-        if(Q.isNaN().any()) cao.error("NaN in Q\n");
+        if(Q.isNaN().any()) cao.error("NaN in Q\n", Q);
         Q = (Q < admixtureThreshold).select(admixtureThreshold, Q); // lower bound
         Q = (Q > 1 - admixtureThreshold).select(1 - admixtureThreshold, Q); // upper bound
         Q.rowwise() /= Q.colwise().sum(); // normalize Q per individual
@@ -187,8 +194,13 @@ void Admixture::constrainF()
     }
 }
 
-void Admixture::setStartPoint(const std::unique_ptr<BigAss> & genome, std::string qfile)
+void Admixture::setStartPoint(const std::unique_ptr<BigAss> & genome, std::string qfile, std::string pifile)
 {
+    if(!pifile.empty())
+    {
+        pi.setZero(C, G);
+        load_csv(pi, pifile);
+    }
     P = MyArr2D(C, G);
     collapse = Bool1D::Constant(genome->nsnps, false);
     int ic{0}, sg{0}, ss{0};
@@ -243,8 +255,8 @@ int run_admix_main(Options & opts)
 
     Admixture admixer(genome->nsamples, genome->G, genome->C, opts.K, opts.seed);
     cao.warn(tim.date(), "-> running admixture with seed =", opts.seed);
-    admixer.setFlags(opts.ptol, opts.ftol, opts.qtol, opts.debug, opts.nQ, opts.cF);
-    admixer.setStartPoint(genome, opts.in_qfile);
+    admixer.setFlags(opts.tol_pi, opts.ftol, opts.qtol, opts.debug, opts.nQ, opts.cF);
+    admixer.setStartPoint(genome, opts.in_qfile, opts.pi_file);
     vector<future<double>> llike;
     if(!opts.noaccel)
     {

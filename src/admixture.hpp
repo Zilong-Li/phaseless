@@ -39,7 +39,7 @@ class Admixture
     // SHARED VARIBALES
     const int N, G, C, K; // M: number of grids in total
     MyArr2D F; // (C x K) x M
-    MyArr2D P; // C x M, for each k, F <= P
+    MyArr2D P, pi; // C x M, for each k, F <= P
     MyArr2D Q; // K x N
     MyArr2D Ekc; // (C * K) x M, expected number of alleles per c per k
     MyArr2D NormF; // K x M
@@ -51,7 +51,7 @@ class Admixture
     void protectPars();
     void constrainF();
     void setFlags(double, double, double, bool, bool, bool);
-    void setStartPoint(const std::unique_ptr<BigAss> & genome, std::string qfile);
+    void setStartPoint(const std::unique_ptr<BigAss> & genome, std::string qfile, std::string pifile);
     double runNativeWithBigAss(int ind, const std::unique_ptr<BigAss> & genome);
     double runOptimalWithBigAss(int ind, const std::unique_ptr<BigAss> & genome);
 };

@@ -105,7 +105,7 @@ struct Options
     bool noaccel{0}, noscreen{0}, single_chunk{0}, debug{0}, collapse{0};
     bool nQ{0}, nP{0}, nF{0}, nR{0}, aQ{0}, oVCF{0}, eHap{0}, oF{0}, cF{0}, force{0};
     std::string out, in_beagle, in_vcf, in_bin, in_impute, in_joint;
-    std::string samples{""}, region{""}, in_plink{""}, in_qfile{""}, in_pfile{""}, in_rfile{""};
+    std::string samples{""}, region{""}, in_plink{""}, in_qfile{""}, in_pfile{""}, in_rfile{""}, pi_file{""};
     std::string opts_in_effect{"Options in effect:\n   "};
 };
 
