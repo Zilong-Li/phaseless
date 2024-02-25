@@ -31,23 +31,28 @@ double Admixture::runOptimalWithBigAss(int ind, const std::unique_ptr<BigAss> & 
         Ekg.setZero(K, nGrids);
         for(s = 0; s < nGrids; s++, g++)
         {
-            ng++;
-            for(c1 = 0; c1 < C; c1++) Hz(c1) = (Q.col(ind) * F(Eigen::seqN(c1, K, C), g)).sum();
-            for(norm = 0, c1 = 0; c1 < C; c1++)
+            if(magicTol > 0 && pi.col(g).maxCoeff() < magicTol)
             {
-                for(tmp = 0, c2 = 0; c2 < C; c2++)
-                {
-                    c12 = c1 * C + c2;
-                    double xz = cl(c12, s);
-                    double zy = Hz(c1) * Hz(c2);
-                    if(magicTol > 0 && pi(c1, g) < magicTol) xz = 0.0;
-                    if(magicTol > 0 && pi(c2, g) < magicTol) xz = 0.0;
-                    tmp += xz * zy;
-                }
-                norm += tmp;
-                kapa(Eigen::seqN(c1, K, C), s) = (Q.col(ind) * F(Eigen::seqN(c1, K, C), g)) * tmp / Hz(c1);
+                kapa.col(s).fill(1.0);
             }
-            llike += log(norm);
+            else
+            {
+                ng++;
+                for(c1 = 0; c1 < C; c1++) Hz(c1) = (Q.col(ind) * F(Eigen::seqN(c1, K, C), g)).sum();
+                for(norm = 0, c1 = 0; c1 < C; c1++)
+                {
+                    for(tmp = 0, c2 = 0; c2 < C; c2++)
+                    {
+                        c12 = c1 * C + c2;
+                        double xz = cl(c12, s);
+                        double zy = Hz(c1) * Hz(c2);
+                        tmp += xz * zy;
+                    }
+                    norm += tmp;
+                    kapa(Eigen::seqN(c1, K, C), s) = (Q.col(ind) * F(Eigen::seqN(c1, K, C), g)) * tmp / Hz(c1);
+                }
+                llike += log(norm);
+            }
             kapa.col(s) /= kapa.col(s).sum();
             for(k1 = 0; k1 < K; k1++) Ekg(k1, s) = 2 * kapa.middleRows(k1 * C, C).col(s).sum();
         }
@@ -94,8 +99,7 @@ double Admixture::runNativeWithBigAss(int ind, const std::unique_ptr<BigAss> & g
                 {
                     c12 = c1 * C + c2;
                     double xz = cl(c12, s);
-                    if(magicTol > 0 && pi(c1, g) < magicTol) xz = 0.0;
-                    if(magicTol > 0 && pi(c2, g) < magicTol) xz = 0.0;
+                    if(magicTol > 0 && pi.col(g).maxCoeff() < magicTol) xz = 0.0;
                     for(k1 = 0; k1 < K; k1++)
                     {
                         for(k2 = 0; k2 < K; k2++)
@@ -192,7 +196,7 @@ void Admixture::constrainF()
 
 void Admixture::setStartPoint(const std::unique_ptr<BigAss> & genome, std::string qfile, std::string pifile)
 {
-    if(!pifile.empty() && magicTol > 0)
+    if(!pifile.empty())
     {
         pi.setZero(C, G);
         load_csv(pi, pifile);
