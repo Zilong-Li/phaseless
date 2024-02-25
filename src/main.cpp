@@ -192,16 +192,13 @@ int main(int argc, char * argv[])
     cmd_admix.add_argument("-b", "--bin")
         .help("binary format from impute command as input")
         .default_value(std::string{""});
-    cmd_admix.add_argument("-p", "--pi-file")
-        .help("pi file from impute command")
-        .default_value(std::string{""});
     cmd_admix.add_argument("-k", "--ancestry")
         .help("number of ancestry in admixture assumption")
         .default_value(2)
         .scan<'i', int>();
     cmd_admix.add_argument("-i", "--iterations")
         .help("number of maximun EM iterations")
-        .default_value(1000)
+        .default_value(2000)
         .scan<'i', int>();
     cmd_admix.add_argument("-n", "--threads")
         .help("number of threads")
@@ -220,8 +217,8 @@ int main(int argc, char * argv[])
     cmd_admix.add_argument("-F", "--constrain-F")
         .help("apply constraint on F so that it is not smaller than cluster frequency in fastphase model")
         .flag();
-    cmd_admix.add_argument("-P", "--min-pi")
-        .help("set cluster likelihood to zeros if PI (in fastphase) < min-pi")
+    cmd_admix.add_argument("-P", "--min-P")
+        .help("set cluster likelihood to zeros if P (in fastphase) < min-P")
         .default_value(0.0)
         .scan<'g', double>();
 
@@ -315,9 +312,8 @@ int main(int argc, char * argv[])
         }
         else if(program.is_subcommand_used(cmd_admix))
         {
-            opts.tol_pi = cmd_admix.get<double>("--min-pi");
+            opts.ptol = cmd_admix.get<double>("--min-P");
             opts.in_bin.assign(cmd_admix.get("--bin"));
-            opts.pi_file.assign(cmd_admix.get("--pi-file"));
             opts.out.assign(cmd_admix.get("--out"));
             opts.seed = cmd_admix.get<int>("--seed");
             opts.K = cmd_admix.get<int>("-k");
