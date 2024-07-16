@@ -59,8 +59,7 @@ List parse_joint_post(std::string filename, int chunk = 0)
         for(int ind = 0; ind < par->N; ind++)
         {
             Eigen::Map<const MyArr2D> gli(par->gls[ic].data() + ind * S * 3, S, 3);
-            MyArr2D emit = get_emission_by_gl(gli, P.middleRows(pos_chunk - S, S)).transpose(); // CC x S
-            MyArr2D alpha(CC, S), beta(CC, S);
+            MyArr2D emit = get_emission_by_gl(gli, P.middleRows(pos_chunk - S, S));
             // first get H ie old PI in fastphase
             MyArr2D H = MyArr2D::Zero(C, S);
             int z1, y1, s; // m * C + z1
@@ -68,7 +67,7 @@ List parse_joint_post(std::string filename, int chunk = 0)
                 for(z1 = 0; z1 < C; z1++)
                     for(y1 = 0; y1 < par->K; y1++) H(z1, s) += Q(y1, ind) * par->F[y1][(pos_chunk - S + s) * C + z1];
             // cs is 1 / colsum(alpha)
-            auto cs = forward_backwards_diploid(alpha, beta, emit, R.middleCols(pos_chunk - S, S), H);
+            const auto [alpha, beta, cs] = forward_backwards_diploid(emit, R.middleCols(pos_chunk - S, S), H);
             MyArr2D gamma = alpha * beta;
             ret_gamma[ind] = MyFloat1D(gamma.data(), gamma.data() + gamma.size());
             ind_post_zg1.setZero(), ind_post_zg2.setZero(), ind_post_y.setZero(), ind_post_zy.setZero();
@@ -141,7 +140,7 @@ List parse_impute_opt(std::string filename) {
     assert((bool)ec == false);
     return List::create(Named("C") = genome->C,
                         Named("B") = genome->B,
-                        Named("G") = genome->G,
+                        Named("clusterfreq") = genome->AE,
                         Named("chunksize") = genome->chunksize,
                         Named("nsamples") = genome->nsamples,
                         Named("nsnps") = genome->nsnps,
@@ -170,32 +169,34 @@ List parse_impute_par(std::string filename, int ic = -1)
     std::unique_ptr<BigAss> genome = std::make_unique<BigAss>(alpaca::deserialize<OPTIONS, BigAss>(ifs, filesize, ec));
     ifs.close();
     assert((bool)ec == false);
-    MyArr2D alpha, beta, ae;
     Int1D ids;
     for(int ind = 0; ind < genome->nsamples; ind++) ids.push_back(ind);
     int nchunks = ic < 0 ? genome->nchunks : 1;
     int N = ids.size();
+    const int C = genome->C;
+    Bool1D collapse = Bool1D::Constant(genome->nsnps, false);
+    int j{0};
+    for(auto c : genome->collapse) collapse(j++) = (c == 1);
     List ret(N);
     for(auto ind : ids)
     {
-        List alphaI(nchunks), betaI(nchunks), aeI(nchunks);
-        for(int c = 0; c < nchunks; c++) {
+        List gamma(nchunks);
+        for(int c = 0, ss = 0; c < nchunks; c++) {
             ic = nchunks > 1 ? c : std::max(ic, c);
-            const int iM = genome->pos[ic].size();
-            const int nGrids = genome->B > 1 ? (iM + genome->B - 1) / genome->B : iM;
-            alpha.setZero(genome->C * genome->C, nGrids);
-            beta.setZero(genome->C * genome->C, nGrids);
-            get_cluster_probability(ind, iM, alpha, beta, genome->gls[ic], genome->R[ic], genome->PI[ic], genome->F[ic]);
-            if(!((1 - (alpha * beta).colwise().sum()).abs() < 1e-6).all()) cao.error("gamma sum is not 1.0!\n");
-            ae.setZero(genome->C * genome->C, nGrids);
-            get_cluster_frequency(ae, genome->R[ic], genome->PI[ic]);
-            alphaI[c] = alpha;
-            betaI[c] = beta;
-            aeI[c] = ae;
+            const int S = genome->pos[ic].size();
+            const auto se = find_grid_start_end(collapse.segment(ss, S));
+            const int G = se.size();
+            Eigen::Map<const MyArr2D> gli(genome->gls[ic].data() + ind * S * 3, S, 3);
+            Eigen::Map<const MyArr2D> P(genome->P[ic].data(), S, C);
+            Eigen::Map<const MyArr2D> PI(genome->PI[ic].data(), C, G);
+            Eigen::Map<const MyArr2D> R(genome->R[ic].data(), 3, G);
+            // Eigen::Map<const MyArr2D> AE(genome->AE[ic].data(), C, G);
+            MyArr2D emit = get_emission_by_grid(gli, P, collapse.segment(ss, S));
+            const auto [alpha, beta, cs] = forward_backwards_diploid(emit, R, PI);
+            gamma[c] = alpha * beta;
+            ss += S;
         }
-        ret[ind] =  List::create(Named("alpha") = alphaI,
-                                 Named("beta") = betaI,
-                                 Named("ae") = aeI);
+        ret[ind] =  gamma;
     }
-    return ret;
+    return List::create(Named("gamma")=ret);
 }

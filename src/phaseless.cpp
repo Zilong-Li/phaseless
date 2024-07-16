@@ -13,7 +13,7 @@
 
 using namespace std;
 
-void Phaseless::initRecombination(const Int1D & pos, std::string rfile, double Ne, int B)
+void Phaseless::initRecombination(const Int1D & pos, std::string rfile, int B, double Ne)
 {
     nGen = 4 * Ne / C;
     dist = calc_position_distance(pos);
@@ -26,7 +26,7 @@ void Phaseless::initRecombination(const Int1D & pos, std::string rfile, double N
     R = er2R(er);
 }
 
-void Phaseless::initRecombination(const Int2D & pos, std::string rfile, double Ne, int B)
+void Phaseless::initRecombination(const Int2D & pos, std::string rfile, int B, double Ne)
 {
     nGen = 4 * Ne / C;
     int nchunks = pos.size();
@@ -38,7 +38,7 @@ void Phaseless::initRecombination(const Int2D & pos, std::string rfile, double N
         pos_chunk[i] = ss;
         auto tmp = calc_position_distance(pos[i]);
         dist.insert(dist.end(), tmp.begin(), tmp.end());
-        R.middleCols(ss, pos[i].size()) = calc_transRate_diploid(dist, nGen);
+        R.middleCols(ss, pos[i].size()) = calc_transRate_diploid(tmp, nGen);
         ss += pos[i].size();
     }
     pos_chunk[nchunks] = ss; // add sentinel
@@ -237,8 +237,7 @@ double Phaseless::runForwardBackwards(const int ind, const int ic, const MyFloat
 {
     const int S = pos_chunk[ic + 1] - pos_chunk[ic];
     Eigen::Map<const MyArr2D> gli(GL.data() + ind * S * 3, S, 3);
-    MyArr2D emit = get_emission_by_gl(gli, P.middleRows(pos_chunk[ic], S)).transpose(); // CC x S
-    MyArr2D alpha(CC, S), beta(CC, S);
+    MyArr2D emit = get_emission_by_gl(gli, P.middleRows(pos_chunk[ic], S)); // CC x S
     // first get H ie old PI in fastphase
     MyArr2D H = MyArr2D::Zero(C, S);
     int z1, y1, s;
@@ -246,7 +245,7 @@ double Phaseless::runForwardBackwards(const int ind, const int ic, const MyFloat
         for(z1 = 0; z1 < C; z1++)
             for(y1 = 0; y1 < K; y1++) H(z1, s) += Q(y1, ind) * F[y1](z1, s + pos_chunk[ic]);
     // cs is 1 / colsum(alpha)
-    auto cs = forward_backwards_diploid(alpha, beta, emit, R.middleCols(pos_chunk[ic], S), H);
+    const auto [alpha, beta, cs] = forward_backwards_diploid(emit, R.middleCols(pos_chunk[ic], S), H);
     // get posterios
     getPosterios(ind, ic, gli, emit, H, cs, alpha, beta, finalIter);
     return (1 / cs).log().sum();
@@ -277,10 +276,7 @@ int run_phaseless_main(Options & opts)
 
     std::unique_ptr<BigAss> genome = std::make_unique<BigAss>();
     init_bigass(genome, opts);
-    Eigen::IOFormat fmt(6, Eigen::DontAlignCols, " ", "\n");
     vector<future<double>> res;
-    std::ofstream oanc(opts.out + ".Q");
-    std::ofstream op(opts.out + ".P");
     Phaseless faith(opts.K, opts.C, genome->nsamples, genome->nsnps, opts.seed);
     faith.setFlags(opts.ptol, opts.ftol, opts.qtol, opts.debug, opts.nQ, opts.nP, opts.nF, opts.nR);
     faith.setStartPoint(opts.in_qfile, opts.in_pfile);
@@ -411,10 +407,16 @@ int run_phaseless_main(Options & opts)
             }
         }
     }
-    faith.Q = (faith.Q * 1e6).round() / 1e6;
-    oanc << std::fixed << faith.Q.transpose().format(fmt) << "\n";
+    std::ofstream oanc(opts.out + ".Q");
+    oanc << std::fixed << faith.Q.transpose().format(fmt10) << "\n";
     oanc.close();
-    op << std::fixed << faith.P.format(fmt) << "\n";
+    std::ofstream op(opts.out + ".P");
+    op << faith.P.format(fmt6) << "\n";
+    if(opts.oF)
+    {
+        std::ofstream of(opts.out + ".F");
+        for(size_t k = 0; k < faith.F.size(); k++) of << faith.F[k].format(fmt6) << "\n";
+    }
     std::unique_ptr<Pars> par = std::make_unique<Pars>();
     par->init(faith.K, faith.C, faith.M, faith.N, faith.er, faith.P, faith.Q, faith.F);
     par->pos = genome->pos;

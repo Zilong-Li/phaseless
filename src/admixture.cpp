@@ -12,41 +12,38 @@ using namespace std;
 double Admixture::runOptimalWithBigAss(int ind, const std::unique_ptr<BigAss> & genome)
 {
     MyArr2D kapa, Ekg;
-    MyArr2D alpha, beta, ae, cl;
     MyArr1D iQ = MyArr1D::Zero(K);
     MyArr1D Hz(C), gammaK(C);
     double norm = 0, llike = 0, tmp = 0;
     int c1, k1, s, c2, c12;
-    for(int ic = 0, m = 0; ic < genome->nchunks; ic++)
+    for(int ic = 0, g = 0, ss = 0; ic < genome->nchunks; ic++)
     {
-        const int nsnps = genome->pos[ic].size();
-        const int nGrids = genome->B > 1 ? (nsnps + genome->B - 1) / genome->B : nsnps;
-        alpha.setZero(C * C, nGrids);
-        beta.setZero(C * C, nGrids);
-        get_cluster_probability(ind, nsnps, alpha, beta, genome->gls[ic], genome->R[ic], genome->PI[ic],
-                               genome->F[ic]); // return gamma
-        ae.setZero(C * C, nGrids);
-        get_cluster_frequency(ae, genome->R[ic], genome->PI[ic]);
-        cl = alpha * beta / ae;
-        cl.rowwise() /= cl.colwise().sum();
+        const int S = genome->pos[ic].size();
+        const int nGrids = grids[ic];
+        Eigen::Map<const MyArr2D> gli(genome->gls[ic].data() + ind * S * 3, S, 3);
+        Eigen::Map<const MyArr2D> P(genome->P[ic].data(), S, C);
+        Eigen::Map<const MyArr2D> PI(genome->PI[ic].data(), C, nGrids);
+        Eigen::Map<const MyArr2D> R(genome->R[ic].data(), 3, nGrids);
+        Eigen::Map<const MyArr2D> AE(genome->AE[ic].data(), C * C, nGrids);
+        const auto cl = get_cluster_likelihoods(gli, P, R, PI, AE, collapse.segment(ss, S));
+        ss += S;
         kapa.setZero(C * K, nGrids); // C x K x M layout
         Ekg.setZero(K, nGrids);
-        for(s = 0; s < nGrids; s++, m++)
+        for(s = 0; s < nGrids; s++, g++)
         {
-            for(c1 = 0; c1 < C; c1++) Hz(c1) = (Q.col(ind) * F(Eigen::seqN(c1, K, C), m)).sum();
-            gammaK = ae.col(s).reshaped(C, C).colwise().sum();
+            for(c1 = 0; c1 < C; c1++) Hz(c1) = (Q.col(ind) * F(Eigen::seqN(c1, K, C), g)).sum();
             for(norm = 0, c1 = 0; c1 < C; c1++)
             {
                 for(tmp = 0, c2 = 0; c2 < C; c2++)
                 {
                     c12 = c1 * C + c2;
                     double xz = cl(c12, s);
-                    if(gammaK(c1) < 0.01 || gammaK(c2) < 0.01) xz = 0.0;
+                    if(AE(c12, s) < magicTol) xz = 0.0;
                     double zy = Hz(c1) * Hz(c2);
                     tmp += xz * zy;
                 }
                 norm += tmp;
-                kapa(Eigen::seqN(c1, K, C), s) = (Q.col(ind) * F(Eigen::seqN(c1, K, C), m)) * tmp / Hz(c1);
+                kapa(Eigen::seqN(c1, K, C), s) = (Q.col(ind) * F(Eigen::seqN(c1, K, C), g)) * tmp / Hz(c1);
             }
             llike += log(norm);
             kapa.col(s) /= kapa.col(s).sum();
@@ -55,12 +52,12 @@ double Admixture::runOptimalWithBigAss(int ind, const std::unique_ptr<BigAss> & 
         iQ += Ekg.rowwise().sum();
         { // for update F
             std::scoped_lock<std::mutex> lock(mutex_it); // sum over all samples
-            Ekc.middleCols(m - nGrids, nGrids) += 2 * kapa;
-            NormF.middleCols(m - nGrids, nGrids) += Ekg;
+            Ekc.middleCols(g - nGrids, nGrids) += 2 * kapa;
+            NormF.middleCols(g - nGrids, nGrids) += Ekg;
         }
     }
     // update Q, iQ.sum() should be 2M
-    if(!nonewQ) Q.col(ind) = iQ / (2 * M);
+    if(!nonewQ) Q.col(ind) = iQ / (2 * G);
 
     return llike;
 }
@@ -69,26 +66,25 @@ double Admixture::runOptimalWithBigAss(int ind, const std::unique_ptr<BigAss> & 
 double Admixture::runNativeWithBigAss(int ind, const std::unique_ptr<BigAss> & genome)
 {
     MyArr2D w((C * C + C) / 2, K * K);
-    MyArr2D Ekg, iEkc, alpha, beta, ae, cl;
+    MyArr2D Ekg, iEkc;
     double norm = 0, llike = 0;
     int c1, c2, c12, cc;
     int k1, k2, k12, s;
     MyArr1D iQ = MyArr1D::Zero(K);
-    MyArr1D gammaK(C);
-    for(int ic = 0, m = 0; ic < genome->nchunks; ic++)
+    for(int ic = 0, g = 0, ss = 0; ic < genome->nchunks; ic++)
     {
-        const int nsnps = genome->pos[ic].size();
-        const int nGrids = genome->B > 1 ? (nsnps + genome->B - 1) / genome->B : nsnps;
-        alpha.setZero(C * C, nGrids);
-        beta.setZero(C * C, nGrids);
-        get_cluster_probability(ind, nsnps, alpha, beta, genome->gls[ic], genome->R[ic], genome->PI[ic], genome->F[ic]);
-        ae.setZero(C * C, nGrids);
-        get_cluster_frequency(ae, genome->R[ic], genome->PI[ic]);
-        cl = alpha * beta / ae;
-        cl.rowwise() /= cl.colwise().sum();
+        const int S = genome->pos[ic].size();
+        const int nGrids = grids[ic];
+        Eigen::Map<const MyArr2D> gli(genome->gls[ic].data() + ind * S * 3, S, 3);
+        Eigen::Map<const MyArr2D> P(genome->P[ic].data(), S, C);
+        Eigen::Map<const MyArr2D> PI(genome->PI[ic].data(), C, nGrids);
+        Eigen::Map<const MyArr2D> R(genome->R[ic].data(), 3, nGrids);
+        Eigen::Map<const MyArr2D> AE(genome->AE[ic].data(), C * C, nGrids);
+        const auto cl = get_cluster_likelihoods(gli, P, R, PI, AE, collapse.segment(ss, S));
+        ss += S;
         iEkc.setZero(C * K, nGrids);
         Ekg.setZero(K, nGrids);
-        for(s = 0; s < nGrids; s++, m++)
+        for(s = 0; s < nGrids; s++, g++)
         {
             gammaK = ae.col(s).reshaped(C, C).colwise().sum();
             for(norm = 0, cc = 0, c1 = 0; c1 < C; c1++)
@@ -97,13 +93,17 @@ double Admixture::runNativeWithBigAss(int ind, const std::unique_ptr<BigAss> & g
                 {
                     c12 = c1 * C + c2;
                     double xz = cl(c12, s);
+<<<<<<< HEAD
                     if(gammaK(c1) < 0.01 || gammaK(c2) < 0.01) xz = 0.0;
+=======
+                    if(AE(c12, s) < magicTol) xz = 0.0;
+>>>>>>> dev
                     for(k1 = 0; k1 < K; k1++)
                     {
                         for(k2 = 0; k2 < K; k2++)
                         {
                             k12 = k1 * K + k2;
-                            w(cc, k12) = xz * F(k1 * C + c1, m) * Q(k1, ind) * F(k2 * C + c2, m) * Q(k2, ind);
+                            w(cc, k12) = xz * F(k1 * C + c1, g) * Q(k1, ind) * F(k2 * C + c2, g) * Q(k2, ind);
                             if(c1 != c2) w(cc, k12) *= 2;
                             norm += w(cc, k12);
                         }
@@ -135,20 +135,20 @@ double Admixture::runNativeWithBigAss(int ind, const std::unique_ptr<BigAss> & g
         iQ += Ekg.rowwise().sum();
         {
             std::scoped_lock<std::mutex> lock(mutex_it); // sum over all samples
-            Ekc.middleCols(m - nGrids, nGrids) += iEkc;
-            NormF.middleCols(m - nGrids, nGrids) += Ekg;
+            Ekc.middleCols(g - nGrids, nGrids) += iEkc;
+            NormF.middleCols(g - nGrids, nGrids) += Ekg;
         }
     }
     // update Q, iQ.sum() should be 2M
-    if(!nonewQ) Q.col(ind) = iQ / (2 * M);
+    if(!nonewQ) Q.col(ind) = iQ / (2 * G);
 
     return llike;
 }
 
 void Admixture::initIteration()
 {
-    Ekc.setZero(C * K, M);
-    NormF.setZero(K, M);
+    Ekc.setZero(C * K, G);
+    NormF.setZero(K, G);
 }
 
 void Admixture::updateIteration()
@@ -168,35 +168,60 @@ void Admixture::protectPars()
     }
 
     if(F.isNaN().any()) cao.error("NaN in F\n");
-    F = (F < clusterFreqThreshold).select(clusterFreqThreshold, F); // lower bound
-    F = (F > 1 - clusterFreqThreshold).select(1 - clusterFreqThreshold, F); // upper bound
-    normalizeF();
+    if(cF)
+    {
+        constrainF();
+    }
+    else
+    {
+        F = (F < clusterFreqThreshold).select(clusterFreqThreshold, F); // lower bound
+        F = (F > 1 - clusterFreqThreshold).select(1 - clusterFreqThreshold, F); // upper bound
+        for(int k = 0; k < K; k++) F.middleRows(k * C, C).rowwise() /= F.middleRows(k * C, C).colwise().sum();
+    }
 }
 
-void Admixture::normalizeF()
+// need to fix the cluster ordering
+void Admixture::constrainF()
 {
-    for(int k = 0; k < K; k++) // normalize F per snp per k
+    for(int k = 0; k < K; k++)
+    {
+        for(int c = 0; c < C; c++)
+            for(int g = 0; g < G; g++)
+                if(F(k * C + c, g) < P(c, g)) F(k * C + c, g) = P(c, g);
         F.middleRows(k * C, C).rowwise() /= F.middleRows(k * C, C).colwise().sum();
+    }
 }
 
-void Admixture::setStartPoint(std::string qfile)
+void Admixture::setStartPoint(const std::unique_ptr<BigAss> & genome, std::string qfile)
 {
+    P = MyArr2D(C, G);
+    collapse = Bool1D::Constant(genome->nsnps, false);
+    int ic{0}, sg{0}, ss{0};
+    for(auto c : genome->collapse) collapse(ic++) = (c == 1);
+    grids.resize(genome->nchunks);
+    for(ic = 0, sg = 0, ss = 0; ic < genome->nchunks; ic++)
+    {
+        const int S = genome->pos[ic].size();
+        const auto se = find_grid_start_end(collapse.segment(ss, S));
+        const int iG = se.size();
+        grids[ic] = iG;
+        Eigen::Map<const MyArr2D> AE(genome->AE[ic].data(), C * C, iG);
+        for(int g = 0; g < iG; g++) P.col(sg + g) = AE.col(g).reshaped(C, C).colwise().sum();
+        sg += iG;
+        ss += S;
+    }
+    assert(sg == G);
     if(!qfile.empty()) load_csv(Q, qfile);
 }
 
-void Admixture::writeQ(std::string out)
+void Admixture::setFlags(double cftol, double Ftol, double Qtol, bool debug_, bool nonewQ_, bool cF_)
 {
-    std::ofstream ofs(out);
-    if(!ofs) cao.error(out, strerror(errno));
-    Q = (Q * 1e6).round() / 1e6;
-    ofs << std::fixed << Q.transpose() << "\n";
-    ofs.close();
-}
-
-void Admixture::setFlags(bool debug_, bool nonewQ_)
-{
+    magicTol = cftol;
+    clusterFreqThreshold = Ftol;
+    admixtureThreshold = Qtol;
     debug = debug_;
     nonewQ = nonewQ_;
+    cF = cF_;
 }
 
 int run_admix_main(Options & opts)
@@ -220,19 +245,18 @@ int run_admix_main(Options & opts)
     cao.done(tim.date(), filesize, " bytes deserialized from file. skip imputation, ec", ec);
     cao.print(tim.date(), "parsing input -> C =", genome->C, ", N =", genome->nsamples, ", M =", genome->nsnps,
               ", nchunks =", genome->nchunks, ", B =", genome->B, ", G =", genome->G);
-    assert(opts.K < genome->C);
 
-    cao.warn(tim.date(), "-> running admixture with seed =", opts.seed);
     Admixture admixer(genome->nsamples, genome->G, genome->C, opts.K, opts.seed);
-    admixer.setFlags(opts.debug, opts.nQ);
-    admixer.setStartPoint(opts.in_qfile);
+    cao.warn(tim.date(), "-> running admixture with seed =", opts.seed);
+    admixer.setFlags(opts.ptol, opts.ftol, opts.qtol, opts.debug, opts.nQ, opts.cF);
+    admixer.setStartPoint(genome, opts.in_qfile);
     vector<future<double>> llike;
     if(!opts.noaccel)
     {
-        MyArr2D F0, Q0, F1, Q1;
-        const int istep{4};
+        MyArr2D F0, Q0, F1, Q1, F2, Q2, Ft, Qt;
+        const double istep{4};
         double alpha{std::numeric_limits<double>::lowest()}, qdiff, ldiff, stepMax{4}, alphaMax{1280};
-        double prevlike{std::numeric_limits<double>::lowest()};
+        double prevlike{std::numeric_limits<double>::lowest()}, logcheck{0}, loglike{0};
         for(int it = 0; SIG_COND && (it < opts.nadmix / 3); it++)
         {
             // first accel iteration
@@ -245,14 +269,14 @@ int run_admix_main(Options & opts)
             llike.clear(); // clear future and renew
             admixer.updateIteration();
             // second accel iteration
+            tim.clock();
+            admixer.initIteration();
             F1 = admixer.F;
             Q1 = admixer.Q;
             qdiff = (Q1 - Q0).square().sum();
-            tim.clock();
-            admixer.initIteration();
             for(int i = 0; i < genome->nsamples; i++)
                 llike.emplace_back(poolit.enqueue(&Admixture::runOptimalWithBigAss, &admixer, i, std::ref(genome)));
-            double loglike = 0;
+            loglike = 0;
             for(auto && ll : llike) loglike += ll.get();
             llike.clear(); // clear future and renew
             admixer.updateIteration();
@@ -267,6 +291,12 @@ int run_admix_main(Options & opts)
                           opts.ltol);
                 break;
             }
+            if(!opts.force)
+            {
+                // save for later comparison
+                Ft = admixer.F;
+                Qt = admixer.Q;
+            }
             // accel iteration with steplen
             alpha = ((F1 - F0).square().sum() + (Q1 - Q0).square().sum())
                     / ((admixer.F - 2 * F1 + F0).square().sum() + (admixer.Q - 2 * Q1 + Q0).square().sum());
@@ -277,15 +307,45 @@ int run_admix_main(Options & opts)
                 alpha = min(stepMax, alphaMax);
                 stepMax = min(stepMax * istep, alphaMax);
             }
+            // third accel iter
+            // update Q and F using the second em iter
             admixer.F = F0 + 2 * alpha * (F1 - F0) + alpha * alpha * (admixer.F - 2 * F1 + F0);
             admixer.Q = Q0 + 2 * alpha * (Q1 - Q0) + alpha * alpha * (admixer.Q - 2 * Q1 + Q0);
             admixer.protectPars();
             admixer.initIteration();
             for(int i = 0; i < genome->nsamples; i++)
                 llike.emplace_back(poolit.enqueue(&Admixture::runOptimalWithBigAss, &admixer, i, std::ref(genome)));
-            for(auto && ll : llike) ll.get();
+            loglike = 0;
+            for(auto && ll : llike) loglike += ll.get();
             llike.clear(); // clear future and renew
             admixer.updateIteration();
+            if(!opts.force)
+            { // save current pars
+                F2 = admixer.F;
+                Q2 = admixer.Q;
+                // check if normal third iter is better
+                admixer.Q = Qt;
+                admixer.F = Ft;
+                admixer.initIteration();
+                for(int i = 0; i < genome->nsamples; i++)
+                    llike.emplace_back(poolit.enqueue(&Admixture::runOptimalWithBigAss, &admixer, i, std::ref(genome)));
+                logcheck = 0;
+                for(auto && ll : llike) logcheck += ll.get();
+                llike.clear(); // clear future and renew
+                admixer.updateIteration();
+                if(logcheck - loglike > 0.1)
+                {
+                    stepMax = istep;
+                    cao.warn(tim.date(),
+                             "reset stepMax to 4, normal EM yields better likelihoods than the accelerated EM.",
+                             logcheck, " -", loglike, " > 0.1");
+                }
+                else
+                {
+                    admixer.Q = Q2;
+                    admixer.F = F2;
+                }
+            }
         }
     }
     else
@@ -315,7 +375,13 @@ int run_admix_main(Options & opts)
         }
     }
     cao.done(tim.date(), "admixture done and outputting");
-    admixer.writeQ(opts.out + ".Q");
+    std::ofstream oq(opts.out + ".Q");
+    oq << std::fixed << admixer.Q.transpose().format(fmt10) << "\n";
+    if(opts.oF)
+    {
+        std::ofstream of(opts.out + ".F");
+        of << admixer.F.transpose().format(fmt6) << "\n";
+    }
     cao.done(tim.date(), "-> good job. have a nice day, bye!");
 
     return 0;

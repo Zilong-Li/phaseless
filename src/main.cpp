@@ -18,7 +18,7 @@ int main(int argc, char * argv[])
 {
     // ========= helper message and parameters parsing ===========================
 
-    const std::string VERSION{"0.3.2"};
+    const std::string VERSION{"0.5.1"};
 
     // below for catching ctrl+c, and dumping files
     struct sigaction sa;
@@ -30,50 +30,48 @@ int main(int argc, char * argv[])
 
     // clang-format off
     ArgumentParser program("phaseless", VERSION, default_arguments::version);
+    program.add_epilog("This project is still under development!\n"
+                       "Contact: zilong.dk@gmail.com");
     program.add_argument("-D","--debug")
         .help("enable debug mode")
-        .default_value(false)
-        .implicit_value(true);
+        .flag();
     program.add_argument("-S", "--no-stdout")
         .help("disable print log to screen")
-        .default_value(false)
-        .implicit_value(true);
+        .flag();
     program.add_argument("-a", "--no-accel")
         .help("disable accelerated EM")
-        .default_value(false)
-        .implicit_value(true);
-    program.add_argument("-l", "--ltol")
-        .help("convergence tolerance of difference in log likelihoods")
-        .default_value(1e-1)
+        .flag();
+    program.add_argument("-q","--NQ")
+        .help("disable updating Q")
+        .flag();
+    program.add_argument("-p", "--NP")
+        .help("disable updating P")
+        .flag();
+    program.add_argument("-r", "--NR")
+        .help("disable updating R")
+        .flag();
+    program.add_argument("-f","--NF")
+        .help("disable updating F")
+        .flag();
+    program.add_argument("-F","--write-F")
+        .help("output F")
+        .flag();
+    program.add_argument("--ltol")
+        .help("convergence tolerance for difference in log likelihoods")
+        .default_value(1e-2)
         .scan<'g', double>();
-    program.add_argument("-P", "--ptol")
+    program.add_argument("--ptol")
         .help("lower boundary for P")
         .default_value(1e-6)
         .scan<'g', double>();
-    program.add_argument("-F", "--ftol")
+    program.add_argument("--ftol")
         .help("lower boundary for F")
-        .default_value(1e-6)
+        .default_value(1e-9)
         .scan<'g', double>();
-    program.add_argument("-Q", "--qtol")
+    program.add_argument("--qtol")
         .help("lower boundary for Q")
-        .default_value(1e-6)
+        .default_value(1e-9)
         .scan<'g', double>();
-    program.add_argument("-q","--NQ")
-        .help("disable updating Q")
-        .default_value(false)
-        .implicit_value(true);
-    program.add_argument("-p", "--NP")
-        .help("disable updating P")
-        .default_value(false)
-        .implicit_value(true);
-    program.add_argument("-r", "--NR")
-        .help("disable updating R")
-        .default_value(false)
-        .implicit_value(true);
-    program.add_argument("-f","--NF")
-        .help("disable updating F")
-        .default_value(false)
-        .implicit_value(true);
     program.add_argument("--qfile")
         .help("read Q file as the start point")
         .default_value(std::string{""});
@@ -114,16 +112,13 @@ int main(int argc, char * argv[])
         .scan<'i', int>();
     cmd_joint.add_argument("-S", "--single-chunk")
         .help("treat input as big single chunk")
-        .default_value(false)
-        .implicit_value(true);
+        .flag();
     cmd_joint.add_argument("-V", "--vcf")
         .help("output the VCF file")
-        .default_value(false)
-        .implicit_value(true);
+        .flag();
     cmd_joint.add_argument("-Q", "--aQ")
         .help("aphla is accelarated with Q only")
-        .default_value(false)
-        .implicit_value(true);
+        .flag();
     cmd_joint.add_argument("-d","--seed")
         .help("seed for reproducibility")
         .default_value(999)
@@ -138,10 +133,9 @@ int main(int argc, char * argv[])
         .scan<'i', int>();
     cmd_impute.add_argument("-C", "--collapse")
         .help("collapse SNPs in a reasonable window")
-        .default_value(false)
-        .implicit_value(true);
+        .flag();
     cmd_impute.add_argument("-B", "--grid-size")
-        .help("number of SNPs (>1) in each grid. 1 disables collapsing")
+        .help("number of SNPs (>=3) in each grid. 1 disables collapsing")
         .default_value(1)
         .scan<'i', int>();
     cmd_impute.add_argument("-f", "--vcf")
@@ -149,6 +143,7 @@ int main(int argc, char * argv[])
         .default_value(std::string{""});
     cmd_impute.add_argument("-g", "--beagle")
         .help("gziped beagle format as input")
+        .required()
         .default_value(std::string{""});
     cmd_impute.add_argument("-i", "--iterations")
         .help("number of EM iterations")
@@ -156,7 +151,7 @@ int main(int argc, char * argv[])
         .scan<'i', int>();
     cmd_impute.add_argument("-n", "--threads")
         .help("number of threads")
-        .default_value(1)
+        .default_value(10)
         .scan<'i', int>();
     cmd_impute.add_argument("-o", "--out")
         .help("output prefix")
@@ -170,11 +165,21 @@ int main(int argc, char * argv[])
         .scan<'i', int>();
     cmd_impute.add_argument("-S", "--single-chunk")
         .help("treat input as big single chunk")
-        .default_value(false)
-        .implicit_value(true);
+        .flag();
     cmd_impute.add_argument("-d","--seed")
         .help("seed for reproducibility")
         .default_value(999)
+        .scan<'i', int>();
+    cmd_impute.add_argument("--write-hapsum")
+        .help("write Hapsum instead of AE into parse.bin")
+        .flag();
+    cmd_impute.add_argument("--refill-haps")
+        .help("refill infrequently used haplotype clusters.\n"
+              "1: reset P to min allele emission probability for that haplotype cluster\n"
+              "2: re-sample P by copying from haplotype with the highest probability\n"
+              "3: re-sample P by copying from others with respect to their probability\n"
+              "0: disable this")
+        .default_value(0)
         .scan<'i', int>();
     cmd_impute.add_argument("--minRecombRate")
         .help("min recombination rate to determine if a SNP should be collapsed")
@@ -193,11 +198,11 @@ int main(int argc, char * argv[])
         .scan<'i', int>();
     cmd_admix.add_argument("-i", "--iterations")
         .help("number of maximun EM iterations")
-        .default_value(1000)
+        .default_value(2000)
         .scan<'i', int>();
     cmd_admix.add_argument("-n", "--threads")
         .help("number of threads")
-        .default_value(4)
+        .default_value(10)
         .scan<'i', int>();
     cmd_admix.add_argument("-o", "--out")
         .help("output prefix")
@@ -206,7 +211,16 @@ int main(int argc, char * argv[])
         .help("seed for reproducibility")
         .default_value(999)
         .scan<'i', int>();
-    // cmd_admix.add_parents(program);
+    cmd_admix.add_argument("-f", "--force-accept")
+        .help("always accept the acceleration solution")
+        .flag();
+    cmd_admix.add_argument("-F", "--constrain-F")
+        .help("apply constraint on F so that it is not smaller than cluster frequency in fastphase model")
+        .flag();
+    cmd_admix.add_argument("-P", "--min-P")
+        .help("set cluster likelihood to zeros if P (in fastphase) < min-P")
+        .default_value(0.0)
+        .scan<'g', double>();
 
     argparse::ArgumentParser cmd_convert("convert", VERSION, default_arguments::help);
     cmd_convert.add_description("different file format converter");
@@ -218,8 +232,7 @@ int main(int argc, char * argv[])
         .default_value(std::string{"convert"});
     cmd_convert.add_argument("-p", "--plink2beagle")
         .help("use plink1 file as input without .bed")
-        .default_value(false)
-        .implicit_value(true);
+        .flag();
     cmd_convert.add_argument("-n", "--threads")
         .help("number of threads")
         .default_value(4)
@@ -254,6 +267,7 @@ int main(int argc, char * argv[])
         opts.nP = program.get<bool>("--NP");
         opts.nR = program.get<bool>("--NR");
         opts.nF = program.get<bool>("--NF");
+        opts.oF = program.get<bool>("--write-F");
         opts.ltol = program.get<double>("--ltol");
         opts.noaccel = program.get<bool>("--no-accel");
 
@@ -287,7 +301,9 @@ int main(int argc, char * argv[])
             opts.seed = cmd_impute.get<int>("--seed");
             opts.chunksize = cmd_impute.get<int>("--chunksize");
             opts.single_chunk = cmd_impute.get<bool>("--single-chunk");
+            opts.eHap = cmd_impute.get<bool>("--write-hapsum");
             opts.collapse = cmd_impute.get<bool>("--collapse");
+            opts.refillHaps = cmd_impute.get<int>("--refill-haps");
             opts.tol_r = cmd_impute.get<double>("--minRecombRate");
             if(opts.single_chunk) opts.chunksize = INT_MAX;
             if((opts.in_beagle.empty() && opts.in_vcf.empty()) || cmd_impute.get<bool>("--help"))
@@ -296,12 +312,15 @@ int main(int argc, char * argv[])
         }
         else if(program.is_subcommand_used(cmd_admix))
         {
+            opts.ptol = cmd_admix.get<double>("--min-P");
             opts.in_bin.assign(cmd_admix.get("--bin"));
             opts.out.assign(cmd_admix.get("--out"));
             opts.seed = cmd_admix.get<int>("--seed");
             opts.K = cmd_admix.get<int>("-k");
             opts.nthreads = cmd_admix.get<int>("--threads");
             opts.nadmix = cmd_admix.get<int>("--iterations");
+            opts.cF = cmd_admix.get<bool>("--constrain-F");
+            opts.force = cmd_admix.get<bool>("--force-accept");
             if(opts.in_bin.empty() || cmd_admix.get<bool>("--help")) throw std::runtime_error(cmd_admix.help().str());
             run_admix_main(opts);
         }
@@ -317,7 +336,6 @@ int main(int argc, char * argv[])
         }
         else
         {
-            cao.cerr("Contact: Zilong Li (zilong.dk@gmail.com)\n");
             cao.cerr(program.help().str());
             std::exit(1);
         }

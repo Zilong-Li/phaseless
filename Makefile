@@ -3,7 +3,7 @@ CXX      = g++
 
 # CXXFLAGS = -std=c++17 -Wall -O3 -g -fsanitize=address
 # CXXFLAGS = -std=c++17 -Wall -O3 -march=native -DNDEBUG
-CXXFLAGS = -std=c++17 -Wall -O3 -mavx2 -fPIC -DNDEBUG
+CXXFLAGS = -std=c++17 -Wall -O3  -mavx2
 INC      = -I./src -I./inst/include -I$(HTSDIR)
 LDFLAGS  =  -L$(HTSDIR) -Wl,-rpath,$(HTSDIR)
 LIBS     = $(HTSDIR)/libhts.a -llzma -lbz2 -lm -lz -lpthread

@@ -8,596 +8,263 @@
 
 using namespace std;
 
-void FastPhaseK2::initRecombination(const Int1D & pos, int B_, double Ne)
+void FastPhaseK2::initRecombination(const Int2D & pos, std::string rfile, int B_, double Ne)
 {
+    nGen = 4 * Ne / C;
     B = B_;
-    G = B > 1 ? (pos.size() + B - 1) / B : M;
+    if(B == 2) cao.error("-B can not be 2");
+    int nchunks = pos.size();
+    pos_chunk.resize(nchunks + 1);
+    grid_chunk.resize(nchunks + 1);
+    int i{0}, ss{0}, sg{0};
+    // how many grids in total
+    for(i = 0, G = 0; i < nchunks; i++) G += B > 1 ? (pos[i].size() + B - 1) / B : pos[i].size();
+    R = MyArr2D(3, G);
     PI = MyArr2D::Ones(C, G);
     PI.rowwise() /= PI.colwise().sum(); // normalize it per site
-    if(B > 1)
+    dist.reserve(G);
+    Int1D tmpdist;
+    for(i = 0, ss = 0, sg = 0; i < nchunks; i++)
     {
-        grids = divide_pos_into_grid(pos, B);
-        dist = calc_grid_distance(grids);
+        pos_chunk[i] = ss;
+        grid_chunk[i] = sg;
+        collapse.segment(ss, pos[i].size()) = find_grid_to_collapse(pos[i], B);
+        tmpdist = calc_grid_distance(pos[i], collapse.segment(ss, pos[i].size()));
+        dist.insert(dist.end(), tmpdist.begin(), tmpdist.end());
+        R.middleCols(sg, tmpdist.size()) = calc_transRate_diploid(tmpdist, nGen);
+        ss += pos[i].size();
+        sg += tmpdist.size();
     }
-    else
-    {
-        dist = calc_position_distance(pos);
-    }
-    nGen = 4 * Ne / C;
-    R = calc_transRate_diploid(dist, nGen);
+    pos_chunk[nchunks] = ss; // add sentinel
+    grid_chunk[nchunks] = sg; // add sentinel
+    if(!rfile.empty()) load_csv(R, rfile, true);
+    er = R.row(0).sqrt();
+    // protect_er(er);
+    R = er2R(er);
 }
 
-void FastPhaseK2::setFlags(bool d, bool r)
+void FastPhaseK2::setFlags(double tol_p, double tol_f, double tol_q, bool debug_, bool nQ, bool nP, bool nF, bool nR)
 {
-    debug = d;
-    NR = r;
-    cao.warn("flags: debug=", debug, ", NR=", NR);
+    alleleEmitThreshold = tol_p;
+    clusterFreqThreshold = tol_f;
+    admixtureThreshold = tol_q;
+    debug = debug_;
+    NQ = nQ;
+    NP = nP;
+    NF = nF;
+    NR = nR;
 }
 
+void FastPhaseK2::refillHaps(int strategy)
+{
+    int s{0}, c{0}, ic{0}, g{0}, i{0}, sg{0};
+    int nchunks = pos_chunk.size() - 1;
+    // bin hapsum per 100 snps ?
+    for(c = 0; c < C; c++)
+    {
+        for(ic = 0, sg = 0; ic < nchunks; ic++)
+        {
+            const int S = pos_chunk[ic + 1] - pos_chunk[ic];
+            const auto se = find_grid_start_end(collapse.segment(pos_chunk[ic], S));
+            for(g = 0; g < (int)se.size(); g++, sg++)
+            {
+                if(HapSum(c, sg) >= minHapfreq) continue;
+                MyArr1D h = HapSum.col(sg);
+                h(c) = 0; // do not re-sample current
+                h /= h.sum();
+                MyFloat1D p(h.data(), h.data() + h.size());
+                std::discrete_distribution<int> distribution{p.begin(), p.end()};
+                int choice = distribution(rng);
+                assert(choice != c);
+                // now go through all sites in the grid
+                for(i = se[g][0]; i <= se[g][1]; i++)
+                {
+                    if(strategy == 1)
+                    {
+                        P(i + pos_chunk[ic], c) = alleleEmitThreshold;
+                    }
+                    else if(strategy == 2)
+                    {
+                        h.maxCoeff(&choice); // if no binning, this may be better
+                        P(i + pos_chunk[ic], c) = P(i + pos_chunk[ic], choice);
+                    }
+                    else
+                    {
+                        P(i + pos_chunk[ic], c) = P(i + pos_chunk[ic], choice);
+                    }
+                    s++;
+                }
+            }
+        }
+    }
+    cao.warn("refill ", 100 * s / (C * M), "% infrequently used haps");
+}
 
 void FastPhaseK2::initIteration()
 {
     // initial temp variables
-    pi.setZero(C); // reset pi at first SNP
-    Ezj.setZero(C, G); // reset post(Z,j)
     Ezg1.setZero(C, M); // reset pos(Z,g)
     Ezg2.setZero(C, M); // reset pos(Z,g)
+    Ezj.setZero(C, G); // reset post(Z,j)
+    HapSum.setZero(C, G); // reset post(Z,j)
 }
 
 void FastPhaseK2::updateIteration()
 {
+    // update R
+    if(!NR) er = 1.0 - Ezj.colwise().sum() / N;
+    // update F
+    if(!NP) P = (Ezg2 / (Ezg1 + Ezg2)).transpose();
+    // update PI
+    if(!NF)
+    {
+        PI = Ezj;
+        PI.rowwise() /= PI.colwise().sum();
+    }
+    protectPars();
+}
+
+void FastPhaseK2::protectPars()
+{
+    // protect F
+    if(!NP)
+    {
+        if(P.isNaN().any())
+        {
+            cao.warn("NaN in F in FastPhaseK2 model. will fill it with AF");
+            if(AF.size() == 0) cao.error("AF is not assigned!\n");
+            for(int i = 0; i < M; i++) P.row(i) = P.row(i).isNaN().select(AF(i), P.row(i));
+        }
+        // map F to domain but no normalization
+        P = (P < alleleEmitThreshold).select(alleleEmitThreshold, P); // lower bound
+        P = (P > 1 - alleleEmitThreshold).select(1 - alleleEmitThreshold, P); // upper bound
+    }
+    // protect R
     if(!NR)
     {
-        MyArr1D er = 1.0 - Ezj.colwise().sum() / N;
         for(int i = 0; i < er.size(); i++)
         {
-            double miner = std::exp(-nGen * maxRate * dist[i] / 100 / 1e6);
-            double maxer = std::exp(-nGen * minRate * dist[i] / 100 / 1e6);
+            const double miner = std::exp(-nGen * maxRate * dist[i] / 100 / 1e6);
+            const double maxer = std::exp(-nGen * minRate * dist[i] / 100 / 1e6);
             er(i) = er(i) < miner ? miner : er(i);
             er(i) = er(i) > maxer ? maxer : er(i);
         }
+        // protect_er(er);
         R = er2R(er);
     }
-
-    // update F
-    F = (Ezg2 / (Ezg1 + Ezg2)).transpose();
-    if(F.isNaN().any())
+    // protect PI
+    if(!NF)
     {
-        if(debug) cao.warn("NaN in F in FastPhaseK2 model. will fill it with AF");
-        if(AF.size() == 0) cao.error("AF is not assigned!\n");
-        for(int i = 0; i < M; i++) F.row(i) = F.row(i).isNaN().select(AF(i), F.row(i));
+        if(PI.isNaN().any()) cao.warn("NaN in PI. reset cluster frequency to ", clusterFreqThreshold);
+        PI = (PI < clusterFreqThreshold).select(clusterFreqThreshold, PI);
+        PI = (PI > 1 - clusterFreqThreshold).select(1 - clusterFreqThreshold, PI);
+        // re-normalize F per site. hope should work okay. otherwise do the complicated.
+        PI.rowwise() /= PI.colwise().sum();
     }
-    // map F to domain but no normalization
-    F = (F < alleleEmitThreshold).select(alleleEmitThreshold, F); // lower bound
-    F = (F > 1 - alleleEmitThreshold).select(1 - alleleEmitThreshold, F); // upper bound
-
-    // update PI(C, M) except the first snp
-    // first we normalize Ezj so that each col sum to 1
-    Ezj = (Ezj < clusterFreqThreshold).select(clusterFreqThreshold, Ezj); // reset to
-    Ezj.rowwise() /= Ezj.colwise().sum();
-    Ezj.col(0) = pi / pi.sum(); // now update the first SNP
-
-    // if(Ezj.isNaN().any() || (Ezj < clusterFreqThreshold).any())
-    // {
-    //     // std::cerr << "reset values below threshold\n";
-    //     Ezj = (Ezj < clusterFreqThreshold).select(0, Ezj); // reset to 0 first
-    //     for(int i = 0; i < G; i++)
-    //     {
-    //         // for columns with an entry below 0
-    //         // each 0 entry becomes threshold
-    //         // then rest re-scaled so whole thing has sum 1
-    //         if(auto c = (Ezj.col(i) == 0).count() > 0)
-    //         {
-    //             double xsum = 1 - c * clusterFreqThreshold;
-    //             double csum = Ezj.col(i).sum();
-    //             Ezj.col(i) = (Ezj.col(i) > 0).select(Ezj.col(i) * xsum / csum, clusterFreqThreshold);
-    //         }
-    //     }
-    // }
-
-    PI = Ezj;
-
-    if(Ezj.isNaN().any()) cao.error(Ezj, "NaN in PI from FastPhaseK2\n");
-    if(debug && !((1 - PI.colwise().sum()).abs() < 1e-3).all())
-        cao.error(PI.colwise().sum(), "\ncolsum of PI is not 1.0!\n");
+    // norm HapSum
+    HapSum.rowwise() /= HapSum.colwise().sum();
 }
 
 /*
-** @param niters    number of iterations
 ** @param GL        genotype likelihood of all individuals in snp major form
-** @param pos       SNP position
-** @return likelihood difference between last two iters
-*/
-double FastPhaseK2::runWithOneThread(int niters, const MyFloat1D & GL)
-{
-    double diff{-1}, loglike, prevlike;
-    for(int it = 0; SIG_COND && it <= niters; it++)
-    {
-        initIteration();
-        loglike = 0;
-        for(int i = 0; i < N; i++)
-        {
-            if(it == niters)
-                loglike += forwardAndBackwardsLowRam(i, GL, true);
-            else
-                loglike += forwardAndBackwardsLowRam(i, GL, false);
-        }
-        diff = it ? loglike - prevlike : 0;
-        prevlike = loglike;
-        if(it != niters) updateIteration();
-    }
-    return diff;
-}
-
-/*
 ** @param ind       current individual i
-** @param GL        genotype likelihood of all individuals in snp major form
 ** @param finalIter boolean, call genotype of not
 ** @return individual total likelihood
 */
-double FastPhaseK2::forwardAndBackwardsLowRam(int ind, const MyFloat1D & GL, bool finalIter)
+double FastPhaseK2::hmmIterWithJumps(const MyFloat1D & GL, const int ic, const int ind, bool finalIter)
 {
-    if(G == M)
+    const int S = pos_chunk[ic + 1] - pos_chunk[ic];
+    const int nGrids = grid_chunk[ic + 1] - grid_chunk[ic];
+    Eigen::Map<const MyArr2D> gli(GL.data() + ind * S * 3, S, 3);
+    int start = pos_chunk[ic], nsize = S;
+    if(nGrids != S)
     {
-        return forwardAndBackwardsLowRamNormal(ind, GL, finalIter);
+        start = grid_chunk[ic];
+        nsize = nGrids;
     }
-    else if(G < M)
+    MyArr2D emit_grid = get_emission_by_grid(gli, P.middleRows(pos_chunk[ic], S), collapse.segment(pos_chunk[ic], S));
+    MyArr2D emit = get_emission_by_gl(gli, P.middleRows(pos_chunk[ic], S));
+    const auto [alpha, beta, cs] =
+        forward_backwards_diploid(emit_grid, R.middleCols(start, nsize), PI.middleCols(start, nsize));
+    if(!((1 - ((alpha * beta).colwise().sum())).abs() < 1e-9).all())
+        cao.error((alpha * beta).colwise().sum(), "\ngamma sum is not 1.0!\n");
+    // now get posterios
+    MyArr2D ind_post_zg1(C, S), ind_post_zg2(C, S), ind_post_zj(C, nGrids), gammaC(C, nGrids);
+    MyArr1D gamma_div_emit(CC), beta_mult_emit(CC), igamma(CC);
+    MyArr1D alphatmp(C);
+    int z1, m, s, g{0}, gg{0};
+    const auto se = find_grid_start_end(collapse.segment(pos_chunk[ic], S));
+    for(g = 0; g < nGrids; g++)
     {
-        return forwardAndBackwardsLowRamCollapse(ind, GL, finalIter);
-    }
-    else
-    {
-        throw std::runtime_error("something wrong!");
-    }
-}
-
-/*
-** @param ind       current individual i
-** @param GL        genotype likelihood of all individuals in snp major form
-** @param finalIter boolean, call genotype of not
-** @return individual total likelihood
-*/
-double FastPhaseK2::forwardAndBackwardsLowRamNormal(int ind, const MyFloat1D & GL, bool finalIter)
-{
-    Eigen::Map<const MyArr2D> gli(GL.data() + ind * M * 3, M, 3);
-    MyArr2D alpha(C2, M), beta(C2, M);
-    const MyArr2D emit = get_emission_by_gl(gli, F).transpose(); // C2 x M
-    const MyArr1D cs = forward_backwards_diploid(alpha, beta, emit, R, PI);
-    if(debug && !((1 - ((alpha * beta).colwise().sum())).abs() < 1e-4).all())
-        cao.error((alpha * beta).colwise().sum() / cs.transpose(), "\ngamma sum is not 1.0!\n");
-    MyArr1D gamma1_ae = (alpha.col(0) * beta.col(0)).reshaped(C, C).colwise().sum();
-    MyArr1D ind_post_zj(C);
-    MyArr1D ind_post_zg1(C);
-    MyArr1D ind_post_zg2(C);
-    int z1, s = 0;
-    if(!finalIter)
-    {
-        // now get expectation of post(Z,J)
-        MyArr1D gamma_div_emit(C2), beta_mult_emit(C2);
-        s = 0;
-        gamma_div_emit = (alpha.col(s) * beta.col(s)) / emit.col(s); // C2
+        gg = g + grid_chunk[ic];
+        gammaC.col(g) = (alpha.col(g) * beta.col(g)).reshaped(C, C).colwise().sum();
+        igamma = alpha.col(g) * beta.col(g);
+        if(B == 1) gamma_div_emit = igamma / emit_grid.col(g);
         for(z1 = 0; z1 < C; z1++)
         {
-
-            ind_post_zg1(z1) = (gamma_div_emit(Eigen::seqN(z1, C, C)) * (1 - F(s, z1))
-                                * (gli(s, 0) * (1 - F.row(s)) + gli(s, 1) * F.row(s)).transpose())
-                                   .sum();
-            ind_post_zg2(z1) = (gamma_div_emit(Eigen::seqN(z1, C, C)) * (F(s, z1))
-                                * (gli(s, 1) * (1 - F.row(s)) + gli(s, 2) * F.row(s)).transpose())
-                                   .sum();
-        }
-        {
-            std::scoped_lock<std::mutex> lock(mutex_it);
-            Ezg1.col(s) += ind_post_zg1;
-            Ezg2.col(s) += ind_post_zg2;
-            pi += gamma1_ae;
-        }
-        for(s = 1; s < M; s++)
-        {
-            beta_mult_emit = emit.col(s) * beta.col(s); // C2
-            gamma_div_emit = (alpha.col(s) * beta.col(s)) / emit.col(s); // C2
-            MyArr1D alphatmp(C);
-            for(z1 = 0; z1 < C; z1++)
+            for(s = se[g][0]; s <= se[g][1]; s++)
             {
-                ind_post_zg1(z1) = (gamma_div_emit(Eigen::seqN(z1, C, C)) * (1 - F(s, z1))
-                                    * (gli(s, 0) * (1 - F.row(s)) + gli(s, 1) * F.row(s)).transpose())
-                                       .sum();
-                ind_post_zg2(z1) = (gamma_div_emit(Eigen::seqN(z1, C, C)) * (F(s, z1))
-                                    * (gli(s, 1) * (1 - F.row(s)) + gli(s, 2) * F.row(s)).transpose())
-                                       .sum();
-                alphatmp(z1) = alpha(Eigen::seqN(z1, C, C), s - 1).sum() * R(1, s);
+                m = s + pos_chunk[ic];
+                // if(B > 1) gamma_div_emit = igamma / get_emission_by_site(gli.row(s), P.row(m));
+                if(B > 1) gamma_div_emit = igamma / emit.col(s);
+                ind_post_zg1(z1, s) = (gamma_div_emit(Eigen::seqN(z1, C, C)) * (1 - P(m, z1))
+                                       * (gli(s, 0) * (1 - P.row(m)) + gli(s, 1) * P.row(m)).transpose())
+                                          .sum();
+                ind_post_zg2(z1, s) = (gamma_div_emit(Eigen::seqN(z1, C, C)) * (P(m, z1))
+                                       * (gli(s, 1) * (1 - P.row(m)) + gli(s, 2) * P.row(m)).transpose())
+                                          .sum();
+                if(finalIter) callGenoLoopC(z1, m, ind, gli.row(s), P.row(m), gamma_div_emit);
             }
-            alphatmp += PI.col(s) * R(2, s) * 1.0; // inner alpha.col(s-1).sum == 1
-            for(z1 = 0; z1 < C; z1++)
-                ind_post_zj(z1) = cs(s) * PI(z1, s) * (alphatmp * beta_mult_emit(Eigen::seqN(z1, C, C))).sum();
-            { // sum over all samples for updates
-                std::scoped_lock<std::mutex> lock(mutex_it);
-                Ezj.col(s) += ind_post_zj;
-                Ezg1.col(s) += ind_post_zg1;
-                Ezg2.col(s) += ind_post_zg2;
-            }
+            if(g == 0) ind_post_zj(z1, g) = (alpha.col(g) * beta.col(g)).segment(z1 * C, C).sum();
+            if(g > 0) alphatmp(z1) = alpha(Eigen::seqN(z1, C, C), g - 1).sum() * R(1, gg);
         }
-    }
-    else
-    {
-        // now we call geno and output gamma ae
-        alpha *= beta; // alpha is gamma now
-        MyArr2D ind_post_z_g(M, 4);
-        int z2, z12, g1, g2, g12;
+        if(g == 0) continue;
+        alphatmp += PI.col(gg) * R(2, gg) * 1.0; // inner alpha.col(s-1).sum == 1
+        beta_mult_emit = emit_grid.col(g) * beta.col(g); // C2
         for(z1 = 0; z1 < C; z1++)
-        {
-            for(z2 = 0; z2 < C; z2++)
-            {
-                z12 = z1 * C + z2;
-                for(g1 = 0; g1 < 2; g1++)
-                {
-                    for(g2 = 0; g2 < 2; g2++)
-                    {
-                        g12 = g1 * 2 + g2;
-                        ind_post_z_g.col(g12) = gli.col(g1 + g2) * (g1 * F.col(z1) + (1 - g1) * (1 - F.col(z1)))
-                                                * (g2 * F.col(z2) + (1 - g2) * (1 - F.col(z2)));
-                    }
-                }
-                // emit.row(z12) == ind_post_z_g.rowwise().sum();
-                ind_post_z_g.colwise() *= alpha.row(z12).transpose() / ind_post_z_g.rowwise().sum();
-                for(g1 = 0; g1 < 2; g1++)
-                {
-                    for(g2 = 0; g2 < 2; g2++)
-                    {
-                        g12 = g1 * 2 + g2;
-                        GP(Eigen::seqN(g1 + g2, M, 3), ind) += ind_post_z_g.col(g12);
-                    }
-                }
-                {
-                    // update GammaAE now
-                    std::scoped_lock<std::mutex> lock(mutex_it);
-                    Ezj.row(z1) += alpha.row(z12);
-                }
-            }
-        }
+            ind_post_zj(z1, g) = cs(g) * (PI(z1, gg) * alphatmp * beta_mult_emit(Eigen::seqN(z1, C, C))).sum();
     }
-
-    return (1 / cs).log().sum();
-}
-
-/*
-** @param ind       current individual i
-** @param GL        genotype likelihood of all individuals in snp major form
-** @param finalIter boolean, call genotype of not
-** @return individual total likelihood
-*/
-double FastPhaseK2::forwardAndBackwardsLowRamCollapse(int ind, const MyFloat1D & GL, bool finalIter)
-{
-    Eigen::Map<const MyArr2D> gli(GL.data() + ind * M * 3, M, 3);
-    MyArr2D alpha(C2, G), beta(C2, G);
-    const MyArr2D emit = get_emission_by_gl(gli, F).transpose(); // C2 x M
-    MyArr2D emitGrids = collapse_emission_by_grid(emit, grids); //
-    const MyArr1D cs = forward_backwards_diploid(alpha, beta, emitGrids, R, PI);
-    if(debug && !((1 - ((alpha * beta).colwise().sum())).abs() < 1e-4).all())
-        cao.error((alpha * beta).colwise().sum() / cs.transpose(), "\ngamma sum is not 1.0!\n");
-    MyArr1D gamma = alpha.col(0) * beta.col(0); //  gamma in first snp
-    MyArr1D gamma1_sum = gamma.reshaped(C, C).colwise().sum();
-    MyArr1D ind_post_zj(C);
-    int snp, z1, e, i, g{0}, s{0};
-    e = s + grids[g].size() - 1;
-    snp = e + 1;
-    // now get expectation of post(Z,J)
-    MyArr2D ind_post_zg1(C, grids[g].size());
-    MyArr2D ind_post_zg2(C, grids[g].size());
-    for(z1 = 0; z1 < C; z1++)
-    {
-        for(i = s; i <= e; i++)
-        {
-            auto gamma_div_emit = gamma / emit.col(i);
-            ind_post_zg1(z1, i - s) = (gamma_div_emit(Eigen::seqN(z1, C, C)) * (1 - F(i, z1))
-                                       * (gli(i, 0) * (1 - F.row(i)) + gli(i, 1) * F.row(i)).transpose())
-                                          .sum();
-            ind_post_zg2(z1, i - s) = (gamma_div_emit(Eigen::seqN(z1, C, C)) * (F(i, z1))
-                                       * (gli(i, 1) * (1 - F.row(i)) + gli(i, 2) * F.row(i)).transpose())
-                                          .sum();
-            if(finalIter) callGenoLoopC(ind, i, z1, gli, gamma_div_emit);
-        }
-    }
-    {
+    { // sum over all samples for updates
         std::scoped_lock<std::mutex> lock(mutex_it);
-        pi += gamma1_sum;
-        for(int i = s; i <= e; i++)
-        {
-            Ezg1.col(i) += ind_post_zg1.col(i - s);
-            Ezg2.col(i) += ind_post_zg2.col(i - s);
-        }
-    }
-
-    for(g = 1; g < G; g++)
-    {
-        s = snp;
-        e = snp + grids[g].size() - 1;
-        snp = e + 1;
-        gamma = alpha.col(g) * beta.col(g);
-        auto beta_mult_emit = emitGrids.col(g) * beta.col(g); // C2
-        MyArr1D alphatmp(C);
-        MyArr2D ind_post_zg1(C, grids[g].size());
-        MyArr2D ind_post_zg2(C, grids[g].size());
-        for(z1 = 0; z1 < C; z1++)
-        {
-            alphatmp(z1) = alpha(Eigen::seqN(z1, C, C), g - 1).sum() * R(1, g);
-            for(i = s; i <= e; i++)
-            {
-                auto gamma_div_emit = gamma / emit.col(i); // C2
-                ind_post_zg1(z1, i - s) = (gamma_div_emit(Eigen::seqN(z1, C, C)) * (1 - F(i, z1))
-                                           * (gli(i, 0) * (1 - F.row(i)) + gli(i, 1) * F.row(i)).transpose())
-                                              .sum();
-                ind_post_zg2(z1, i - s) = (gamma_div_emit(Eigen::seqN(z1, C, C)) * (F(i, z1))
-                                           * (gli(i, 1) * (1 - F.row(i)) + gli(i, 2) * F.row(i)).transpose())
-                                              .sum();
-                if(finalIter) callGenoLoopC(ind, i, z1, gli, gamma_div_emit);
-            }
-        }
-        alphatmp += PI.col(g) * R(2, g) * 1.0;
-        for(z1 = 0; z1 < C; z1++)
-            ind_post_zj(z1) = cs(g) * (PI(z1, g) * alphatmp * beta_mult_emit(Eigen::seqN(z1, C, C))).sum();
-        { // sum over all samples for updates
-            std::scoped_lock<std::mutex> lock(mutex_it);
-            Ezj.col(g) += ind_post_zj;
-            for(int i = s; i <= e; i++)
-            {
-                Ezg1.col(i) += ind_post_zg1.col(i - s);
-                Ezg2.col(i) += ind_post_zg2.col(i - s);
-            }
-        }
+        Ezg1.middleCols(pos_chunk[ic], S) += ind_post_zg1;
+        Ezg2.middleCols(pos_chunk[ic], S) += ind_post_zg2;
+        Ezj.middleCols(grid_chunk[ic], nGrids) += ind_post_zj;
+        HapSum.middleCols(grid_chunk[ic], nGrids) += gammaC;
     }
 
     return (1 / cs).log().sum();
 }
 
-/*
-** @param ind       current individual i
-** @param GL        genotype likelihood of all individuals in snp major form
-** @param finalIter boolean, call genotype of not
-** @return individual total likelihood
-*/
-fbd_res1 FastPhaseK2::forwardAndBackwardsHighRam(int ind, const MyFloat1D & GL, bool finalIter)
-{
-
-    if(G == M)
-    {
-        return forwardAndBackwardsHighRamNormal(ind, GL, finalIter);
-    }
-    else if(G < M)
-    {
-        return forwardAndBackwardsHighRamCollapse(ind, GL, finalIter);
-    }
-    else
-    {
-        throw std::runtime_error("something wrong!");
-    }
-}
-
-fbd_res1 FastPhaseK2::forwardAndBackwardsHighRamCollapse(int ind, const MyFloat1D & GL, bool finalIter)
-{
-    Eigen::Map<const MyArr2D> gli(GL.data() + ind * M * 3, M, 3);
-    MyArr2D alpha(C2, G), beta(C2, G);
-    MyArr2D emit = get_emission_by_gl(gli, F).transpose(); // C2 x M
-    MyArr2D emitGrids = collapse_emission_by_grid(emit, grids);
-    auto cs = forward_backwards_diploid(alpha, beta, emitGrids, R, PI);
-    if(debug && !((1 - ((alpha * beta).colwise().sum())).abs() < 1e-4).all())
-        cao.cerr((alpha * beta).colwise().sum() / cs.transpose(), "\ngamma sum is not 1.0!\n");
-
-    MyArr1D gamma = alpha.col(0) * beta.col(0); //  gamma in first snp
-    MyArr1D gamma_ae = gamma.reshaped(C, C).colwise().sum();
-    MyArr2D ind_post_zj = MyArr2D::Zero(C, G);
-    MyArr2D ind_post_zg1 = MyArr2D::Zero(C, M);
-    MyArr2D ind_post_zg2 = MyArr2D::Zero(C, M);
-
-    if(!finalIter)
-    {
-        // now get expectation of post(Z,J)
-        int z1, snp, s, e, i, g;
-        g = 0, s = 0;
-        e = s + grids[g].size() - 1;
-        snp = e + 1;
-        for(z1 = 0; z1 < C; z1++)
-        {
-            for(i = s; i <= e; i++)
-            {
-                auto gamma_div_emit = gamma / emit.col(i);
-                ind_post_zg1(z1, i) = (gamma_div_emit(Eigen::seqN(z1, C, C)) * (1 - F(i, z1))
-                                       * (gli(i, 0) * (1 - F.row(i)) + gli(i, 1) * F.row(i)).transpose())
-                                          .sum();
-                ind_post_zg2(z1, i) = (gamma_div_emit(Eigen::seqN(z1, C, C)) * (F(i, z1))
-                                       * (gli(i, 1) * (1 - F.row(i)) + gli(i, 2) * F.row(i)).transpose())
-                                          .sum();
-            }
-        }
-        for(g = 1; g < G; g++)
-        {
-            s = snp;
-            e = snp + grids[g].size() - 1;
-            snp = e + 1;
-            gamma = (alpha.col(g) * beta.col(g)); // C2
-            MyArr1D beta_mult_emit = emitGrids.col(g) * beta.col(g); // C2
-            MyArr1D alphatmp(C);
-            for(z1 = 0; z1 < C; z1++)
-            {
-                alphatmp(z1) = alpha(Eigen::seqN(z1, C, C), g - 1).sum() * R(1, g);
-                for(i = s; i <= e; i++)
-                {
-                    auto gamma_div_emit = gamma / emit.col(i);
-                    ind_post_zg1(z1, i) = (gamma_div_emit(Eigen::seqN(z1, C, C)) * (1 - F(i, z1))
-                                           * (gli(i, 0) * (1 - F.row(i)) + gli(i, 1) * F.row(i)).transpose())
-                                              .sum();
-                    ind_post_zg2(z1, i) = (gamma_div_emit(Eigen::seqN(z1, C, C)) * (F(i, z1))
-                                           * (gli(i, 1) * (1 - F.row(i)) + gli(i, 2) * F.row(i)).transpose())
-                                              .sum();
-                }
-            }
-            alphatmp += PI.col(g) * R(2, g) * 1.0;
-            for(z1 = 0; z1 < C; z1++)
-                ind_post_zj(z1, g) = cs(g) * (PI(z1, g) * alphatmp * beta_mult_emit(Eigen::seqN(z1, C, C))).sum();
-        }
-    }
-    else
-    {
-        // now we call geno and output gamma ae
-        for(int g = 0; g < G; g++)
-        {
-            ind_post_zj.col(g) += (alpha.col(g) * beta.col(g)).reshaped(C, C).colwise().sum();
-        }
-    }
-    double indLogLike = (1 / cs).log().sum();
-    return std::tuple(indLogLike, ind_post_zj, ind_post_zg1, ind_post_zg2, gamma_ae);
-}
-
-/*
-** @param ind       current individual i
-** @param GL        genotype likelihood of all individuals in snp major form
-** @param finalIter boolean, call genotype of not
-** @return individual total likelihood
-*/
-fbd_res1 FastPhaseK2::forwardAndBackwardsHighRamNormal(int ind, const MyFloat1D & GL, bool finalIter)
-{
-    Eigen::Map<const MyArr2D> gli(GL.data() + ind * M * 3, M, 3);
-    MyArr2D alpha(C2, M), beta(C2, M);
-    MyArr2D emit = get_emission_by_gl(gli, F).transpose(); // C2 x M
-    auto cs = forward_backwards_diploid(alpha, beta, emit, R, PI);
-    if(debug && !((1 - ((alpha * beta).colwise().sum())).abs() < 1e-4).all())
-        cao.error((alpha * beta).colwise().sum() / cs.transpose(), "\ngamma sum is not 1.0!\n");
-    MyArr1D gamma_ae = (alpha.col(0) * beta.col(0)).reshaped(C, C).colwise().sum();
-    MyArr2D ind_post_zj = MyArr2D::Zero(C, M);
-    MyArr2D ind_post_zg1 = MyArr2D::Zero(C, M);
-    MyArr2D ind_post_zg2 = MyArr2D::Zero(C, M);
-
-    int z1, s;
-    if(!finalIter)
-    {
-        MyArr1D gamma_div_emit(C2), beta_mult_emit(C2);
-        // now get expectation of post(Z,J)
-        s = 0;
-        gamma_div_emit = (alpha.col(s) * beta.col(s)) / emit.col(s); // C2
-        for(z1 = 0; z1 < C; z1++)
-        {
-
-            ind_post_zg1(z1, s) = (gamma_div_emit(Eigen::seqN(z1, C, C)) * (1 - F(s, z1))
-                                   * (gli(s, 0) * (1 - F.row(s)) + gli(s, 1) * F.row(s)).transpose())
-                                      .sum();
-            ind_post_zg2(z1, s) = (gamma_div_emit(Eigen::seqN(z1, C, C)) * (F(s, z1))
-                                   * (gli(s, 1) * (1 - F.row(s)) + gli(s, 2) * F.row(s)).transpose())
-                                      .sum();
-        }
-        for(s = 1; s < M; s++)
-        {
-            beta_mult_emit = emit.col(s) * beta.col(s); // C2
-            gamma_div_emit = (alpha.col(s) * beta.col(s)) / emit.col(s); // C2
-            MyArr1D alphatmp(C);
-            for(z1 = 0; z1 < C; z1++)
-            {
-                alphatmp(z1) = alpha(Eigen::seqN(z1, C, C), s - 1).sum() * R(1, s);
-                ind_post_zg1(z1, s) = (gamma_div_emit(Eigen::seqN(z1, C, C)) * (1 - F(s, z1))
-                                       * (gli(s, 0) * (1 - F.row(s)) + gli(s, 1) * F.row(s)).transpose())
-                                          .sum();
-                ind_post_zg2(z1, s) = (gamma_div_emit(Eigen::seqN(z1, C, C)) * (F(s, z1))
-                                       * (gli(s, 1) * (1 - F.row(s)) + gli(s, 2) * F.row(s)).transpose())
-                                          .sum();
-            }
-            alphatmp += PI.col(s) * R(2, s) * 1.0;
-            for(z1 = 0; z1 < C; z1++)
-                ind_post_zj(z1, s) = cs(s) * (PI(z1, s) * alphatmp * beta_mult_emit(Eigen::seqN(z1, C, C))).sum();
-        }
-    }
-    else
-    {
-        // now we call geno and output gamma ae
-        alpha *= beta; // alpha is gamma now
-        MyArr2D ind_post_z_g(M, 4);
-        int z2, z12, g1, g2, g12;
-        for(z1 = 0; z1 < C; z1++)
-        {
-            for(z2 = 0; z2 < C; z2++)
-            {
-                z12 = z1 * C + z2;
-                for(g1 = 0; g1 < 2; g1++)
-                {
-                    for(g2 = 0; g2 < 2; g2++)
-                    {
-                        g12 = g1 * 2 + g2;
-                        ind_post_z_g.col(g12) = gli.col(g1 + g2) * (g1 * F.col(z1) + (1 - g1) * (1 - F.col(z1)))
-                                                * (g2 * F.col(z2) + (1 - g2) * (1 - F.col(z2)));
-                    }
-                }
-                // emit.row(z12) == ind_post_z_g.rowwise().sum();
-                ind_post_z_g.colwise() *= alpha.row(z12).transpose() / ind_post_z_g.rowwise().sum();
-                for(g1 = 0; g1 < 2; g1++)
-                {
-                    for(g2 = 0; g2 < 2; g2++)
-                    {
-                        g12 = g1 * 2 + g2;
-                        GP(Eigen::seqN(g1 + g2, M, 3), ind) += ind_post_z_g.col(g12);
-                    }
-                }
-                // update gamma ae now
-                ind_post_zj.row(z1) += alpha.row(z12);
-            }
-        }
-    }
-    double indLogLike = (1 / cs).log().sum();
-    return std::tuple(indLogLike, ind_post_zj, ind_post_zg1, ind_post_zg2, gamma_ae);
-}
-
-void FastPhaseK2::callGenoLoopC(int ind, int s, int z1, const MyArr2D & gli, const MyArr1D & gamma_div_emit)
+void FastPhaseK2::callGenoLoopC(int z1,
+                                int m,
+                                int ind,
+                                const MyArr1D & gli,
+                                const MyArr1D & p,
+                                const MyArr1D & gamma_div_emit)
 {
     MyArr1D tmp_zg(4);
     for(int z2 = 0; z2 < C; z2++)
     {
         int z12 = z1 * C + z2;
-        tmp_zg(0) = gli(s, 0) * (1 - F(s, z1)) * (1 - F(s, z2));
-        tmp_zg(1) = gli(s, 1) * (1 - F(s, z1)) * F(s, z2);
-        tmp_zg(2) = gli(s, 1) * F(s, z1) * (1 - F(s, z2));
-        tmp_zg(3) = gli(s, 2) * F(s, z1) * F(s, z2);
-        GP(3 * s + 0, ind) += gamma_div_emit(z12) * tmp_zg(0);
-        GP(3 * s + 1, ind) += gamma_div_emit(z12) * (tmp_zg(1) + tmp_zg(2));
-        GP(3 * s + 2, ind) += gamma_div_emit(z12) * tmp_zg(3);
+        tmp_zg(0) = gli(0) * (1 - p(z1)) * (1 - p(z2));
+        tmp_zg(1) = gli(1) * (1 - p(z1)) * p(z2);
+        tmp_zg(2) = gli(1) * p(z1) * (1 - p(z2));
+        tmp_zg(3) = gli(2) * p(z1) * p(z2);
+        GP(3 * m + 0, ind) += gamma_div_emit(z12) * tmp_zg(0);
+        GP(3 * m + 1, ind) += gamma_div_emit(z12) * (tmp_zg(1) + tmp_zg(2));
+        GP(3 * m + 2, ind) += gamma_div_emit(z12) * tmp_zg(3);
     }
 }
 
-void FastPhaseK2::collapse_and_resize(const Int1D & pos, double tol_r)
+double FastPhaseK2::runAllChunks(const MyFloat2D & GL, const int ind, bool finalIter)
 {
-    collapse = find_chunk_to_collapse(R, tol_r);
-    grids = divide_pos_into_grid(pos, collapse);
-    G = grids.size();
-    MyArr2D PInew(C, G), Rnew(3, G);
-    int g, s, e, snp = 0;
-    for(g = 0; g < G; g++)
+    if(pos_chunk.size() == 0) cao.error("please run initRecombination first");
+    double loglike{0};
+    for(size_t ic = 0; ic < GL.size(); ic++)
     {
-        s = snp;
-        e = snp + grids[g].size() - 1;
-        snp = e + 1;
-        PInew.col(g) = PI.col(s); // choose the first snp in this collapsing block
-        Rnew.col(g) = R.col(s); // choose the first snp in this collapsing block
+        loglike += hmmIterWithJumps(GL[ic], ic, ind, finalIter);
     }
-    PI = PInew;
-    R = Rnew;
-    Ezj = PI;
-}
-
-fbd_res2 make_input_per_chunk(const std::unique_ptr<BigAss> & genome,
-                              const int ic,
-                              const int niters,
-                              const int seed,
-                              const bool collapse,
-                              const double tol_pi,
-                              const double tol_r)
-{
-    FastPhaseK2 faith(genome->pos[ic].size(), genome->nsamples, genome->C, seed);
-    faith.initRecombination(genome->pos[ic]);
-    faith.AF = estimate_af_by_gl(genome->gls[ic], genome->nsamples, genome->pos[ic].size()).cast<MyFloat>();
-    faith.runWithOneThread(niters, genome->gls[ic]);
-    if(collapse)
-    {
-        faith.collapse_and_resize(genome->pos[ic], tol_r);
-        faith.runWithOneThread(2, genome->gls[ic]); // FIXME update iterations
-    }
-    return std::tuple(MyFloat1D(faith.GP.data(), faith.GP.data() + faith.GP.size()), faith.R, faith.PI, faith.F,
-                      faith.Ezj);
+    return loglike;
 }
 
 int run_impute_main(Options & opts)
@@ -609,134 +276,64 @@ int run_impute_main(Options & opts)
     int allthreads = std::thread::hardware_concurrency();
     opts.nthreads = opts.nthreads < allthreads ? opts.nthreads : allthreads;
     cao.print(tim.date(), allthreads, " concurrent threads are available. use", opts.nthreads, " threads");
-    ThreadPool poolit(opts.nthreads);
+    ThreadPool pool(opts.nthreads);
 
     std::unique_ptr<BigAss> genome = std::make_unique<BigAss>();
     init_bigass(genome, opts);
-    auto bw = make_bcfwriter(opts.out + ".vcf.gz", genome->chrs, genome->sampleids);
-    std::ofstream orecomb(opts.out + ".recomb");
-    std::ofstream opi(opts.out + ".pi");
-    std::ofstream oae(opts.out + ".cluster.freq");
-    std::ofstream op(opts.out + ".P");
-    Eigen::IOFormat fmt(6, Eigen::DontAlignCols, " ", "\n");
-    if(opts.single_chunk)
+    vector<future<double>> res;
+    FastPhaseK2 faith(genome->nsamples, genome->nsnps, opts.C, opts.seed);
+    faith.setFlags(opts.ptol, opts.ftol, opts.qtol, opts.debug, opts.nQ, opts.nP, opts.nF, opts.nR);
+    faith.initRecombination(genome->pos, opts.in_rfile, opts.gridsize);
+    genome->G = faith.G;
+    cao.print(tim.date(), "parsing input -> C =", genome->C, ", N =", genome->nsamples, ", M =", genome->nsnps,
+              ", nchunks =", genome->nchunks, ", B =", opts.gridsize, ", G =", genome->G, ", seed =", opts.seed);
+    double loglike, diff, prevlike{std::numeric_limits<double>::lowest()};
+    for(int it = 0; SIG_COND && it <= opts.nimpute; it++)
     {
-        vector<future<fbd_res1>> res;
-        for(int ic = 0; ic < genome->nchunks; ic++)
-        {
-            FastPhaseK2 faith(genome->pos[ic].size(), genome->nsamples, opts.C, opts.seed);
-            faith.initRecombination(genome->pos[ic], genome->B);
-            faith.setFlags(opts.debug, opts.nR);
-            faith.AF = estimate_af_by_gl(genome->gls[ic], genome->nsamples, genome->pos[ic].size()).cast<MyFloat>();
-            for(int it = 0; SIG_COND && it <= opts.nimpute; it++)
-            {
-                tim.clock();
-                faith.initIteration();
-                for(int i = 0; i < genome->nsamples; i++)
-                {
-                    if(it == opts.nimpute)
-                        res.emplace_back(poolit.enqueue(&FastPhaseK2::forwardAndBackwardsHighRam, &faith, i,
-                                                        std::ref(genome->gls[ic]), true));
-                    else
-                        res.emplace_back(poolit.enqueue(&FastPhaseK2::forwardAndBackwardsHighRam, &faith, i,
-                                                        std::ref(genome->gls[ic]), false));
-                }
-                double loglike = 0;
-                for(auto && ll : res)
-                {
-                    const auto [l, zj, zg1, zg2, gamma1_ae] = ll.get();
-                    loglike += l;
-                    faith.Ezj += zj;
-                    faith.Ezg1 += zg1;
-                    faith.Ezg2 += zg2;
-                    faith.pi += gamma1_ae;
-                }
-                res.clear(); // clear future and renew
-                cao.print(tim.date(), "run single chunk", ic, ", iteration", it, ", likelihoods =", loglike, ",",
-                          tim.reltime(), " sec");
-                if(it != opts.nimpute) faith.updateIteration();
-            }
-            tim.clock();
-            write_bigass_to_bcf(bw, faith.GP.data(), genome->chrs[ic], genome->pos[ic]);
-            genome->R.emplace_back(MyFloat1D(faith.R.data(), faith.R.data() + faith.R.size()));
-            genome->PI.emplace_back(MyFloat1D(faith.PI.data(), faith.PI.data() + faith.PI.size()));
-            genome->F.emplace_back(MyFloat1D(faith.F.data(), faith.F.data() + faith.F.size()));
-            opi << faith.PI.transpose().format(fmt) << "\n";
-            op << faith.F.format(fmt) << "\n";
-            orecomb << faith.R.transpose().format(fmt) << "\n";
-            faith.Ezj.rowwise() /= faith.Ezj.colwise().sum(); // norm gamma ae
-            oae << faith.Ezj.transpose().format(fmt) << "\n";
-            genome->GammaAE.emplace_back(MyFloat1D(faith.Ezj.data(), faith.Ezj.data() + faith.Ezj.size()));
-            cao.done(tim.date(), "chunk", ic, " done. outputting elapsed", tim.reltime(), " secs");
-            if(opts.collapse)
-            {
-                cao.warn(tim.date(), "start collapsing!");
-                faith.collapse_and_resize(genome->pos[ic], opts.tol_r);
-                std::ofstream orecomb2(opts.out + ".recomb2");
-                std::ofstream opi2(opts.out + ".pi2");
-                std::ofstream oae2(opts.out + ".cluster.freq2");
-                std::ofstream oclp(opts.out + ".collapse");
-                opts.nimpute = 2;
-                for(int it = 0; it <= opts.nimpute; it++)
-                {
-                    tim.clock();
-                    faith.initIteration();
-                    for(int i = 0; i < genome->nsamples; i++)
-                    {
-                        if(it == opts.nimpute)
-                            res.emplace_back(poolit.enqueue(&FastPhaseK2::forwardAndBackwardsHighRam, &faith, i,
-                                                            std::ref(genome->gls[ic]), true));
-                        else
-                            res.emplace_back(poolit.enqueue(&FastPhaseK2::forwardAndBackwardsHighRam, &faith, i,
-                                                            std::ref(genome->gls[ic]), false));
-                    }
-                    double loglike = 0;
-                    for(auto && ll : res)
-                    {
-                        const auto [l, zj, zg1, zg2, gamma1] = ll.get();
-                        loglike += l;
-                        faith.Ezj += zj; // gamma ae
-                        faith.Ezg1 += zg1;
-                        faith.Ezg2 += zg2;
-                        faith.pi += gamma1;
-                    }
-                    res.clear(); // clear future and renew
-                    cao.print(tim.date(), "run single chunk", ic, ", iteration", it, ", likelihoods =", loglike, ",",
-                              tim.reltime(), " sec");
-                    if(it != opts.nimpute) faith.updateIteration();
-                }
-                orecomb2 << faith.R.transpose().format(fmt) << "\n";
-                opi2 << faith.PI.transpose().format(fmt) << "\n";
-                faith.Ezj.rowwise() /= faith.Ezj.colwise().sum(); // norm gamma ae
-                oae2 << faith.Ezj.transpose().format(fmt) << "\n";
-                for(auto cl : faith.collapse) oclp << cl << "\n";
-            }
-        }
+        tim.clock();
+        if(opts.refillHaps && it > 4 && it < opts.nimpute / 2 && it % 4 == 1) faith.refillHaps(opts.refillHaps);
+        faith.initIteration();
+        for(int i = 0; i < faith.N; i++)
+            res.emplace_back(
+                pool.enqueue(&FastPhaseK2::runAllChunks, &faith, std::ref(genome->gls), i, it == opts.nimpute));
+        loglike = 0;
+        for(auto && ll : res) loglike += ll.get();
+        res.clear(); // clear future and renew
+        faith.updateIteration();
+        diff = it ? loglike - prevlike : NAN;
+        prevlike = loglike;
+        cao.print(tim.date(), "run whole genome, iteration", it, ", likelihoods =", loglike, ", diff =", diff, ", time",
+                  tim.reltime(), " sec");
+    }
+    // reuse Ezj for AE
+    if(opts.eHap)
+    {
+        cao.print("use hapsum");
+        faith.Ezj.setZero(faith.CC, faith.HapSum.cols());
+        for(int m = 0; m < faith.HapSum.cols(); m++)
+            faith.Ezj.col(m) =
+                (faith.HapSum.col(m).matrix() * faith.HapSum.col(m).transpose().matrix()).reshaped().array();
     }
     else
     {
-        if(genome->nchunks < opts.nthreads)
-            cao.warn(tim.date(), "nchunks < nthreads. only", genome->nchunks, " threads will be working");
-        vector<future<fbd_res2>> res;
-        for(int ic = 0; ic < genome->nchunks; ic++)
-            res.emplace_back(poolit.enqueue(make_input_per_chunk, std::ref(genome), ic, opts.nimpute, opts.seed,
-                                            opts.collapse, opts.tol_pi, opts.tol_r));
-        int ic = 0;
-        for(auto && ll : res)
-        {
-            auto [GP, faithR, faithPI, faithF, faithAE] = ll.get();
-            write_bigass_to_bcf(bw, GP.data(), genome->chrs[ic], genome->pos[ic]);
-            genome->R.emplace_back(MyFloat1D(faithR.data(), faithR.data() + faithR.size()));
-            genome->PI.emplace_back(MyFloat1D(faithPI.data(), faithPI.data() + faithPI.size()));
-            genome->F.emplace_back(MyFloat1D(faithF.data(), faithF.data() + faithF.size()));
-            faithAE.rowwise() /= faithAE.colwise().sum(); // norm gamma ae
-            genome->GammaAE.emplace_back(MyFloat1D(faithAE.data(), faithAE.data() + faithAE.size()));
-            orecomb << faithR.transpose().format(fmt) << "\n";
-            opi << faithPI.transpose().format(fmt) << "\n";
-            op << faithF.format(fmt) << "\n";
-            oae << faithAE.transpose().format(fmt) << "\n";
-            cao.print(tim.date(), "chunk", ic++, " imputation done and outputting");
-        }
+        faith.Ezj = get_cluster_frequency(faith.R, faith.PI);
+    }
+    auto bw = make_bcfwriter(opts.out + ".vcf.gz", genome->chrs, genome->sampleids);
+    genome->collapse = Char1D(faith.collapse.data(), faith.collapse.data() + faith.collapse.size());
+    for(int ic = 0; ic < genome->nchunks; ic++)
+    {
+        const int S = faith.pos_chunk[ic + 1] - faith.pos_chunk[ic];
+        const int G = faith.grid_chunk[ic + 1] - faith.grid_chunk[ic];
+        MyArr2D out = faith.Ezj.middleCols(faith.grid_chunk[ic], G);
+        genome->AE.emplace_back(MyFloat1D(out.data(), out.data() + out.size()));
+        out = faith.R.middleCols(faith.grid_chunk[ic], G);
+        genome->R.emplace_back(MyFloat1D(out.data(), out.data() + out.size()));
+        out = faith.PI.middleCols(faith.grid_chunk[ic], G);
+        genome->PI.emplace_back(MyFloat1D(out.data(), out.data() + out.size()));
+        out = faith.P.middleRows(faith.pos_chunk[ic], S);
+        genome->P.emplace_back(MyFloat1D(out.data(), out.data() + out.size()));
+        out = faith.GP.middleRows(faith.pos_chunk[ic], S * 3);
+        write_bigass_to_bcf(bw, out.data(), genome->chrs[ic], genome->pos[ic]);
     }
     constexpr auto OPTIONS = alpaca::options::fixed_length_encoding;
     std::ofstream ofs(opts.out + ".pars.bin", std::ios::out | std::ios::binary);
@@ -744,5 +341,13 @@ int run_impute_main(Options & opts)
     ofs.close();
     assert(std::filesystem::file_size(opts.out + ".pars.bin") == bytes_written);
     cao.done(tim.date(), "imputation done and outputting.", bytes_written, " bytes written to file");
+    std::ofstream orecomb(opts.out + ".recomb");
+    orecomb << faith.R.transpose().format(fmt6) << "\n";
+    std::ofstream opi(opts.out + ".pi");
+    opi << faith.PI.transpose().format(fmt6) << "\n";
+    std::ofstream ohap(opts.out + ".hapfreq");
+    ohap << faith.HapSum.transpose().format(fmt6) << "\n";
+    std::ofstream oae(opts.out + ".ae");
+    oae << faith.Ezj.transpose().format(fmt6) << "\n";
     return 0;
 }

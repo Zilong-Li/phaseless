@@ -1,6 +1,6 @@
 Package: phaseless
 Title: Admixture and imputation for low coverage sequencing data in one goal
-Version: 0.3.0
+Version: 0.4.0
 Authors@R: 
     person("Zilong", "Li", , "zilong.dk@gmail.com", role = c("aut", "cre", "cph"),
            comment = c(ORCID = "0000-0001-5859-2078"))
