@@ -54,3 +54,57 @@ plot.hapfreq <- function(hapfreq,
   if(!is.null(recomb))
     lines(pos[-1], recomb, type = "l", col = "red")
 }
+
+
+table(dy <- as.matrix(read.table("~/Downloads/chr16.Mkomazi.males.Ychr.txt")))
+
+table(da <- as.matrix(read.table("~/Downloads/chr16.Mkomazi.males.Achr.txt")))
+
+image(da)
+
+
+N <- 4
+M <- 7570
+d <- 1
+xleft <- 1:M - d
+xright <- 1:M - d
+
+samples <- c("NGrataE03715", "NGrataE03718", "NGrataE03717", "NGrataE03723")
+
+f <- function(da){
+  for(i in 1:N){
+    ybottom <- i + array(0, M)
+    ytop <- ybottom+1
+    rect(xleft = xleft - d,  xright = xright + d, ybottom = ybottom, ytop = ytop, col = da[i,]+1, lwd = 3, border = NA)
+    rect(xleft = xleft - d,  xright = xright + d, ybottom = ytop-0.01, ytop = ytop, col = "gray", lwd = 3, border = NA)
+    mtext(samples[i], side = 2, at = (ytop[1]+ybottom[1])/2, cex = 1.5)
+  }
+}
+
+##par(mfrow = c(2,1), cex.lab = 2, cex.main = 2)
+
+op <- par(mfrow = c(2,1),
+          oma = c(6,0,0,0) + 0.1,
+          mar = c(0,4,2,1) + 0.1,
+          cex.lab = 2, cex.main=2)
+plot(0, 0, col = "white", axes=FALSE, xlim = c(0, M), ylim = c(1, N + 1), main = "Y chromosome", xlab="",ylab="")
+f(dy)
+plot(0, 0, col = "white", axes=FALSE, xlim = c(0, M), ylim = c(1, N + 1), main = "A chromosome", xlab="SNP index", ylab="")
+f(da)
+
+
+mycols <- c("gray", "black")
+
+
+
+rect(xleft = xleft - d,  xright = xright + d, ybottom = ybottom, ytop = ytop, col = mycols[da[i,]+1], lwd = 2, border = NA)
+
+
+
+p <- read.table("~/Downloads/fypa.pyfa.pos")
+
+dev.off()
+
+
+plot.hapfreq(d,pos[1:ncol(d)], colors=1:2)
+plot.hapfreq(d, 1:ncol(d), colors=1:2)

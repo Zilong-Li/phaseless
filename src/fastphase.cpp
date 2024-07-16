@@ -39,7 +39,7 @@ void FastPhaseK2::initRecombination(const Int2D & pos, std::string rfile, int B_
     grid_chunk[nchunks] = sg; // add sentinel
     if(!rfile.empty()) load_csv(R, rfile, true);
     er = R.row(0).sqrt();
-    protect_er(er);
+    // protect_er(er);
     R = er2R(er);
 }
 
@@ -149,7 +149,7 @@ void FastPhaseK2::protectPars()
             er(i) = er(i) < miner ? miner : er(i);
             er(i) = er(i) > maxer ? maxer : er(i);
         }
-        protect_er(er);
+        // protect_er(er);
         R = er2R(er);
     }
     // protect PI

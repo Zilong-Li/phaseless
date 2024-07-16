@@ -310,9 +310,9 @@ inline void protect_er(MyArr1D & er)
 inline MyArr1D calc_er(const Int1D & dl, double nGen, double expRate = 0.5)
 {
     MyArr1D er(dl.size());
-    for(size_t i = 1; i < dl.size(); i++) er(i) = std::exp(-dl[i] / 1e6);
-    // for(size_t i = 1; i < dl.size(); i++) er(i) = std::exp(-dl[i] * expRate * nGen / 1e8);
-    protect_er(er);
+    // for(size_t i = 1; i < dl.size(); i++) er(i) = std::exp(-dl[i] / 1e6);
+    for(size_t i = 1; i < dl.size(); i++) er(i) = std::exp(-dl[i] * expRate * nGen / 1e8);
+    // protect_er(er);
     return er;
 }
 
