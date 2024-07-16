@@ -385,7 +385,7 @@ inline void chunk_beagle_genotype_likelihoods(const std::unique_ptr<BigAss> & ge
             genome->pos.push_back(markers);
             markers.clear();
             // transpose glchunk into genome->gl then clear it
-            MyFloat1D gl(genome->nsamples * im * 3);
+            MyFloat1D gl((size_t)genome->nsamples * im * 3);
             for(i = 0; i < genome->nsamples; i++)
             {
                 for(j = 0; j < im; j++)
@@ -422,7 +422,7 @@ inline void chunk_beagle_genotype_likelihoods(const std::unique_ptr<BigAss> & ge
         genome->nchunks++;
         genome->chrs.push_back(chr0);
         // transpose glchunk into genome->gl then clear it
-        MyFloat1D gl(genome->nsamples * im * 3);
+        MyFloat1D gl((size_t)genome->nsamples * im * 3);
         for(i = 0; i < genome->nsamples; i++)
         {
             for(j = 0; j < im; j++)
