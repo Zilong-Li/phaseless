@@ -300,6 +300,13 @@ int run_impute_main(Options & opts)
                           + genome->C * genome->chunksize * 4 * (opts.nthreads + 1)
                           + genome->C * genome->C * genome->chunksize * 3 * opts.nthreads)
                  * sizeof(MyFloat) * 8 / (1024 * 1024 * 1024);
+    if(opts.single_chunk)
+    {
+        ram = (double)(genome->nsamples * genome->nsnps * 6
+                       + genome->C * genome->nsnps * 4 * (opts.nthreads + 1)
+                       + genome->C * genome->C * genome->nsnps * 3 * opts.nthreads)
+              * sizeof(MyFloat) * 8 / (1024 * 1024 * 1024);
+    }
     cao.print(tim.date(), "roughly estimated RAM usage would be ", ram, " Gbs");
     vector<future<double>> res;
     FastPhaseK2 faith(genome->nsamples, genome->nsnps, opts.C, opts.seed);
