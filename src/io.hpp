@@ -390,9 +390,9 @@ inline void chunk_beagle_genotype_likelihoods(const std::unique_ptr<BigAss> & ge
             {
                 for(j = 0; j < im; j++)
                 {
-                    gl[i * im * 3 + 0 * im + j] = glchunk[j][i * 3 + 0];
-                    gl[i * im * 3 + 1 * im + j] = glchunk[j][i * 3 + 1];
-                    gl[i * im * 3 + 2 * im + j] = glchunk[j][i * 3 + 2];
+                  gl[(size_t) i * im * 3 + 0 * im + j] = glchunk[j][i * 3 + 0];
+                  gl[(size_t) i * im * 3 + 1 * im + j] = glchunk[j][i * 3 + 1];
+                  gl[(size_t) i * im * 3 + 2 * im + j] = glchunk[j][i * 3 + 2];
                 }
             }
             glchunk.clear();
@@ -427,9 +427,9 @@ inline void chunk_beagle_genotype_likelihoods(const std::unique_ptr<BigAss> & ge
         {
             for(j = 0; j < im; j++)
             {
-                gl[i * im * 3 + 0 * im + j] = glchunk[j][i * 3 + 0];
-                gl[i * im * 3 + 1 * im + j] = glchunk[j][i * 3 + 1];
-                gl[i * im * 3 + 2 * im + j] = glchunk[j][i * 3 + 2];
+              gl[(size_t)i * im * 3 + 0 * im + j] = glchunk[j][i * 3 + 0];
+              gl[(size_t)i * im * 3 + 1 * im + j] = glchunk[j][i * 3 + 1];
+              gl[(size_t)i * im * 3 + 2 * im + j] = glchunk[j][i * 3 + 2];
             }
         }
         glchunk.clear();

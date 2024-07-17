@@ -19,19 +19,13 @@ Firstly, the imputation model is in the spirit of [[https://www.ncbi.nlm.nih.gov
 
 * Build
 
-Assume you have =htslib= installed in your system path.
-
 #+begin_src shell
 git clone https://github.com/Zilong-Li/phaseless
-make -j4
-#+end_src
-
-If you follow [[https://github.com/samtools/htslib][htslib]] installation guide and have it in your customized path
-#+begin_src shell
-make HTSLIB=/path/to/your/htslib -j4
+make -j6
 #+end_src
 
 * Usage
+
 =phaseless= owns subcommands. please use =phaseless -h= to check it out.
 
 ** Imputation

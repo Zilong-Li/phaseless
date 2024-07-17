@@ -43,7 +43,14 @@ void FastPhaseK2::initRecombination(const Int2D & pos, std::string rfile, int B_
     R = er2R(er);
 }
 
-void FastPhaseK2::setFlags(double tol_p, double tol_f, double tol_q, bool debug_, bool nQ, bool nP, bool nF, bool nR)
+void FastPhaseK2::setFlags(double tol_p,
+                           double tol_f,
+                           double tol_q,
+                           bool debug_,
+                           bool nQ,
+                           bool nP,
+                           bool nF,
+                           bool nR)
 {
     alleleEmitThreshold = tol_p;
     clusterFreqThreshold = tol_f;
@@ -182,7 +189,8 @@ double FastPhaseK2::hmmIterWithJumps(const MyFloat1D & GL, const int ic, const i
         start = grid_chunk[ic];
         nsize = nGrids;
     }
-    MyArr2D emit_grid = get_emission_by_grid(gli, P.middleRows(pos_chunk[ic], S), collapse.segment(pos_chunk[ic], S));
+    MyArr2D emit_grid =
+        get_emission_by_grid(gli, P.middleRows(pos_chunk[ic], S), collapse.segment(pos_chunk[ic], S));
     MyArr2D emit = get_emission_by_gl(gli, P.middleRows(pos_chunk[ic], S));
     const auto [alpha, beta, cs] =
         forward_backwards_diploid(emit_grid, R.middleCols(start, nsize), PI.middleCols(start, nsize));
@@ -222,7 +230,8 @@ double FastPhaseK2::hmmIterWithJumps(const MyFloat1D & GL, const int ic, const i
         alphatmp += PI.col(gg) * R(2, gg) * 1.0; // inner alpha.col(s-1).sum == 1
         beta_mult_emit = emit_grid.col(g) * beta.col(g); // C2
         for(z1 = 0; z1 < C; z1++)
-            ind_post_zj(z1, g) = cs(g) * (PI(z1, gg) * alphatmp * beta_mult_emit(Eigen::seqN(z1, C, C))).sum();
+            ind_post_zj(z1, g) =
+                cs(g) * (PI(z1, gg) * alphatmp * beta_mult_emit(Eigen::seqN(z1, C, C))).sum();
     }
     { // sum over all samples for updates
         std::scoped_lock<std::mutex> lock(mutex_it);
@@ -280,30 +289,41 @@ int run_impute_main(Options & opts)
 
     std::unique_ptr<BigAss> genome = std::make_unique<BigAss>();
     init_bigass(genome, opts);
+    cao.print(tim.date(), "parsing input -> C =", genome->C, ", N =", genome->nsamples,
+              ", M =", genome->nsnps, ", nchunks =", genome->nchunks, ", B =", opts.gridsize,
+              ", G =", genome->G, ", seed =", opts.seed);
+    // estimate the RAM
+    // input data : N x M x 3 x float
+    // output data : N x M x 3 x float
+    // model :C x M x 4 +  (CxCxMx3 + C x M x 4) x threads
+    double ram = (double)(genome->nsamples * genome->nsnps * 6
+                          + genome->C * genome->chunksize * 4 * (opts.nthreads + 1)
+                          + genome->C * genome->C * genome->chunksize * 3 * opts.nthreads)
+                 * sizeof(MyFloat) * 8 / (1024 * 1024 * 1024);
+    cao.print(tim.date(), "roughly estimated RAM usage would be ", ram, " Gbs");
     vector<future<double>> res;
     FastPhaseK2 faith(genome->nsamples, genome->nsnps, opts.C, opts.seed);
     faith.setFlags(opts.ptol, opts.ftol, opts.qtol, opts.debug, opts.nQ, opts.nP, opts.nF, opts.nR);
     faith.initRecombination(genome->pos, opts.in_rfile, opts.gridsize);
     genome->G = faith.G;
-    cao.print(tim.date(), "parsing input -> C =", genome->C, ", N =", genome->nsamples, ", M =", genome->nsnps,
-              ", nchunks =", genome->nchunks, ", B =", opts.gridsize, ", G =", genome->G, ", seed =", opts.seed);
     double loglike, diff, prevlike{std::numeric_limits<double>::lowest()};
     for(int it = 0; SIG_COND && it <= opts.nimpute; it++)
     {
         tim.clock();
-        if(opts.refillHaps && it > 4 && it < opts.nimpute / 2 && it % 4 == 1) faith.refillHaps(opts.refillHaps);
+        if(opts.refillHaps && it > 4 && it < opts.nimpute / 2 && it % 4 == 1)
+            faith.refillHaps(opts.refillHaps);
         faith.initIteration();
         for(int i = 0; i < faith.N; i++)
-            res.emplace_back(
-                pool.enqueue(&FastPhaseK2::runAllChunks, &faith, std::ref(genome->gls), i, it == opts.nimpute));
+            res.emplace_back(pool.enqueue(&FastPhaseK2::runAllChunks, &faith, std::ref(genome->gls), i,
+                                          it == opts.nimpute));
         loglike = 0;
         for(auto && ll : res) loglike += ll.get();
         res.clear(); // clear future and renew
         faith.updateIteration();
         diff = it ? loglike - prevlike : NAN;
         prevlike = loglike;
-        cao.print(tim.date(), "run whole genome, iteration", it, ", likelihoods =", loglike, ", diff =", diff, ", time",
-                  tim.reltime(), " sec");
+        cao.print(tim.date(), "run whole genome, iteration", it, ", likelihoods =", loglike, ", diff =", diff,
+                  ", time", tim.reltime(), " sec");
     }
     // reuse Ezj for AE
     if(opts.eHap)
