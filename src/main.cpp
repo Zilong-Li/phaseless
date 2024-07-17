@@ -179,7 +179,7 @@ int main(int argc, char * argv[])
               "2: re-sample P by copying from haplotype with the highest probability\n"
               "3: re-sample P by copying from others with respect to their probability\n"
               "0: disable this")
-        .default_value(0)
+        .default_value(2)
         .scan<'i', int>();
     cmd_impute.add_argument("--minRecombRate")
         .help("min recombination rate to determine if a SNP should be collapsed")

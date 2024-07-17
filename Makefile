@@ -6,9 +6,10 @@ CXX      = g++
 CXXFLAGS = -std=c++17 -Wall -O3 -DNDEBUG
 INC      = -I./src -I./inst/include -I$(HTSDIR)
 LDFLAGS  =  -L$(HTSDIR) -Wl,-rpath,$(HTSDIR)
-LIBS     = $(HTSDIR)/libhts.a -llzma -lbz2 -lm -lz -lpthread
+LIBS     =  -llzma -lbz2 -lm -lz -lpthread
 OBJS     = src/main.o src/phaseless.o src/fastphase.o src/admixture.o src/utils.o
 BINS     = phaseless
+libhts   = $(HTSDIR)/libhts.a
 FLOAT    = 0
 
 ifeq ($(strip $(FLOAT)),1)
@@ -16,18 +17,18 @@ ifeq ($(strip $(FLOAT)),1)
   CXXFLAGS += -DUSE_FLOAT
 endif
 
-.PHONY: all clean htslib
+.PHONY: all clean 
 
-all: $(BINS)
+all: $(BINS) $(libhts)
 
 %.o: %.cpp
 	${CXX} ${CXXFLAGS} -o $@ -c $< ${INC}
 
-$(BINS): $(OBJS)
-	${CXX} ${CXXFLAGS} -o $@ $(OBJS) ${INC} $(LIBS) $(LDFLAGS)
+$(BINS): $(OBJS) $(libhts)
+	${CXX} ${CXXFLAGS} -o $@ $(OBJS) ${INC} $(libhts) $(LIBS) $(LDFLAGS)
 
-htslib:
-	cd $(HTSDIR) && ./configure --disable-libcurl --without-libdeflate && make -j10
+$(libhts):
+	cd $(HTSDIR) && ./configure --disable-libcurl --without-libdeflate && make -j6
 
 clean:
 	rm -f $(BINS) $(OBJS)
