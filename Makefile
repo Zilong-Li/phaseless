@@ -1,13 +1,13 @@
 HTSDIR   = ./inst/include/htslib-1.18
 CXX      = g++
 
-# CXXFLAGS = -std=c++17 -Wall -O3 -g -fsanitize=address
+CXXFLAGS = -std=c++17 -Wall -O3 -g -fsanitize=address
 # CXXFLAGS = -std=c++17 -Wall -O3 -march=native -DNDEBUG
-CXXFLAGS = -std=c++17 -Wall -O3 -DNDEBUG
+# CXXFLAGS = -std=c++17 -Wall -O3 -DNDEBUG
 INC      = -I./src -I./inst/include -I$(HTSDIR)
 LDFLAGS  =  -L$(HTSDIR) -Wl,-rpath,$(HTSDIR)
 LIBS     =  -llzma -lbz2 -lm -lz -lpthread
-OBJS     = src/main.o src/phaseless.o src/fastphase.o src/admixture.o src/utils.o
+OBJS     = src/main.o src/phaseless.o src/fastphase.o src/admixture.o src/io.o src/utils.o
 BINS     = phaseless
 libhts   = $(HTSDIR)/libhts.a
 FLOAT    = 0
