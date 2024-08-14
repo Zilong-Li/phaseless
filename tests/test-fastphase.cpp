@@ -45,7 +45,7 @@ TEST_CASE("fastphasek4", "[test-fastphasek4]")
         llike.clear(); // clear future and renew
         faith4.updateClusterFreqPI(postProbsZ, tol);
         faith4.updateAlleleFreqWithinCluster(postProbsZandG, tol);
-        // REQUIRE(loglike > prevlike);
+        REQUIRE(loglike > prevlike);
         prevlike = loglike;
     }
 }

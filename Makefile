@@ -1,13 +1,14 @@
 HTSDIR   = ./inst/include/htslib-1.18
 CXX      = g++
 
-CXXFLAGS = -std=c++17 -Wall -O3 -g -fsanitize=address
+# CXXFLAGS = -std=c++17 -Wall -O3 -g -fsanitize=address
 # CXXFLAGS = -std=c++17 -Wall -O3 -march=native -DNDEBUG
-# CXXFLAGS = -std=c++17 -Wall -O3 -DNDEBUG
+CXXFLAGS = -std=c++17 -Wall -O3 -DNDEBUG
 INC      = -I./src -I./inst/include -I$(HTSDIR)
 LDFLAGS  =  -L$(HTSDIR) -Wl,-rpath,$(HTSDIR)
 LIBS     =  -llzma -lbz2 -lm -lz -lpthread
-OBJS     = src/main.o src/phaseless.o src/fastphase.o src/admixture.o src/io.o src/utils.o
+OBJS     = src/phaseless.o src/fastphase.o src/admixture.o src/io.o src/utils.o
+libsrc   = src/libsrc.a
 BINS     = phaseless
 libhts   = $(HTSDIR)/libhts.a
 FLOAT    = 0
@@ -24,14 +25,17 @@ all: $(BINS) $(libhts)
 %.o: %.cpp
 	${CXX} ${CXXFLAGS} -o $@ -c $< ${INC}
 
-$(BINS): $(OBJS) $(libhts)
-	${CXX} ${CXXFLAGS} -o $@ $(OBJS) ${INC} $(libhts) $(LIBS) $(LDFLAGS)
+$(BINS): src/main.o $(libsrc) $(libhts)
+	${CXX} ${CXXFLAGS} -o $@ src/main.o $(libsrc) $(libhts) $(LIBS) $(LDFLAGS) $(INC)
 
 $(libhts):
 	cd $(HTSDIR) && ./configure --disable-libcurl --without-libdeflate && make -j6
 
+$(libsrc): $(OBJS)
+	ar -rcs $@ $?
+
 clean:
-	rm -f $(BINS) $(OBJS)
+	rm -f $(BINS) src/*.o src/*.a
 	cd $(HTSDIR) && make clean
 
 impute:

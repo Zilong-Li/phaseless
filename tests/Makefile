@@ -1,15 +1,15 @@
 HTSDIR   = ../inst/include/htslib-1.18
 CXX      = g++
 CXXFLAGS = -std=c++17 -Wall -O3
-INC      = -I. -I../src -I../inst/include -I$(HTSDIR)
-LDFLAGS  =  -L$(HTSDIR) -Wl,-rpath,$(HTSDIR)
-LIBS     = -lhts -llzma -lbz2 -lm -lz -lpthread
+INC      = -I../src -I../inst/include -I$(HTSDIR)
+# LDFLAGS  =  -L$(HTSDIR) -Wl,-rpath,$(HTSDIR)
+LIBS     = $(HTSDIR)/libhts.a -llzma -lbz2 -lm -lz -lpthread
 
 OBJS = test-main.o test-joint.o test-admixture.o test-fastphase.o test-utils.o
 
 BINS = test-joint.bin test-admixture.bin test-fastphase.bin test-utils.bin
 
-DEPS = ../src/phaseless.o ../src/fastphase.o ../src/admixture.o
+DEPS = ../src/libsrc.a
 
 UTILS = test-cli test-io
 
@@ -21,7 +21,7 @@ all: $(BINS) $(OBJS)
 	$(CXX) $(CXXFLAGS) -o $@ -c $< ${INC}
 
 %.bin: %.o test-main.o $(DEPS)
-	${CXX} ${CXXFLAGS} -o $@ $< test-main.o $(DEPS) $(LDFLAGS) $(LIBS)
+	${CXX} ${CXXFLAGS} -o $@ $< test-main.o $(DEPS) $(LDFLAGS) $(LIBS) $(INC)
 
 test: $(BINS)
 	./test-utils.bin --success

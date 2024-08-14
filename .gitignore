@@ -33,4 +33,5 @@ admix.*
 run.sh
 inst/include/htslib*
 src/phaseless.so
+src/libsrc.*
 *.gz
