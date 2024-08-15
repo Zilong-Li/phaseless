@@ -488,28 +488,6 @@ void chunk_beagle_genotype_likelihoods(const std::unique_ptr<BigAss> & genome, c
     // now evenly split last two chunks of each chromosome
 }
 
-void update_bigass_inplace(const std::unique_ptr<BigAss> & genome)
-{
-    int ic, ndiff;
-    for(ic = 0, genome->nsnps = 0; ic < genome->nchunks; ic++) genome->nsnps += genome->pos[ic].size();
-    for(ic = 0; ic < genome->nchunks; ic++)
-    {
-        if(ic == 0) continue; // assume the first chunksize is not greater than the defined
-        if((int)genome->pos[ic - 1].size() < genome->chunksize)
-        {
-            ndiff = genome->chunksize - genome->pos[ic - 1].size();
-            if((int)genome->pos[ic].size() >= ndiff)
-            {
-                genome->pos[ic - 1].insert(genome->pos[ic - 1].end(), genome->pos[ic].begin(),
-                                           genome->pos[ic].begin() + ndiff);
-                Int1D(genome->pos[ic].begin() + ndiff, genome->pos[ic].end()).swap(genome->pos[ic]);
-            }
-            else
-                break;
-        }
-    }
-}
-
 size_t count_lines(std::string fpath)
 {
     std::ifstream ifs(fpath);
@@ -626,4 +604,32 @@ void init_bigass(const std::unique_ptr<BigAss> & genome, const Options & opts)
     if(genome->B == 1 && genome->G != genome->nsnps)
         cao.error("number of grids should be same as snps if B=1");
     cao.done(tim.date(), "elapsed time for parsing beagle file", std::fixed, tim.reltime(), " secs");
+}
+
+/*
+ * if buffer is desired, re-split chunks
+ */
+void update_bigass(const std::unique_ptr<BigAss> & genome, const Options & opts)
+{
+    assert(opts.buffer > 0);
+    size_t s = opts.buffer * genome->nsamples * 3;
+    for(int ic = 0; ic < genome->nchunks; ic++)
+    {
+        assert(opts.buffer < genome->pos[ic].size());
+        if(ic < genome->nchunks - 1)
+        {
+
+            genome->pos[ic].insert(genome->pos[ic].end(), genome->pos[ic + 1].begin(),
+                                   genome->pos[ic + 1].begin() + opts.buffer);
+            genome->gls[ic].insert(genome->gls[ic].end(), genome->gls[ic + 1].begin(),
+                                   genome->gls[ic + 1].end() + s);
+        }
+        else
+        {
+            genome->pos[ic].insert(genome->pos[ic].begin(), genome->pos[ic - 1].end() - opts.buffer,
+                                   genome->pos[ic - 1].end());
+            genome->gls[ic].insert(genome->gls[ic].begin(), genome->gls[ic - 1].end() - s,
+                                   genome->gls[ic - 1].end());
+        }
+    }
 }

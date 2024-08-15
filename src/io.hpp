@@ -39,5 +39,6 @@ std::string convert_geno2like(std::vector<uint8_t> bed,
                               std::vector<std::string> marker,
                               const uint64_t nsamples);
 void init_bigass(const std::unique_ptr<BigAss> & genome, const Options & opts);
+void update_bigass(const std::unique_ptr<BigAss> & genome, const Options & opts);
 
 #endif // PHASELESS_IO_H_

@@ -96,8 +96,8 @@ inline MatrixType RandomUniform(const Eigen::Index numRows,
 
 struct Options
 {
-    int ichunk{0}, chunksize{10000}, K{2}, C{10}, nadmix{1000}, nimpute{40}, nthreads{1}, seed{999};
-    int gridsize{1}, refillHaps{0};
+    int ichunk{0}, chunksize{50000}, K{2}, C{10}, nadmix{1000}, nimpute{40}, nthreads{1}, seed{999};
+    int gridsize{1}, refillHaps{0}, buffer{0};
     double ltol{1e-1}, info{0}, tol_pi{0.99}, tol_r{1e-5};
     double ptol{1e-6}; // threshold for P
     double ftol{1e-6}; // threshold for F
@@ -140,7 +140,8 @@ struct Pars
         P = MyFloat1D(iP.data(), iP.data() + iP.size());
         Q = MyFloat1D(iQ.data(), iQ.data() + iQ.size());
         er = MyFloat1D(ier.data(), ier.data() + ier.size());
-        for(size_t k = 0; k < iF.size(); k++) F.emplace_back(MyFloat1D(iF[k].data(), iF[k].data() + iF[k].size()));
+        for(size_t k = 0; k < iF.size(); k++)
+            F.emplace_back(MyFloat1D(iF[k].data(), iF[k].data() + iF[k].size()));
     }
     int K, C, M, N;
     MyFloat1D P, Q;
@@ -367,8 +368,8 @@ inline MyArr1D get_emission_by_site(const MyArr1D & gli, const MyArr1D & P, doub
             {
                 for(g2 = 0; g2 <= 1; g2++)
                 {
-                    emit(z12) +=
-                        gli(g1 + g2) * (g1 * P(z1) + (1 - g1) * (1 - P(z1))) * (g2 * P(z2) + (1 - g2) * (1 - P(z2)));
+                    emit(z12) += gli(g1 + g2) * (g1 * P(z1) + (1 - g1) * (1 - P(z1)))
+                                 * (g2 * P(z2) + (1 - g2) * (1 - P(z2)));
                 }
             }
         }
@@ -453,8 +454,8 @@ inline auto forward_backwards_diploid(const MyArr2D & emit, const MyArr2D & R, c
             {
                 z12 = z1 * C + z2;
                 alpha(z12, s) = emit(z12, s)
-                                * (alpha(z12, s - 1) * R(0, s) + PI(z1, s) * sumTmp1(z2) + PI(z2, s) * sumTmp1(z1)
-                                   + PI(z1, s) * PI(z2, s) * constTmp);
+                                * (alpha(z12, s - 1) * R(0, s) + PI(z1, s) * sumTmp1(z2)
+                                   + PI(z2, s) * sumTmp1(z1) + PI(z1, s) * PI(z2, s) * constTmp);
             }
         }
         cs(s) = 1.0 / alpha.col(s).sum();
@@ -483,7 +484,8 @@ inline auto forward_backwards_diploid(const MyArr2D & emit, const MyArr2D & R, c
             {
                 z12 = z1 * C + z2;
                 // apply scaling
-                beta(z12, s) = (beta_mult_emit(z12) * R(0, s + 1) + sumTmp1(z1) + sumTmp1(z2) + constTmp) * cs(s + 1);
+                beta(z12, s) =
+                    (beta_mult_emit(z12) * R(0, s + 1) + sumTmp1(z1) + sumTmp1(z2) + constTmp) * cs(s + 1);
             }
         }
     }
