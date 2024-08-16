@@ -43,18 +43,19 @@ void write_bigass_to_bcf(vcfpp::BcfWriter & bw, const MyFloat * GP, std::string 
             fij += a1 - a0 * a0;
         }
         eaf = eij / 2 / N;
+        eaf = std::lround(1e6 * eaf) / 1e6;
         thetaHat = std::lround(1e2 * eaf) / 1e2;
         if(thetaHat == 0 || thetaHat == 1)
-            info = 1;
-        else if(info < 0)
-            info = 0;
+        {
+            info = 1.0;
+        }
         else
         {
             info = 1 - fij / (2 * N * eaf * (1 - eaf));
             info = std::lround(1e3 * info) / 1e3;
-            info = info > 1 ? 1 : info;
+            info = info > 1.0 ? 1.0 : info;
+            info = info < 0.0 ? 0.0 : info;
         }
-        eaf = std::lround(1e6 * eaf) / 1e6;
         var.setPOS(markers[m]);
         var.setGenotypes(gt);
         var.setFORMAT("GP", gp);
