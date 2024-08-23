@@ -34,7 +34,6 @@ void FastPhaseK2::setFlags(bool d, bool r)
     cao.warn("flags: debug=", debug, ", NR=", NR);
 }
 
-
 void FastPhaseK2::initIteration()
 {
     // initial temp variables
@@ -102,6 +101,43 @@ void FastPhaseK2::updateIteration()
         cao.error(PI.colwise().sum(), "\ncolsum of PI is not 1.0!\n");
 }
 
+void FastPhaseK2::refillHaps(int strategy)
+{
+    const double minHapfreq = std::fmin((double)1.0 / (10.0 * C), 1.0 / 100.0);
+    std::default_random_engine rng = std::default_random_engine{};
+    rng.seed(seed);
+    int s{0}, c{0}, i{0};
+    for(c = 0; c < C; c++)
+    {
+        for(s = 0; s < M; s++)
+        {
+            if(Ezj(c, s) >= minHapfreq) continue;
+            MyArr1D h = Ezj.col(s);
+            h(c) = 0; // do not re-sample current
+            h /= h.sum();
+            MyFloat1D p(h.data(), h.data() + h.size());
+            std::discrete_distribution<int> distribution{p.begin(), p.end()};
+            int choice = distribution(rng);
+            assert(choice != c);
+            if(strategy == 1)
+            {
+                F(s, c) = alleleEmitThreshold;
+            }
+            else if(strategy == 2)
+            {
+                h.maxCoeff(&choice); // if no binning, this may be better
+                F(s, c) = F(s, choice);
+            }
+            else
+            {
+                F(s, c) = F(s, choice);
+            }
+            i++;
+        }
+    }
+    cao.warn("refill ", 100 * i / (C * M), "% infrequently used haps");
+}
+
 /*
 ** @param niters    number of iterations
 ** @param GL        genotype likelihood of all individuals in snp major form
@@ -113,6 +149,7 @@ double FastPhaseK2::runWithOneThread(int niters, const MyFloat1D & GL)
     double diff{-1}, loglike, prevlike;
     for(int it = 0; SIG_COND && it <= niters; it++)
     {
+        if(it > 3 && it < 20 && it % 3 == 1) refillHaps(2);
         initIteration();
         loglike = 0;
         for(int i = 0; i < N; i++)

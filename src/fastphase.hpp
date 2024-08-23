@@ -19,12 +19,11 @@ class FastPhaseK2
     std::mutex mutex_it; // in case of race condition
 
   public:
-    FastPhaseK2(int m, int n, int c, int seed) : M(m), N(n), C(c), C2(c * c)
+    FastPhaseK2(int m, int n, int c, int s) : M(m), N(n), C(c), C2(c * c), seed(s)
     {
         auto rng = std::default_random_engine{};
         rng.seed(seed);
-        F = RandomUniform<MyArr2D, std::default_random_engine>(M, C, rng, alleleEmitThreshold,
-                                                               1 - alleleEmitThreshold);
+        F = RandomUniform<MyArr2D, std::default_random_engine>(M, C, rng, alleleEmitThreshold, 1 - alleleEmitThreshold);
         GP.setZero(M * 3, N);
     }
     ~FastPhaseK2() {}
@@ -38,7 +37,7 @@ class FastPhaseK2
     bool debug{0}, NR{0};
 
     // SHARED VARIBALES
-    const int M, N, C, C2; // C2 = C x C
+    const int M, N, C, C2, seed; // C2 = C x C
     int G, B; // G: number of grids after collapsing block
     MyArr2D GP; // N x (M x 3), genotype probabilies for all individuals
     MyArr1D pi; // C, PI in first SNP
@@ -58,6 +57,7 @@ class FastPhaseK2
     void collapse_and_resize(const Int1D & pos, double tol_r = 1e-6);
     void initIteration();
     void updateIteration();
+    void refillHaps(int strategy);
     void callGenoLoopC(int, int, int, const MyArr2D &, const MyArr1D &);
     double runWithOneThread(int, const MyFloat1D &);
     double forwardAndBackwardsLowRam(int, const MyFloat1D &, bool);

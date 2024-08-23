@@ -18,7 +18,7 @@ int main(int argc, char * argv[])
 {
     // ========= helper message and parameters parsing ===========================
 
-    const std::string VERSION{"0.3.0"};
+    const std::string VERSION{"0.3.0.imp"};
 
     // below for catching ctrl+c, and dumping files
     struct sigaction sa;
@@ -152,7 +152,7 @@ int main(int argc, char * argv[])
         .default_value(std::string{""});
     cmd_impute.add_argument("-i", "--iterations")
         .help("number of EM iterations")
-        .default_value(40)
+        .default_value(100)
         .scan<'i', int>();
     cmd_impute.add_argument("-n", "--threads")
         .help("number of threads")
