@@ -17,10 +17,25 @@ vcfpp::BcfWriter make_bcfwriter(std::string vcfout, const String1D & chrs, const
     return bw;
 }
 
-void write_bigass_to_bcf(vcfpp::BcfWriter & bw, const MyFloat * GP, std::string chr, const Int1D & markers)
+MyArr2D extract_gp_chunk(const MyArr2D & GP, int start, int count)
+{
+    if(start < 0 || count < 0 || 3 * (start + count) > GP.rows())
+        throw std::out_of_range("genotype-probability chunk is outside the GP matrix");
+    return GP.middleRows(3 * start, 3 * count);
+}
+
+void write_bigass_to_bcf(vcfpp::BcfWriter & bw,
+                          const MyFloat * GP,
+                          std::string chr,
+                          const Int1D & markers,
+                          const String1D & ids,
+                          const String1D & refs,
+                          const String1D & alts)
 {
     int M = markers.size();
     int N = bw.header.nSamples();
+    if(ids.size() != markers.size() || refs.size() != markers.size() || alts.size() != markers.size())
+        throw std::invalid_argument("variant metadata and marker positions must have equal lengths");
     vcfpp::BcfRecord var(bw.header); // construct a variant record from the header
     var.setCHR(chr.c_str());
     double thetaHat, info, eaf, eij, fij, a0, a1;
@@ -57,6 +72,9 @@ void write_bigass_to_bcf(vcfpp::BcfWriter & bw, const MyFloat * GP, std::string 
             info = info < 0.0 ? 0.0 : info;
         }
         var.setPOS(markers[m]);
+        var.setID(ids[m].c_str());
+        const std::string alleles = refs[m] + "," + alts[m];
+        var.setRefAlt(alleles.c_str());
         var.setGenotypes(gt);
         var.setFORMAT("GP", gp);
         var.setFORMAT("DS", ds);
@@ -177,7 +195,8 @@ Int1D write_bcf_genotype_probability(const MyFloat * GP,
 void chunk_bcf_genotype_likelihoods(const std::unique_ptr<BigAss> & genome,
                                     const std::string & vcffile,
                                     const std::string & region,
-                                    const std::string & samples)
+                                    const std::string & samples,
+                                    VariantMetadata * metadata)
 {
     vcfpp::BcfReader vcf(vcffile, region, samples);
     vcfpp::BcfRecord var(vcf.header);
@@ -191,6 +210,7 @@ void chunk_bcf_genotype_likelihoods(const std::unique_ptr<BigAss> & genome,
     bool samechr{1};
     std::string chr0{""}, chr1{""};
     Int1D markers;
+    String1D ids, refs, alts;
     size_t im;
     while(vcf.getNextVariant(var))
     {
@@ -207,6 +227,9 @@ void chunk_bcf_genotype_likelihoods(const std::unique_ptr<BigAss> & genome,
         if(samechr || isnp == 0)
         {
             markers.push_back(var.POS());
+            ids.push_back(var.ID());
+            refs.push_back(var.REF());
+            alts.push_back(var.ALT());
             for(const auto & p : pl) gl.push_back(std::pow(10, -(double)p / 10.0));
         }
         if(((++isnp % genome->chunksize == 0) || (samechr == false)) && isnp != 1)
@@ -216,6 +239,13 @@ void chunk_bcf_genotype_likelihoods(const std::unique_ptr<BigAss> & genome,
             im = markers.size();
             genome->pos.push_back(markers);
             markers.clear();
+            if(metadata)
+            {
+                metadata->ids.push_back(ids);
+                metadata->refs.push_back(refs);
+                metadata->alts.push_back(alts);
+            }
+            ids.clear(), refs.clear(), alts.clear();
             // transpose glchunk into sample-major genome->gl then clear it
             MyFloat1D glchunk((size_t)genome->nsamples * im * 3);
             for(int i = 0; i < genome->nsamples; i++)
@@ -236,6 +266,9 @@ void chunk_bcf_genotype_likelihoods(const std::unique_ptr<BigAss> & genome,
             {
                 genome->ends.push_back(genome->nchunks - 1);
                 markers.push_back(var.POS());
+                ids.push_back(var.ID());
+                refs.push_back(var.REF());
+                alts.push_back(var.ALT());
                 for(const auto & p : pl) gl.push_back(std::pow(10, -(double)p / 10.0));
                 isnp = 1;
             }
@@ -252,6 +285,12 @@ void chunk_bcf_genotype_likelihoods(const std::unique_ptr<BigAss> & genome,
         im = markers.size();
         genome->pos.push_back(markers);
         markers.clear();
+        if(metadata)
+        {
+            metadata->ids.push_back(ids);
+            metadata->refs.push_back(refs);
+            metadata->alts.push_back(alts);
+        }
         genome->nchunks++;
         genome->chrs.push_back(chr0);
         // transpose glchunk into sample-major genome->gl then clear it
@@ -373,7 +412,9 @@ void read_beagle_genotype_likelihoods(const std::string & beagle,
     }
 }
 
-void chunk_beagle_genotype_likelihoods(const std::unique_ptr<BigAss> & genome, const std::string & beagle)
+void chunk_beagle_genotype_likelihoods(const std::unique_ptr<BigAss> & genome,
+                                       const std::string & beagle,
+                                       VariantMetadata * metadata)
 {
     // VARIBLES
     gzFile fp = nullptr;
@@ -398,6 +439,7 @@ void chunk_beagle_genotype_likelihoods(const std::unique_ptr<BigAss> & genome, c
     genome->nsnps = 0;
     buffer = original;
     Int1D markers;
+    String1D ids, refs, alts;
     genome->nchunks = 0;
     bool samechr;
     int i, j, im, isnp{0};
@@ -405,6 +447,7 @@ void chunk_beagle_genotype_likelihoods(const std::unique_ptr<BigAss> & genome, c
     {
         if(buffer != original) original = buffer;
         tok = strtok_r(buffer, delims, &buffer); // id: chr_pos
+        const std::string marker_id(tok);
         chr1 = (std::string)strtok(tok, "_");
         if(chr0.empty() || chr0 == chr1)
             samechr = true;
@@ -412,7 +455,9 @@ void chunk_beagle_genotype_likelihoods(const std::unique_ptr<BigAss> & genome, c
             samechr = false;
         pos = strtok(NULL, "_");
         tok = strtok_r(NULL, delims, &buffer); // ref
+        const std::string ref(tok);
         tok = strtok_r(NULL, delims, &buffer); // alt
+        const std::string alt(tok);
         for(i = 0; i < genome->nsamples; i++)
         {
             tok = strtok_r(NULL, delims, &buffer);
@@ -425,6 +470,9 @@ void chunk_beagle_genotype_likelihoods(const std::unique_ptr<BigAss> & genome, c
         if(samechr || isnp == 0)
         {
             markers.push_back(std::stoi(pos));
+            ids.push_back(marker_id);
+            refs.push_back(ref);
+            alts.push_back(alt);
             glchunk.push_back(gli);
         }
         if(((++isnp % genome->chunksize == 0) || (samechr == false)) && isnp != 1)
@@ -434,6 +482,13 @@ void chunk_beagle_genotype_likelihoods(const std::unique_ptr<BigAss> & genome, c
             im = markers.size();
             genome->pos.push_back(markers);
             markers.clear();
+            if(metadata)
+            {
+                metadata->ids.push_back(ids);
+                metadata->refs.push_back(refs);
+                metadata->alts.push_back(alts);
+            }
+            ids.clear(), refs.clear(), alts.clear();
             // transpose glchunk into genome->gl then clear it
             MyFloat1D gl((size_t)genome->nsamples * im * 3);
             for(i = 0; i < genome->nsamples; i++)
@@ -451,6 +506,9 @@ void chunk_beagle_genotype_likelihoods(const std::unique_ptr<BigAss> & genome, c
             {
                 genome->ends.push_back(genome->nchunks - 1);
                 markers.push_back(std::stoi(pos));
+                ids.push_back(marker_id);
+                refs.push_back(ref);
+                alts.push_back(alt);
                 glchunk.push_back(gli);
                 isnp = 1;
             }
@@ -469,6 +527,12 @@ void chunk_beagle_genotype_likelihoods(const std::unique_ptr<BigAss> & genome, c
         im = markers.size();
         genome->pos.push_back(markers);
         markers.clear();
+        if(metadata)
+        {
+            metadata->ids.push_back(ids);
+            metadata->refs.push_back(refs);
+            metadata->alts.push_back(alts);
+        }
         genome->nchunks++;
         genome->chrs.push_back(chr0);
         // transpose glchunk into genome->gl then clear it
@@ -582,17 +646,17 @@ std::string convert_geno2like(std::vector<uint8_t> bed,
     return res;
 }
 
-void init_bigass(const std::unique_ptr<BigAss> & genome, const Options & opts)
+void init_bigass(const std::unique_ptr<BigAss> & genome, const Options & opts, VariantMetadata * metadata)
 {
     genome->chunksize = opts.chunksize, genome->C = opts.C, genome->B = opts.gridsize;
     tim.clock();
     if(opts.in_vcf.empty())
     {
-        chunk_beagle_genotype_likelihoods(genome, opts.in_beagle);
+        chunk_beagle_genotype_likelihoods(genome, opts.in_beagle, metadata);
     }
     else
     {
-        chunk_bcf_genotype_likelihoods(genome, opts.in_vcf, opts.region, opts.samples);
+        chunk_bcf_genotype_likelihoods(genome, opts.in_vcf, opts.region, opts.samples, metadata);
     }
     int G{0};
     for(int ic = 0; ic < genome->nchunks; ic++)

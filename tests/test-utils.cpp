@@ -18,3 +18,24 @@ TEST_CASE("calc_grid_distance", "[test-utils]")
     auto d = calc_grid_distance(pos, b);
     // cao.cerr("size:", d.size());
 }
+
+TEST_CASE("runtime safeguards", "[test-utils]")
+{
+    REQUIRE(resolve_thread_count(8, 4) == 4);
+    REQUIRE(resolve_thread_count(8, 0) == 1);
+    REQUIRE_THROWS_AS(resolve_thread_count(0, 4), std::invalid_argument);
+
+    REQUIRE(likelihood_converged(1e-5, 1e-4));
+    REQUIRE_FALSE(likelihood_converged(-1e-5, 1e-4));
+    REQUIRE_FALSE(likelihood_converged(NAN, 1e-4));
+}
+
+TEST_CASE("allele frequency EM normalizes over samples", "[test-utils]")
+{
+    const int N = 2, M = 2;
+    // Sample-major blocks, with each genotype block containing M sites.
+    const MyFloat1D GL{1, 0, 0, 0, 0, 1, 0, 1, 0, 0, 1, 0};
+    const Arr1D af = estimate_af_by_gl(GL, N, M);
+    REQUIRE(af(0) == Approx(0.5));
+    REQUIRE(af(1) == Approx(0.5));
+}

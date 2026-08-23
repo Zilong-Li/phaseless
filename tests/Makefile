@@ -5,9 +5,9 @@ INC      = -I../src -I../inst/include -I$(HTSDIR)
 # LDFLAGS  =  -L$(HTSDIR) -Wl,-rpath,$(HTSDIR)
 LIBS     = $(HTSDIR)/libhts.a -llzma -lbz2 -lm -lz -lpthread
 
-OBJS = test-main.o test-joint.o test-admixture.o test-fastphase.o test-utils.o
+OBJS = test-main.o test-joint.o test-admixture.o test-fastphase.o test-utils.o test-io.o test-cli.o
 
-BINS = test-joint.bin test-admixture.bin test-fastphase.bin test-utils.bin
+BINS = test-joint.bin test-admixture.bin test-fastphase.bin test-utils.bin test-io.bin test-cli.bin
 
 DEPS = ../src/libsrc.a
 
@@ -28,6 +28,8 @@ test: $(BINS)
 	./test-joint.bin --success
 	./test-admixture.bin --success
 	./test-fastphase.bin --success
+	./test-io.bin --success
+	./test-cli.bin --success
 
 clean:
 	rm -f *.o *.bin

@@ -1,5 +1,4 @@
-#include "../external/argparse/argparse.hpp"
-#include "../src/io.hpp"
+#include <argparse/argparse.hpp>
 #include "catch.hh"
 
 using namespace std;

@@ -10,9 +10,11 @@
 #include "log.hpp"
 #include "timer.hpp"
 #include <Eigen/Dense>
+#include <algorithm>
 #include <cassert>
 #include <climits>
 #include <clocale>
+#include <cmath>
 #include <cstdint>
 #include <filesystem>
 #include <fstream>
@@ -21,6 +23,7 @@
 #include <map>
 #include <memory>
 #include <random>
+#include <stdexcept>
 #include <string>
 #include <sys/utsname.h>
 #include <unordered_map>
@@ -41,6 +44,18 @@ inline void handler(int s)
 {
     SIG_COND = 0;
     cao.warn("Caught SIGNAL: ", s, ". will try to exit nicely. wait for current threads to finish");
+}
+
+inline int resolve_thread_count(int requested, unsigned int available)
+{
+    if(requested < 1) throw std::invalid_argument("number of threads must be at least 1");
+    const int usable = available == 0 ? 1 : static_cast<int>(available);
+    return std::min(requested, usable);
+}
+
+inline bool likelihood_converged(double diff, double tol)
+{
+    return std::isfinite(diff) && diff >= 0 && diff < tol;
 }
 
 // STD TYPES
@@ -567,7 +582,7 @@ inline Arr1D estimate_af_by_gl(const MyFloat1D & GL, int N, int M, int niter = 1
         for(int j = 0; j < M; j++)
         {
             af_tmp(j) = af_est(j);
-            double p0, p1, p2, pt = 0.0;
+            double p0, p1, p2, pt{0};
             for(int i = 0; i < N; i++)
             {
                 p0 = GL[i * M * 3 + 0 * M + j] * (1.0 - af_est(j)) * (1.0 - af_est(j));
@@ -575,7 +590,7 @@ inline Arr1D estimate_af_by_gl(const MyFloat1D & GL, int N, int M, int niter = 1
                 p2 = GL[i * M * 3 + 2 * M + j] * af_est(j) * af_est(j);
                 pt += (p1 + 2 * p2) / (2 * (p0 + p1 + p2));
             }
-            af_est(j) = pt / (double)M;
+            af_est(j) = pt / (double)N;
         }
         double diff = sqrt((af_est - af_tmp).array().square().sum() / M);
         if(diff < tol)

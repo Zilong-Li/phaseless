@@ -14,10 +14,12 @@ test_that("parse-joint-post works for gamma", {
 
 test_that("parse-joint-post works for ancestry jumps", {
   o <- parse_joint_post("joint.pars.bin")
-  names(o)
-  sapply(o$ancestry, function(ind) {
+  Map(function(ind, cluster_ind) {
     aa <- array(ind, dim = c(o$K, o$S)) ## K x S
-    expect_equal(colSums(aa), rep(1, o$S), tolerance = 1e-6)
-  })
+    ca <- array(cluster_ind, dim = c(o$C, o$K, o$S)) ## C x K x S
+    expect_equal(aa, apply(ca, c(2, 3), sum), tolerance = 1e-6)
+    expect_equal(sum(aa[, 1]), 1, tolerance = 1e-6)
+    expect_true(all(colSums(aa) >= -1e-8))
+    expect_true(all(colSums(aa) <= 1 + 1e-8))
+  }, o$ancestry, o$clusterancestry)
 })
-

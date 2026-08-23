@@ -88,8 +88,8 @@ List parse_joint_post(std::string filename, int chunk = 0)
                         auto tmp = (alpha.col(0) * beta.col(0)).segment(z1 * C, C).sum();
                         for(y1 = 0; y1 < K; y1++)
                         {
-                            ind_post_zy(y1 * C + z1, 0) = tmp * Q(y1, ind);
-                            ind_post_y(y1, 0) += ind_post_zy(y1 * C + z1, 0);
+                            ind_post_zy(y1 * C + z1, 0) =
+                                tmp * Q(y1, ind) * par->F[y1][m * C + z1] / H(z1, 0);
                         }
                     }
                 }
@@ -104,19 +104,13 @@ List parse_joint_post(std::string filename, int chunk = 0)
                         zz = z1 * C + z2;
                         double eb = emit(zz, s) * beta(zz, s);
                         tmp += eb * (R(1, m) * alphaprev(z2) + R(2, m) * H(z2, s));
-                        for(y1 = 0; y1 < K; y1++)
-                        {
-                            ind_post_y(y1, s) +=
-                                eb * cs(s) * Q(y1, ind)
-                                * (R(0, m) * alpha(zz, s - 1)
-                                   + R(1, m) * (alphaprev(z2) * par->F[y1][m * C + z1] + alphaprev(z1) * H(z2, s))
-                                   + R(2, m) * par->F[y1][m * C + z1] * H(z2, s));
-                        }
                     }
                     for(y1 = 0; y1 < K; y1++)
                         ind_post_zy(y1 * C + z1, s) = tmp * Q(y1, ind) * par->F[y1][m * C + z1] * cs(s);
                 }
             }
+            for(y1 = 0; y1 < K; y1++)
+                ind_post_y.row(y1) = ind_post_zy.middleRows(y1 * C, C).colwise().sum();
             ret_post_y[ind] = MyFloat1D(ind_post_y.data(), ind_post_y.data() + ind_post_y.size());
             ret_post_zy[ind] = MyFloat1D(ind_post_zy.data(), ind_post_zy.data() + ind_post_zy.size());
         }

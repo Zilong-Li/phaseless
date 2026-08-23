@@ -266,13 +266,14 @@ int run_phaseless_main(Options & opts)
     cao.is_screen = !opts.noscreen;
     cao.print(opts.opts_in_effect);
     cao.warn(tim.date(), "-> running phaseless");
-    int allthreads = std::thread::hardware_concurrency();
-    opts.nthreads = opts.nthreads < allthreads ? opts.nthreads : allthreads;
+    const unsigned int allthreads = std::thread::hardware_concurrency();
+    opts.nthreads = resolve_thread_count(opts.nthreads, allthreads);
     cao.print(tim.date(), allthreads, " concurrent threads are available. use", opts.nthreads, " threads");
     ThreadPool pool(opts.nthreads);
 
     std::unique_ptr<BigAss> genome = std::make_unique<BigAss>();
-    init_bigass(genome, opts);
+    VariantMetadata metadata;
+    init_bigass(genome, opts, opts.oVCF ? &metadata : nullptr);
     vector<future<double>> res;
     Phaseless faith(opts.K, opts.C, genome->nsamples, genome->nsnps, opts.seed);
     faith.setFlags(opts.ptol, opts.ftol, opts.qtol, opts.debug, opts.nQ, opts.nP, opts.nF, opts.nR);
@@ -295,7 +296,7 @@ int run_phaseless_main(Options & opts)
             prevlike = loglike;
             cao.print(tim.date(), "run whole genome, iteration", it, ", likelihoods =", loglike, ", diff =", diff,
                       ", time", tim.reltime(), " sec");
-            if(diff < opts.ltol)
+            if(likelihood_converged(diff, opts.ltol))
             {
                 cao.print(tim.date(), "hit stopping criteria, diff =", std::scientific, diff, " <", opts.ltol);
                 break;
@@ -335,7 +336,7 @@ int run_phaseless_main(Options & opts)
             prevlike = loglike;
             cao.print(tim.date(), "SqS3 iteration", it * 4 + 1, ", alpha=", alpha, ", likelihoods =", std::fixed,
                       loglike, ", diff =", diff, ", time", tim.reltime(), " sec");
-            if(diff < opts.ltol)
+            if(likelihood_converged(diff, opts.ltol))
             {
                 cao.print(tim.date(), "hit stopping criteria, diff =", std::scientific, diff, " <", opts.ltol);
                 break;
@@ -437,8 +438,12 @@ int run_phaseless_main(Options & opts)
         faith.updateIteration();
         auto bw = make_bcfwriter(opts.out + ".vcf.gz", genome->chrs, genome->sampleids);
         for(int ic = 0; ic < genome->nchunks; ic++)
-            write_bigass_to_bcf(bw, faith.GP.data() + faith.pos_chunk[ic] * faith.N * 3, genome->chrs[ic],
-                                genome->pos[ic]);
+        {
+            const int S = faith.pos_chunk[ic + 1] - faith.pos_chunk[ic];
+            MyArr2D out = extract_gp_chunk(faith.GP, faith.pos_chunk[ic], S);
+            write_bigass_to_bcf(bw, out.data(), genome->chrs[ic], genome->pos[ic], metadata.ids[ic],
+                                metadata.refs[ic], metadata.alts[ic]);
+        }
     }
 
     return 0;

@@ -282,13 +282,14 @@ int run_impute_main(Options & opts)
     cao.is_screen = !opts.noscreen;
     cao.print(opts.opts_in_effect);
     cao.warn(tim.date(), "-> running fastphase");
-    int allthreads = std::thread::hardware_concurrency();
-    opts.nthreads = opts.nthreads < allthreads ? opts.nthreads : allthreads;
+    const unsigned int allthreads = std::thread::hardware_concurrency();
+    opts.nthreads = resolve_thread_count(opts.nthreads, allthreads);
     cao.print(tim.date(), allthreads, " concurrent threads are available. use", opts.nthreads, " threads");
     ThreadPool pool(opts.nthreads);
 
     std::unique_ptr<BigAss> genome = std::make_unique<BigAss>();
-    init_bigass(genome, opts);
+    VariantMetadata metadata;
+    init_bigass(genome, opts, &metadata);
     cao.print(tim.date(), "parsing input -> C =", genome->C, ", N =", genome->nsamples,
               ", M =", genome->nsnps, ", nchunks =", genome->nchunks, ", B =", opts.gridsize,
               ", G =", genome->G, ", seed =", opts.seed);
@@ -359,8 +360,9 @@ int run_impute_main(Options & opts)
         genome->PI.emplace_back(MyFloat1D(out.data(), out.data() + out.size()));
         out = faith.P.middleRows(faith.pos_chunk[ic], S);
         genome->P.emplace_back(MyFloat1D(out.data(), out.data() + out.size()));
-        out = faith.GP.middleRows(faith.pos_chunk[ic], S * 3);
-        write_bigass_to_bcf(bw, out.data(), genome->chrs[ic], genome->pos[ic]);
+        out = extract_gp_chunk(faith.GP, faith.pos_chunk[ic], S);
+        write_bigass_to_bcf(bw, out.data(), genome->chrs[ic], genome->pos[ic], metadata.ids[ic], metadata.refs[ic],
+                            metadata.alts[ic]);
     }
     constexpr auto OPTIONS = alpaca::options::fixed_length_encoding;
     std::ofstream ofs(opts.out + ".pars.bin", std::ios::out | std::ios::binary);

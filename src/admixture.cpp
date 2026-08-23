@@ -225,8 +225,8 @@ int run_admix_main(Options & opts)
     cao.is_screen = !opts.noscreen;
     cao.print(opts.opts_in_effect);
     cao.warn(tim.date(), "-> running admixture");
-    int avail_threads = std::thread::hardware_concurrency();
-    opts.nthreads = opts.nthreads < avail_threads ? opts.nthreads : avail_threads;
+    const unsigned int avail_threads = std::thread::hardware_concurrency();
+    opts.nthreads = resolve_thread_count(opts.nthreads, avail_threads);
     cao.print(tim.date(), avail_threads, " concurrent threads are available. use", opts.nthreads, " threads");
     ThreadPool poolit(opts.nthreads);
     // Deserialize from file
@@ -280,7 +280,7 @@ int run_admix_main(Options & opts)
             cao.print(tim.date(), "SqS3 iteration", it * 3 + 1, ", diff(Q) =", std::scientific, qdiff,
                       ", alpha=", alpha, ", likelihoods =", std::fixed, loglike, ", diff(likelihoods)=", ldiff,
                       ", elapsed", tim.reltime(), " sec");
-            if(ldiff < opts.ltol)
+            if(likelihood_converged(ldiff, opts.ltol))
             {
                 cao.print(tim.date(), "hit stopping criteria, diff(loglikelihood) =", std::scientific, ldiff, " <",
                           opts.ltol);
@@ -366,7 +366,7 @@ int run_admix_main(Options & opts)
             cao.print(tim.date(), "normal iteration", it, ", diff(Q) =", std::scientific, qdiff,
                       ", likelihoods =", std::fixed, loglike, ", diff(likelihoods)=", ldiff, ", elapsed", tim.reltime(),
                       " sec");
-            if(ldiff < opts.ltol) break;
+            if(likelihood_converged(ldiff, opts.ltol)) break;
         }
     }
     cao.done(tim.date(), "admixture done and outputting");
