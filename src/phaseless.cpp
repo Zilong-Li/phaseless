@@ -178,7 +178,7 @@ void Phaseless::getPosterios(const int ind,
     MyArr2D ind_post_zg1(C, S), ind_post_zg2(C, S);
     MyArr2D ind_post_zy(C * K, S);
     MyArr1D gamma_div_emit(CC);
-    MyArr2D ind_post_y = MyArr2D::Zero(K, S);
+    ind_post_zy.setZero();
     for(s = 0; s < S; s++)
     {
         m = s + pos_chunk[ic];
@@ -197,8 +197,10 @@ void Phaseless::getPosterios(const int ind,
                 auto tmp = (alpha.col(0) * beta.col(0)).segment(z1 * C, C).sum();
                 for(y1 = 0; y1 < K; y1++)
                 {
-                    ind_post_zy(y1 * C + z1, 0) = tmp * Q(y1, ind);
-                    ind_post_y(y1, 0) += ind_post_zy(y1 * C + z1, 0);
+                    // The first site is a compulsory cluster refresh.  Given
+                    // Z=c, its ancestry responsibility is Q_k F_ck / H_c.
+                    ind_post_zy(y1 * C + z1, 0) =
+                        tmp * Q(y1, ind) * F[y1](z1, m) / H(z1, 0);
                 }
             }
         }
@@ -213,18 +215,13 @@ void Phaseless::getPosterios(const int ind,
                 zz = z1 * C + z2;
                 double eb = emit(zz, s) * beta(zz, s);
                 tmp += eb * (R(1, m) * alphaprev(z2) + R(2, m) * H(z2, s));
-                for(y1 = 0; y1 < K; y1++)
-                {
-                    ind_post_y(y1, s) += eb * cs(s) * Q(y1, ind)
-                                         * (R(0, m) * alpha(zz, s - 1)
-                                            + R(1, m) * (alphaprev(z2) * F[y1](z1, m) + alphaprev(z1) * H(z2, s))
-                                            + R(2, m) * F[y1](z1, m) * H(z2, s));
-                }
             }
             for(y1 = 0; y1 < K; y1++) ind_post_zy(y1 * C + z1, s) = tmp * Q(y1, ind) * F[y1](z1, m) * cs(s);
         }
     }
-    Eancestry.col(ind) += ind_post_y.rowwise().sum(); // need to take care
+    // Q is the ancestry distribution at cluster-refresh events.  No-refresh
+    // transitions contain no ancestry draw and therefore contribute no count.
+    for(y1 = 0; y1 < K; y1++) Eancestry(y1, ind) += ind_post_zy.middleRows(y1 * C, C).sum();
     { // sum over all samples for updates
         std::scoped_lock<std::mutex> lock(mutex_it);
         EclusterA1.middleCols(pos_chunk[ic], S) += ind_post_zg1;
