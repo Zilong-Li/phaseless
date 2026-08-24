@@ -3,11 +3,12 @@ CXX      = g++
 
 # CXXFLAGS = -std=c++17 -Wall -O3 -g -fsanitize=address
 # CXXFLAGS = -std=c++17 -Wall -O3 -march=native -DNDEBUG
-CXXFLAGS = -std=c++17 -Wall -O3 -DNDEBUG
+CXXFLAGS = -std=c++17 -Wall -O3 -DNDEBUG -MMD -MP
 INC      = -I./src -I./inst/include -I$(HTSDIR)
 LDFLAGS  =  -L$(HTSDIR) -Wl,-rpath,$(HTSDIR)
 LIBS     =  -llzma -lbz2 -lm -lz -lpthread
 OBJS     = src/phaseless.o src/fastphase.o src/admixture.o src/io.o src/utils.o
+DEPS     = $(OBJS:.o=.d) src/main.d
 libsrc   = src/libsrc.a
 BINS     = phaseless
 libhts   = $(HTSDIR)/libhts.a
@@ -35,8 +36,10 @@ $(libsrc): $(OBJS)
 	ar -rcs $@ $?
 
 clean:
-	rm -f $(BINS) src/*.o src/*.a
+	rm -f $(BINS) src/*.o src/*.a src/*.d
 	cd $(HTSDIR) && make clean
+
+-include $(DEPS)
 
 impute:
 	./phaseless -Dr impute -g data/bgl.gz -c 10 -n 4 -S -i 100

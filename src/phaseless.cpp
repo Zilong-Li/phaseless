@@ -13,6 +13,50 @@
 
 using namespace std;
 
+namespace
+{
+struct JointParameterSnapshot
+{
+    MyArr2D Q;
+    MyArr2D P;
+    MyArr2D F;
+    MyArr1D er;
+};
+
+struct JointParameterChange
+{
+    double q_max{0};
+    double p_rms{0};
+    double f_rms{0};
+    double r_rms{0};
+};
+
+JointParameterSnapshot snapshot_parameters(const Phaseless & model)
+{
+    return {model.Q, model.P, cat_stdvec_of_eigen(model.F), model.er};
+}
+
+double rms_change(const MyArr2D & current, const MyArr2D & previous)
+{
+    return std::sqrt((current - previous).square().mean());
+}
+
+double rms_change(const MyArr1D & current, const MyArr1D & previous)
+{
+    return std::sqrt((current - previous).square().mean());
+}
+
+JointParameterChange parameter_change(const Phaseless & model, const JointParameterSnapshot & previous)
+{
+    JointParameterChange out;
+    if(!model.NQ) out.q_max = (model.Q - previous.Q).abs().maxCoeff();
+    if(!model.NP) out.p_rms = rms_change(model.P, previous.P);
+    if(!model.NF) out.f_rms = rms_change(cat_stdvec_of_eigen(model.F), previous.F);
+    if(!model.NR) out.r_rms = rms_change(model.er, previous.er);
+    return out;
+}
+} // namespace
+
 void Phaseless::initRecombination(const Int1D & pos, std::string rfile, int B, double Ne)
 {
     nGen = 4 * Ne / C;
@@ -279,7 +323,58 @@ int run_phaseless_main(Options & opts)
     faith.setFlags(opts.ptol, opts.ftol, opts.qtol, opts.debug, opts.nQ, opts.nP, opts.nF, opts.nR);
     faith.setStartPoint(opts.in_qfile, opts.in_pfile);
     faith.initRecombination(genome->pos, opts.in_rfile);
-    double loglike, diff, prevlike{std::numeric_limits<double>::lowest()};
+    constexpr double monotonicity_tol{1e-10};
+    const double gap_tol = opts.conv_gap_tol;
+    const double relative_tol = opts.conv_relative_tol;
+    const double parameter_tol = opts.conv_parameter_tol;
+    const int stable_iterations_required = opts.conv_stable_iterations;
+    const double observations = std::max(1.0, static_cast<double>(faith.N) * faith.M);
+    double loglike{NAN}, previous_like{NAN}, previous_previous_like{NAN};
+    JointParameterSnapshot previous_parameters;
+    bool have_previous_parameters{false};
+    bool did_converge{false};
+    int stable_iterations{0};
+    cao.print(tim.date(), std::scientific, "joint convergence: gap/observation < ", gap_tol,
+              ", relative likelihood change < ", relative_tol, ", parameter change < ", parameter_tol, " for ",
+              stable_iterations_required, " accepted iterations");
+
+    auto joint_converged = [&](int iteration, double current_like)
+    {
+        if(!have_previous_parameters)
+        {
+            previous_like = current_like;
+            previous_parameters = snapshot_parameters(faith);
+            have_previous_parameters = true;
+            return false;
+        }
+
+        const auto likelihood = assess_likelihood_convergence(current_like, previous_like, previous_previous_like,
+                                                               observations, monotonicity_tol);
+        const auto parameters = parameter_change(faith, previous_parameters);
+        const bool likelihood_stable = std::isfinite(previous_previous_like)
+                                    && likelihood.gap_per_observation < gap_tol
+                                    && likelihood.relative_change < relative_tol;
+        const bool parameters_stable = parameters.q_max < parameter_tol && parameters.p_rms < parameter_tol
+                                    && parameters.f_rms < parameter_tol && parameters.r_rms < parameter_tol;
+        const bool stable = likelihood.monotone && likelihood_stable && parameters_stable;
+        stable_iterations = stable ? stable_iterations + 1 : 0;
+
+        cao.print(tim.date(), "accepted iteration", iteration, ", likelihood =", current_like, ", delta =",
+                  likelihood.delta, ", relative =", std::scientific, likelihood.relative_change,
+                  ", gap/observation =", likelihood.gap_per_observation, ", Aitken =", likelihood.aitken_rate,
+                  ", dQ(max) =", parameters.q_max, ", dP(rms) =", parameters.p_rms, ", dF(rms) =",
+                  parameters.f_rms, ", dR(rms) =", parameters.r_rms, ", stable =", stable_iterations, "/",
+                  stable_iterations_required);
+        if(!likelihood.monotone)
+            cao.warn(tim.date(), "accepted joint-model likelihood decreased by", likelihood.delta,
+                     "; convergence counter reset");
+
+        previous_previous_like = previous_like;
+        previous_like = current_like;
+        previous_parameters = snapshot_parameters(faith);
+        return stable_iterations >= stable_iterations_required;
+    };
+
     if(opts.noaccel)
     {
         for(int it = 0; SIG_COND && it <= opts.nimpute; it++)
@@ -291,16 +386,17 @@ int run_phaseless_main(Options & opts)
             loglike = 0;
             for(auto && ll : res) loglike += ll.get();
             res.clear(); // clear future and renew
-            faith.updateIteration();
-            diff = it ? loglike - prevlike : NAN;
-            prevlike = loglike;
-            cao.print(tim.date(), "run whole genome, iteration", it, ", likelihoods =", loglike, ", diff =", diff,
-                      ", time", tim.reltime(), " sec");
-            if(likelihood_converged(diff, opts.ltol))
+            cao.print(tim.date(), "run whole genome, iteration", it, ", likelihood =", loglike, ", time",
+                      tim.reltime(), " sec");
+            if(joint_converged(it, loglike))
             {
-                cao.print(tim.date(), "hit stopping criteria, diff =", std::scientific, diff, " <", opts.ltol);
+                did_converge = true;
+                cao.print(tim.date(), "joint model converged after", stable_iterations,
+                          " consecutive stable accepted iterations");
                 break;
             }
+            if(it == opts.nimpute) break;
+            faith.updateIteration();
         }
     }
     else
@@ -309,9 +405,11 @@ int run_phaseless_main(Options & opts)
         MyArr2D F0, F1, F2, Ft;
         const int istep{4};
         double alpha{0}, stepMax{4}, alphaMax{1280}, logcheck{0};
-        for(int it = 0; SIG_COND && (it < opts.nimpute / 4); it++)
+        const int max_outer_iterations = opts.nimpute / 4;
+        for(int it = 0; SIG_COND && it <= max_outer_iterations; it++)
         {
-            // first normal iter
+            // Evaluate the current accepted state, then take the first normal EM step.
+            tim.clock();
             faith.initIteration();
             Q0 = faith.Q;
             F0 = cat_stdvec_of_eigen(faith.F);
@@ -320,9 +418,16 @@ int run_phaseless_main(Options & opts)
             loglike = 0;
             for(auto && ll : res) loglike += ll.get();
             res.clear(); // clear future and renew
+            if(joint_converged(it, loglike))
+            {
+                did_converge = true;
+                cao.print(tim.date(), "joint model converged after", stable_iterations,
+                          " consecutive stable accepted iterations");
+                break;
+            }
+            if(it == max_outer_iterations) break;
             faith.updateIteration();
             // second normal iter
-            tim.clock();
             faith.initIteration();
             Q1 = faith.Q;
             F1 = cat_stdvec_of_eigen(faith.F);
@@ -332,15 +437,8 @@ int run_phaseless_main(Options & opts)
             for(auto && ll : res) loglike += ll.get();
             res.clear(); // clear future and renew
             faith.updateIteration();
-            diff = it ? loglike - prevlike : NAN;
-            prevlike = loglike;
-            cao.print(tim.date(), "SqS3 iteration", it * 4 + 1, ", alpha=", alpha, ", likelihoods =", std::fixed,
-                      loglike, ", diff =", diff, ", time", tim.reltime(), " sec");
-            if(likelihood_converged(diff, opts.ltol))
-            {
-                cao.print(tim.date(), "hit stopping criteria, diff =", std::scientific, diff, " <", opts.ltol);
-                break;
-            }
+            cao.print(tim.date(), "SqS3 outer iteration", it, ", accepted likelihood =", previous_like,
+                      ", second EM likelihood =", loglike, ", time", tim.reltime(), " sec");
             // save for later comparison
             Qt = faith.Q;
             Ft = cat_stdvec_of_eigen(faith.F);
@@ -392,11 +490,11 @@ int run_phaseless_main(Options & opts)
             for(auto && ll : res) logcheck += ll.get();
             res.clear(); // clear future and renew
             faith.updateIteration();
-            if(logcheck - loglike > 0.1)
+            if(loglike < logcheck - monotonicity_tol * observations)
             {
                 stepMax = istep;
                 cao.warn(tim.date(), "reset stepMax to 4, normal EM yields better likelihoods than the accelerated EM.",
-                         logcheck, " -", loglike, "> 0.1");
+                         logcheck, " -", loglike, ">", monotonicity_tol * observations);
             }
             else
             {
@@ -405,6 +503,8 @@ int run_phaseless_main(Options & opts)
             }
         }
     }
+    if(!did_converge)
+        cao.warn(tim.date(), "joint model reached the iteration limit before satisfying the convergence criterion");
     std::ofstream oanc(opts.out + ".Q");
     oanc << std::fixed << faith.Q.transpose().format(fmt10) << "\n";
     oanc.close();
@@ -435,7 +535,6 @@ int run_phaseless_main(Options & opts)
         loglike = 0;
         for(auto && ll : res) loglike += ll.get();
         res.clear(); // clear future and renew
-        faith.updateIteration();
         auto bw = make_bcfwriter(opts.out + ".vcf.gz", genome->chrs, genome->sampleids);
         for(int ic = 0; ic < genome->nchunks; ic++)
         {

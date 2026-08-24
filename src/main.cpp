@@ -123,6 +123,22 @@ int main(int argc, char * argv[])
         .help("seed for reproducibility")
         .default_value(999)
         .scan<'i', int>();
+    cmd_joint.add_argument("--conv-gap-tol")
+        .help("Aitken-estimated remaining log likelihood per observation")
+        .default_value(1e-6)
+        .scan<'g', double>();
+    cmd_joint.add_argument("--conv-relative-tol")
+        .help("relative log likelihood convergence tolerance")
+        .default_value(1e-8)
+        .scan<'g', double>();
+    cmd_joint.add_argument("--conv-parameter-tol")
+        .help("joint parameter stability tolerance")
+        .default_value(1e-4)
+        .scan<'g', double>();
+    cmd_joint.add_argument("--conv-stable-iterations")
+        .help("consecutive stable accepted iterations required")
+        .default_value(3)
+        .scan<'i', int>();
     // cmd_joint.add_parents(program);
 
     argparse::ArgumentParser cmd_impute("impute", VERSION, default_arguments::help);
@@ -280,6 +296,13 @@ int main(int argc, char * argv[])
             opts.nthreads = cmd_joint.get<int>("--threads");
             opts.nimpute = cmd_joint.get<int>("--iterations");
             opts.seed = cmd_joint.get<int>("--seed");
+            opts.conv_gap_tol = cmd_joint.get<double>("--conv-gap-tol");
+            opts.conv_relative_tol = cmd_joint.get<double>("--conv-relative-tol");
+            opts.conv_parameter_tol = cmd_joint.get<double>("--conv-parameter-tol");
+            opts.conv_stable_iterations = cmd_joint.get<int>("--conv-stable-iterations");
+            if(opts.conv_gap_tol <= 0 || opts.conv_relative_tol <= 0 || opts.conv_parameter_tol <= 0
+               || opts.conv_stable_iterations < 1)
+                throw std::invalid_argument("joint convergence tolerances and stable iterations must be positive");
             opts.chunksize = cmd_joint.get<int>("--chunksize");
             opts.single_chunk = cmd_joint.get<bool>("--single-chunk");
             opts.oVCF = cmd_joint.get<bool>("--vcf");

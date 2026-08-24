@@ -58,6 +58,51 @@ inline bool likelihood_converged(double diff, double tol)
     return std::isfinite(diff) && diff >= 0 && diff < tol;
 }
 
+struct LikelihoodConvergenceMetrics
+{
+    double delta{NAN};
+    double relative_change{NAN};
+    double gap_per_observation{NAN};
+    double aitken_rate{NAN};
+    bool monotone{false};
+    bool aitken_valid{false};
+};
+
+inline LikelihoodConvergenceMetrics assess_likelihood_convergence(double current,
+                                                                  double previous,
+                                                                  double previous_previous,
+                                                                  double observations,
+                                                                  double monotonicity_tol = 1e-10)
+{
+    if(!std::isfinite(current) || !std::isfinite(previous) || observations <= 0)
+        throw std::invalid_argument("likelihood convergence requires finite likelihoods and positive observations");
+
+    LikelihoodConvergenceMetrics out;
+    out.delta = current - previous;
+    out.relative_change = std::abs(out.delta) / std::max(1.0, std::abs(current));
+    out.gap_per_observation = std::abs(out.delta) / observations;
+    out.monotone = out.delta >= -monotonicity_tol * observations;
+
+    if(std::isfinite(previous_previous))
+    {
+        const double previous_delta = previous - previous_previous;
+        const double numerical_floor = std::numeric_limits<double>::epsilon()
+                                     * std::max({1.0, std::abs(current), std::abs(previous)});
+        if(out.delta >= 0 && previous_delta > numerical_floor)
+        {
+            out.aitken_rate = out.delta / previous_delta;
+            if(out.aitken_rate >= 0 && out.aitken_rate < 1
+               && std::abs(1 - out.aitken_rate) > numerical_floor)
+            {
+                out.gap_per_observation =
+                    std::abs(out.aitken_rate * out.delta / (1 - out.aitken_rate)) / observations;
+                out.aitken_valid = true;
+            }
+        }
+    }
+    return out;
+}
+
 // STD TYPES
 using Char1D = std::vector<char>;
 using Int1D = std::vector<int>;
@@ -114,6 +159,8 @@ struct Options
     int ichunk{0}, chunksize{50000}, K{2}, C{10}, nadmix{1000}, nimpute{40}, nthreads{1}, seed{999};
     int gridsize{1}, refillHaps{0}, buffer{0};
     double ltol{1e-1}, info{0}, tol_pi{0.99}, tol_r{1e-5};
+    double conv_gap_tol{1e-6}, conv_relative_tol{1e-8}, conv_parameter_tol{1e-4};
+    int conv_stable_iterations{3};
     double ptol{1e-6}; // threshold for P
     double ftol{1e-6}; // threshold for F
     double qtol{1e-6}; // threshold for Q

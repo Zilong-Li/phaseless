@@ -17,6 +17,7 @@ a-*
 tmp/
 *.bin
 *.o
+*.d
 *log
 *dSYM
 compile_commands.json

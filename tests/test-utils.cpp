@@ -30,6 +30,22 @@ TEST_CASE("runtime safeguards", "[test-utils]")
     REQUIRE_FALSE(likelihood_converged(NAN, 1e-4));
 }
 
+TEST_CASE("whole-genome likelihood convergence metrics", "[test-utils]")
+{
+    const auto metrics = assess_likelihood_convergence(-105, -110, -120, 100);
+    REQUIRE(metrics.delta == Approx(5));
+    REQUIRE(metrics.relative_change == Approx(5.0 / 105));
+    REQUIRE(metrics.aitken_rate == Approx(0.5));
+    REQUIRE(metrics.gap_per_observation == Approx(0.05));
+    REQUIRE(metrics.monotone);
+    REQUIRE(metrics.aitken_valid);
+
+    const auto decreased = assess_likelihood_convergence(-111, -110, -120, 100);
+    REQUIRE_FALSE(decreased.monotone);
+    REQUIRE_FALSE(decreased.aitken_valid);
+    REQUIRE(decreased.gap_per_observation == Approx(0.01));
+}
+
 TEST_CASE("allele frequency EM normalizes over samples", "[test-utils]")
 {
     const int N = 2, M = 2;
