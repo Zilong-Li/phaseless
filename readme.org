@@ -31,6 +31,18 @@ make -j6
 ** Imputation
 The parallelism of =phaseless impute= is designed for impute the whole genome at once, which means it run multiple chunks in parallel with each taken over by a thread. Check out the =--chunksize= option.
 
+** CUDA acceleration for the joint model
+
+The joint model has an optional NVIDIA CUDA E-step. Build it with a CUDA toolkit and a GPU with compute capability 6.0 or newer:
+
+#+begin_src bash
+make clean
+make CUDA=1                 # override CUDA_ARCH=60 when needed
+./phaseless joint -g data/bgl.gz -c 10 -k 3 --gpu -o joint
+#+end_src
+
+The CUDA implementation batches individuals according to available device memory. The regular build and command remain CPU-only; requesting =--gpu= from a CPU-only binary reports an actionable error instead of silently falling back.
+
 #+begin_src shell
 phaseless impute -g data/bgl.gz -c 10 -n 4 -s 100000
 #+end_src

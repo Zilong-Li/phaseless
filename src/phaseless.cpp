@@ -8,6 +8,7 @@
 
 #include "common.hpp"
 #include "io.hpp"
+#include "joint_cuda.hpp"
 #include "threadpool.hpp"
 #include <alpaca/alpaca.h>
 
@@ -314,6 +315,12 @@ int run_phaseless_main(Options & opts)
     opts.nthreads = resolve_thread_count(opts.nthreads, allthreads);
     cao.print(tim.date(), allthreads, " concurrent threads are available. use", opts.nthreads, " threads");
     ThreadPool pool(opts.nthreads);
+    if(opts.gpu)
+    {
+        std::string reason;
+        if(!joint_cuda_available(reason)) throw std::runtime_error("cannot use --gpu: " + reason);
+        cao.print(tim.date(), "using NVIDIA CUDA for the joint-model E step");
+    }
 
     std::unique_ptr<BigAss> genome = std::make_unique<BigAss>();
     VariantMetadata metadata;
@@ -323,6 +330,16 @@ int run_phaseless_main(Options & opts)
     faith.setFlags(opts.ptol, opts.ftol, opts.qtol, opts.debug, opts.nQ, opts.nP, opts.nF, opts.nR);
     faith.setStartPoint(opts.in_qfile, opts.in_pfile);
     faith.initRecombination(genome->pos, opts.in_rfile);
+    auto evaluate_e_step = [&](bool final_iteration)
+    {
+        if(opts.gpu) return joint_cuda_e_step(faith, genome->gls, final_iteration);
+        double value = 0;
+        for(int i = 0; i < faith.N; i++)
+            res.emplace_back(pool.enqueue(&Phaseless::runBigass, &faith, i, std::ref(genome->gls), final_iteration));
+        for(auto && ll : res) value += ll.get();
+        res.clear();
+        return value;
+    };
     constexpr double monotonicity_tol{1e-10};
     const double gap_tol = opts.conv_gap_tol;
     const double relative_tol = opts.conv_relative_tol;
@@ -381,11 +398,7 @@ int run_phaseless_main(Options & opts)
         {
             tim.clock();
             faith.initIteration();
-            for(int i = 0; i < faith.N; i++)
-                res.emplace_back(pool.enqueue(&Phaseless::runBigass, &faith, i, std::ref(genome->gls), false));
-            loglike = 0;
-            for(auto && ll : res) loglike += ll.get();
-            res.clear(); // clear future and renew
+            loglike = evaluate_e_step(false);
             cao.print(tim.date(), "run whole genome, iteration", it, ", likelihood =", loglike, ", time",
                       tim.reltime(), " sec");
             if(joint_converged(it, loglike))
@@ -413,11 +426,7 @@ int run_phaseless_main(Options & opts)
             faith.initIteration();
             Q0 = faith.Q;
             F0 = cat_stdvec_of_eigen(faith.F);
-            for(int i = 0; i < faith.N; i++)
-                res.emplace_back(pool.enqueue(&Phaseless::runBigass, &faith, i, std::ref(genome->gls), false));
-            loglike = 0;
-            for(auto && ll : res) loglike += ll.get();
-            res.clear(); // clear future and renew
+            loglike = evaluate_e_step(false);
             if(joint_converged(it, loglike))
             {
                 did_converge = true;
@@ -431,11 +440,7 @@ int run_phaseless_main(Options & opts)
             faith.initIteration();
             Q1 = faith.Q;
             F1 = cat_stdvec_of_eigen(faith.F);
-            for(int i = 0; i < faith.N; i++)
-                res.emplace_back(pool.enqueue(&Phaseless::runBigass, &faith, i, std::ref(genome->gls), false));
-            loglike = 0;
-            for(auto && ll : res) loglike += ll.get();
-            res.clear(); // clear future and renew
+            loglike = evaluate_e_step(false);
             faith.updateIteration();
             cao.print(tim.date(), "SqS3 outer iteration", it, ", accepted likelihood =", previous_like,
                       ", second EM likelihood =", loglike, ", time", tim.reltime(), " sec");
@@ -471,11 +476,7 @@ int run_phaseless_main(Options & opts)
                                       + F0.middleRows(k * faith.C, faith.C));
             faith.protectPars();
             faith.initIteration();
-            for(int i = 0; i < faith.N; i++)
-                res.emplace_back(pool.enqueue(&Phaseless::runBigass, &faith, i, std::ref(genome->gls), false));
-            loglike = 0;
-            for(auto && ll : res) loglike += ll.get();
-            res.clear(); // clear future and renew
+            loglike = evaluate_e_step(false);
             faith.updateIteration();
             // save current pars
             Q2 = faith.Q;
@@ -484,11 +485,7 @@ int run_phaseless_main(Options & opts)
             faith.Q = Qt;
             for(int k = 0; k < faith.K; k++) faith.F[k] = Ft.middleRows(k * faith.C, faith.C);
             faith.initIteration();
-            for(int i = 0; i < faith.N; i++)
-                res.emplace_back(pool.enqueue(&Phaseless::runBigass, &faith, i, std::ref(genome->gls), false));
-            logcheck = 0;
-            for(auto && ll : res) logcheck += ll.get();
-            res.clear(); // clear future and renew
+            logcheck = evaluate_e_step(false);
             faith.updateIteration();
             if(loglike < logcheck - monotonicity_tol * observations)
             {
@@ -530,11 +527,7 @@ int run_phaseless_main(Options & opts)
         faith.initIteration();
         cao.done(tim.date(), "run one more iteration to output vcf.");
         faith.GP.setZero(faith.M * 3, faith.N);
-        for(int i = 0; i < faith.N; i++)
-            res.emplace_back(pool.enqueue(&Phaseless::runBigass, &faith, i, std::ref(genome->gls), true));
-        loglike = 0;
-        for(auto && ll : res) loglike += ll.get();
-        res.clear(); // clear future and renew
+        loglike = evaluate_e_step(true);
         auto bw = make_bcfwriter(opts.out + ".vcf.gz", genome->chrs, genome->sampleids);
         for(int ic = 0; ic < genome->nchunks; ic++)
         {

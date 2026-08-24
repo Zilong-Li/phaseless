@@ -1,5 +1,6 @@
 HTSDIR   = ./inst/include/htslib-1.18
 CXX      = g++
+NVCC     ?= nvcc
 
 # CXXFLAGS = -std=c++17 -Wall -O3 -g -fsanitize=address
 # CXXFLAGS = -std=c++17 -Wall -O3 -march=native -DNDEBUG
@@ -13,6 +14,16 @@ libsrc   = src/libsrc.a
 BINS     = phaseless
 libhts   = $(HTSDIR)/libhts.a
 FLOAT    = 0
+CUDA     ?= 0
+CUDA_ARCH ?= 60
+
+ifeq ($(strip $(CUDA)),1)
+  $(info "build phaseless with CUDA joint-model support")
+  OBJS += src/joint_cuda.o
+  LIBS += -lcudart
+else
+  OBJS += src/joint_cuda_stub.o
+endif
 
 ifeq ($(strip $(FLOAT)),1)
   $(info "use float in phaseless!")
@@ -26,6 +37,9 @@ all: $(BINS) $(libhts)
 %.o: %.cpp
 	${CXX} ${CXXFLAGS} -o $@ -c $< ${INC}
 
+src/joint_cuda.o: src/joint_cuda.cu
+	${NVCC} -std=c++17 -O3 -DNDEBUG -arch=sm_$(CUDA_ARCH) $(if $(filter 1,$(FLOAT)),-DUSE_FLOAT,) -Xcompiler -Wall -o $@ -c $< ${INC}
+
 $(BINS): src/main.o $(libsrc) $(libhts)
 	${CXX} ${CXXFLAGS} -o $@ src/main.o $(libsrc) $(libhts) $(LIBS) $(LDFLAGS) $(INC)
 
@@ -33,7 +47,8 @@ $(libhts):
 	cd $(HTSDIR) && ./configure --disable-libcurl --without-libdeflate && make -j6
 
 $(libsrc): $(OBJS)
-	ar -rcs $@ $?
+	$(RM) $@
+	ar -rcs $@ $(OBJS)
 
 clean:
 	rm -f $(BINS) src/*.o src/*.a src/*.d

@@ -103,6 +103,9 @@ int main(int argc, char * argv[])
         .help("number of threads")
         .default_value(1)
         .scan<'i', int>();
+    cmd_joint.add_argument("--gpu")
+        .help("run the joint-model E step on an NVIDIA CUDA GPU")
+        .flag();
     cmd_joint.add_argument("-o", "--out")
         .help("output prefix")
         .default_value(std::string{"joint"});
@@ -294,6 +297,7 @@ int main(int argc, char * argv[])
             opts.C = cmd_joint.get<int>("--cluster");
             opts.K = cmd_joint.get<int>("--ancestry");
             opts.nthreads = cmd_joint.get<int>("--threads");
+            opts.gpu = cmd_joint.get<bool>("--gpu");
             opts.nimpute = cmd_joint.get<int>("--iterations");
             opts.seed = cmd_joint.get<int>("--seed");
             opts.conv_gap_tol = cmd_joint.get<double>("--conv-gap-tol");
