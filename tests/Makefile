@@ -4,10 +4,15 @@ CXXFLAGS = -std=c++17 -Wall -O3 -MMD -MP
 INC      = -I../src -I../inst/include -I$(HTSDIR)
 # LDFLAGS  =  -L$(HTSDIR) -Wl,-rpath,$(HTSDIR)
 LIBS     = $(HTSDIR)/libhts.a -llzma -lbz2 -lm -lz -lpthread
+CUDA     ?= 0
 
-OBJS = test-main.o test-joint.o test-admixture.o test-fastphase.o test-utils.o test-io.o test-cli.o
+ifeq ($(strip $(CUDA)),1)
+  LIBS += -lcudart
+endif
 
-BINS = test-joint.bin test-admixture.bin test-fastphase.bin test-utils.bin test-io.bin test-cli.bin
+OBJS = test-main.o test-joint.o test-admixture.o test-fastphase.o test-utils.o test-io.o test-cli.o test-cuda.o
+
+BINS = test-joint.bin test-admixture.bin test-fastphase.bin test-utils.bin test-io.bin test-cli.bin test-cuda.bin
 
 DEPS = ../src/libsrc.a
 
@@ -30,6 +35,7 @@ test: $(BINS)
 	./test-fastphase.bin --success
 	./test-io.bin --success
 	./test-cli.bin --success
+	./test-cuda.bin --success
 
 clean:
 	rm -f *.o *.bin *.d

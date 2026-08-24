@@ -41,7 +41,7 @@ make CUDA=1                 # override CUDA_ARCH=60 when needed
 ./phaseless joint -g data/bgl.gz -c 10 -k 3 --gpu -o joint
 #+end_src
 
-The CUDA implementation batches individuals according to available device memory. The regular build and command remain CPU-only; requesting =--gpu= from a CPU-only binary reports an actionable error instead of silently falling back.
+The CUDA implementation batches individuals according to available device memory. Genotype likelihoods and device allocations persist across EM iterations; emissions and ancestry-weighted cluster frequencies are cached once per batch; sufficient statistics use a two-stage reduction without global atomics. The regular build and command remain CPU-only; requesting =--gpu= from a CPU-only binary reports an actionable error instead of silently falling back.
 
 #+begin_src shell
 phaseless impute -g data/bgl.gz -c 10 -n 4 -s 100000
