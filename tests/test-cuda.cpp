@@ -6,19 +6,28 @@
 
 namespace
 {
-void require_cuda_matches_cpu(Phaseless & cpu, Phaseless & gpu, const MyFloat2D & gl)
+void require_cuda_matches_cpu(Phaseless & cpu,
+                              Phaseless & gpu,
+                              const MyFloat2D & gl,
+                              bool final_iteration = false)
 {
     cpu.initIteration();
     gpu.initIteration();
+    if(final_iteration)
+    {
+        cpu.GP.setZero(cpu.M * 3, cpu.N);
+        gpu.GP.setZero(gpu.M * 3, gpu.N);
+    }
     double cpu_likelihood = 0;
-    for(int ind = 0; ind < cpu.N; ++ind) cpu_likelihood += cpu.runBigass(ind, gl, false);
-    const double gpu_likelihood = joint_cuda_e_step(gpu, gl, false);
+    for(int ind = 0; ind < cpu.N; ++ind) cpu_likelihood += cpu.runBigass(ind, gl, final_iteration);
+    const double gpu_likelihood = joint_cuda_e_step(gpu, gl, final_iteration);
 
     REQUIRE(gpu_likelihood == Approx(cpu_likelihood).epsilon(2e-4));
     REQUIRE((gpu.EclusterA1 - cpu.EclusterA1).abs().maxCoeff() < 2e-4);
     REQUIRE((gpu.EclusterA2 - cpu.EclusterA2).abs().maxCoeff() < 2e-4);
     REQUIRE((gpu.Eancestry - cpu.Eancestry).abs().maxCoeff() < 2e-4);
     REQUIRE((gpu.EclusterK - cpu.EclusterK).abs().maxCoeff() < 2e-4);
+    if(final_iteration) REQUIRE((gpu.GP - cpu.GP).abs().maxCoeff() < 2e-4);
 }
 } // namespace
 
@@ -61,4 +70,5 @@ TEST_CASE("persistent CUDA joint E-step matches CPU", "[test-cuda]")
     gpu.F = cpu.F;
     gpu.R = cpu.R;
     require_cuda_matches_cpu(cpu, gpu, gl);
+    require_cuda_matches_cpu(cpu, gpu, gl, true);
 }

@@ -86,7 +86,7 @@ int main(int argc, char * argv[])
     cmd_joint.add_description("run phasing and admixture inference in one goal");
     cmd_joint.add_argument("-c", "--cluster")
         .help("number of haplotype clusters")
-        .default_value(10)
+        .default_value(8)
         .scan<'i', int>();
     cmd_joint.add_argument("-k", "--ancestry")
         .help("number of ancestry")
@@ -111,7 +111,7 @@ int main(int argc, char * argv[])
         .default_value(std::string{"joint"});
     cmd_joint.add_argument("-s", "--chunksize")
         .help("size of each chunk in sites unit ")
-        .default_value(10000)
+        .default_value(4800)
         .scan<'i', int>();
     cmd_joint.add_argument("-S", "--single-chunk")
         .help("treat input as big single chunk")

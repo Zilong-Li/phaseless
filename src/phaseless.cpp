@@ -197,7 +197,7 @@ void Phaseless::callGenoLoopC(int ind, int s, int z1, const MyArr2D & gli, const
     MyArr1D tmp_zg(4);
     for(int z2 = 0; z2 < C; z2++)
     {
-        int z12 = z1 * C + z2;
+        const int z12 = diploid_unordered_state_index(z1, z2, C);
         tmp_zg(0) = gli(s, 0) * (1 - P(s, z1)) * (1 - P(s, z2));
         tmp_zg(1) = gli(s, 1) * (1 - P(s, z1)) * P(s, z2);
         tmp_zg(2) = gli(s, 1) * P(s, z1) * (1 - P(s, z2));
@@ -222,7 +222,7 @@ void Phaseless::getPosterios(const int ind,
     int m{0}, s{0}, z1{0}, z2{0}, y1{0}, zz{0};
     MyArr2D ind_post_zg1(C, S), ind_post_zg2(C, S);
     MyArr2D ind_post_zy(C * K, S);
-    MyArr1D gamma_div_emit(CC);
+    MyArr1D gamma_div_emit(diploid_unordered_state_count(C));
     ind_post_zy.setZero();
     for(s = 0; s < S; s++)
     {
@@ -231,33 +231,44 @@ void Phaseless::getPosterios(const int ind,
         for(z1 = 0; z1 < C; z1++)
         {
             if(finalIter) callGenoLoopC(ind, m, z1, gli, gamma_div_emit);
-            ind_post_zg1(z1, s) = (gamma_div_emit(Eigen::seqN(z1, C, C)) * (1 - P(m, z1))
-                                   * (gli(s, 0) * (1 - P.row(m)) + gli(s, 1) * P.row(m)).transpose())
-                                      .sum();
-            ind_post_zg2(z1, s) = (gamma_div_emit(Eigen::seqN(z1, C, C)) * (P(m, z1))
-                                   * (gli(s, 1) * (1 - P.row(m)) + gli(s, 2) * P.row(m)).transpose())
-                                      .sum();
+            double post_zg1 = 0, post_zg2 = 0;
+            for(z2 = 0; z2 < C; ++z2)
+            {
+                const double weight = gamma_div_emit(diploid_unordered_state_index(z1, z2, C));
+                post_zg1 += weight * (1 - P(m, z1)) * (gli(s, 0) * (1 - P(m, z2)) + gli(s, 1) * P(m, z2));
+                post_zg2 += weight * P(m, z1) * (gli(s, 1) * (1 - P(m, z2)) + gli(s, 2) * P(m, z2));
+            }
+            ind_post_zg1(z1, s) = post_zg1;
+            ind_post_zg2(z1, s) = post_zg2;
             if(s == 0)
             {
-                auto tmp = (alpha.col(0) * beta.col(0)).segment(z1 * C, C).sum();
+                double tmp = 0;
+                for(z2 = 0; z2 < C; ++z2)
+                {
+                    const int state = diploid_unordered_state_index(z1, z2, C);
+                    tmp += alpha(state, 0) * beta(state, 0);
+                }
                 for(y1 = 0; y1 < K; y1++)
                 {
                     // The first site is a compulsory cluster refresh.  Given
                     // Z=c, its ancestry responsibility is Q_k F_ck / H_c.
-                    ind_post_zy(y1 * C + z1, 0) =
-                        tmp * Q(y1, ind) * F[y1](z1, m) / H(z1, 0);
+                    ind_post_zy(y1 * C + z1, 0) = tmp * Q(y1, ind) * F[y1](z1, m) / H(z1, 0);
                 }
             }
         }
         if(s == 0) continue;
         MyArr1D alphaprev(C); // previous alpha colsums
-        for(z1 = 0; z1 < C; z1++) alphaprev(z1) = alpha(Eigen::seqN(z1, C, C), s - 1).sum();
+        for(z1 = 0; z1 < C; z1++)
+        {
+            alphaprev(z1) = 0;
+            for(z2 = 0; z2 < C; ++z2) alphaprev(z1) += alpha(diploid_unordered_state_index(z1, z2, C), s - 1);
+        }
         for(z1 = 0; z1 < C; z1++)
         {
             double tmp{0};
             for(z2 = 0; z2 < C; z2++)
             {
-                zz = z1 * C + z2;
+                zz = diploid_unordered_state_index(z1, z2, C);
                 double eb = emit(zz, s) * beta(zz, s);
                 tmp += eb * (R(1, m) * alphaprev(z2) + R(2, m) * H(z2, s));
             }
@@ -279,7 +290,7 @@ double Phaseless::runForwardBackwards(const int ind, const int ic, const MyFloat
 {
     const int S = pos_chunk[ic + 1] - pos_chunk[ic];
     Eigen::Map<const MyArr2D> gli(GL.data() + ind * S * 3, S, 3);
-    MyArr2D emit = get_emission_by_gl(gli, P.middleRows(pos_chunk[ic], S)); // CC x S
+    MyArr2D emit = get_emission_by_gl_symmetric(gli, P.middleRows(pos_chunk[ic], S));
     // first get H ie old PI in fastphase
     MyArr2D H = MyArr2D::Zero(C, S);
     int z1, y1, s;
@@ -287,7 +298,8 @@ double Phaseless::runForwardBackwards(const int ind, const int ic, const MyFloat
         for(z1 = 0; z1 < C; z1++)
             for(y1 = 0; y1 < K; y1++) H(z1, s) += Q(y1, ind) * F[y1](z1, s + pos_chunk[ic]);
     // cs is 1 / colsum(alpha)
-    const auto [alpha, beta, cs] = forward_backwards_diploid(emit, R.middleCols(pos_chunk[ic], S), H);
+    const auto [alpha, beta, cs] =
+        forward_backwards_diploid_symmetric(emit, R.middleCols(pos_chunk[ic], S), H);
     // get posterios
     getPosterios(ind, ic, gli, emit, H, cs, alpha, beta, finalIter);
     return (1 / cs).log().sum();

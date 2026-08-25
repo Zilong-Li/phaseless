@@ -78,6 +78,22 @@ struct DeviceBuffer
     }
 };
 
+__host__ __device__ inline int unordered_state_count(int C)
+{
+    return C * (C + 1) / 2;
+}
+
+__host__ __device__ inline int unordered_state_index(int z1, int z2, int C)
+{
+    if(z1 > z2)
+    {
+        const int tmp = z1;
+        z1 = z2;
+        z2 = tmp;
+    }
+    return z1 * C - z1 * (z1 - 1) / 2 + (z2 - z1);
+}
+
 __device__ inline Scalar calculate_emission(const Scalar * gl,
                                             const Scalar * p,
                                             int local_ind,
@@ -107,13 +123,15 @@ __global__ void cache_inputs_kernel(const Scalar * gl,
                                     int S,
                                     int global_start,
                                     int first_ind,
+                                    const int * pair_z1,
+                                    const int * pair_z2,
                                     Scalar * cached_h,
                                     Scalar * cached_emit)
 {
     const int local_ind = blockIdx.x;
     const int ind = first_ind + local_ind;
     const int tid = threadIdx.x;
-    const int CC = C * C;
+    const int U = unordered_state_count(C);
     for(int s = 0; s < S; ++s)
     {
         const int m = global_start + s;
@@ -123,11 +141,11 @@ __global__ void cache_inputs_kernel(const Scalar * gl,
             for(int k = 0; k < K; ++k) value += q[k + K * ind] * f[k * C * M + tid + C * m];
             cached_h[(local_ind * S + s) * C + tid] = value;
         }
-        if(tid < CC)
+        if(tid < U)
         {
-            const int z1 = tid / C;
-            const int z2 = tid - z1 * C;
-            cached_emit[(local_ind * S + s) * CC + tid] =
+            const int z1 = pair_z1[tid];
+            const int z2 = pair_z2[tid];
+            cached_emit[(local_ind * S + s) * U + tid] =
                 calculate_emission(gl, p, local_ind, s, S, M, m, z1, z2);
         }
     }
@@ -140,6 +158,8 @@ __global__ void forward_kernel(const Scalar * cached_h,
                                int S,
                                int global_start,
                                int first_ind,
+                               const int * pair_z1,
+                               const int * pair_z2,
                                Scalar * alpha,
                                Scalar * cs,
                                Scalar * likelihood)
@@ -147,30 +167,30 @@ __global__ void forward_kernel(const Scalar * cached_h,
     const int local_ind = blockIdx.x;
     const int ind = first_ind + local_ind;
     const int tid = threadIdx.x;
-    const int CC = C * C;
+    const int U = unordered_state_count(C);
     extern __shared__ Scalar shared[];
     Scalar * previous = shared;
-    Scalar * current = previous + CC;
-    Scalar * row_sum = current + CC;
+    Scalar * current = previous + U;
+    Scalar * row_sum = current + U;
     Scalar * scale = row_sum + C;
     Scalar local_likelihood = 0;
     for(int s = 0; s < S; ++s)
     {
         const int m = global_start + s;
         const Scalar * h = cached_h + (local_ind * S + s) * C;
-        const Scalar * emit = cached_emit + (local_ind * S + s) * CC;
+        const Scalar * emit = cached_emit + (local_ind * S + s) * U;
         if(tid < C)
         {
             Scalar rows = 0;
             if(s)
-                for(int other = 0; other < C; ++other) rows += previous[tid + C * other];
+                for(int other = 0; other < C; ++other) rows += previous[unordered_state_index(tid, other, C)];
             row_sum[tid] = rows * r[1 + 3 * m];
         }
         __syncthreads();
-        if(tid < CC)
+        if(tid < U)
         {
-            const int z1 = tid / C;
-            const int z2 = tid - z1 * C;
+            const int z1 = pair_z1[tid];
+            const int z2 = pair_z2[tid];
             if(s == 0)
                 current[tid] = emit[tid] * h[z1] * h[z2];
             else
@@ -182,16 +202,17 @@ __global__ void forward_kernel(const Scalar * cached_h,
         if(tid == 0)
         {
             Scalar total = 0;
-            for(int state = 0; state < CC; ++state) total += current[state];
+            for(int state = 0; state < U; ++state)
+                total += (pair_z1[state] == pair_z2[state] ? Scalar(1) : Scalar(2)) * current[state];
             scale[0] = Scalar(1) / total;
             cs[local_ind * S + s] = scale[0];
             local_likelihood += log(total);
         }
         __syncthreads();
-        if(tid < CC)
+        if(tid < U)
         {
             current[tid] *= scale[0];
-            alpha[(local_ind * S + s) * CC + tid] = current[tid];
+            alpha[(local_ind * S + s) * U + tid] = current[tid];
             previous[tid] = current[tid];
         }
         __syncthreads();
@@ -215,6 +236,8 @@ __global__ void backward_posterior_kernel(const Scalar * gl,
                                           int global_start,
                                           int first_ind,
                                           bool final_iteration,
+                                          const int * pair_z1,
+                                          const int * pair_z2,
                                           Scalar * partial_a1,
                                           Scalar * partial_a2,
                                           Scalar * partial_cluster,
@@ -223,25 +246,25 @@ __global__ void backward_posterior_kernel(const Scalar * gl,
     const int local_ind = blockIdx.x;
     const int ind = first_ind + local_ind;
     const int tid = threadIdx.x;
-    const int CC = C * C;
+    const int U = unordered_state_count(C);
     extern __shared__ Scalar shared[];
     Scalar * beta = shared;
-    Scalar * previous_beta = beta + CC;
-    Scalar * row_sum = previous_beta + CC;
+    Scalar * previous_beta = beta + U;
+    Scalar * row_sum = previous_beta + U;
     Scalar * alpha_marginal = row_sum + C;
     Scalar * constant = alpha_marginal + C;
-    if(tid < CC) beta[tid] = 1;
+    if(tid < U) beta[tid] = 1;
     __syncthreads();
     for(int s = S - 1; s >= 0; --s)
     {
         const int m = global_start + s;
         const Scalar * h = cached_h + (local_ind * S + s) * C;
-        const Scalar * emit = cached_emit + (local_ind * S + s) * CC;
+        const Scalar * emit = cached_emit + (local_ind * S + s) * U;
         if(s > 0 && tid < C)
         {
             Scalar value = 0;
             for(int other = 0; other < C; ++other)
-                value += alpha[(local_ind * S + s - 1) * CC + tid + C * other];
+                value += alpha[(local_ind * S + s - 1) * U + unordered_state_index(tid, other, C)];
             alpha_marginal[tid] = value;
         }
         __syncthreads();
@@ -255,9 +278,9 @@ __global__ void backward_posterior_kernel(const Scalar * gl,
             Scalar a1 = 0, a2 = 0;
             for(int other = 0; other < C; ++other)
             {
-                const int state = z + C * other;
+                const int state = unordered_state_index(z, other, C);
                 const Scalar gamma_over_emit =
-                    alpha[(local_ind * S + s) * CC + state] * beta[state] / emit[state];
+                    alpha[(local_ind * S + s) * U + state] * beta[state] / emit[state];
                 const Scalar po = p[m + M * other];
                 a1 += gamma_over_emit * (1 - pz) * (g0 * (1 - po) + g1 * po);
                 a2 += gamma_over_emit * pz * (g1 * (1 - po) + g2 * po);
@@ -269,15 +292,15 @@ __global__ void backward_posterior_kernel(const Scalar * gl,
             if(s == 0)
                 for(int other = 0; other < C; ++other)
                 {
-                    const int state = z * C + other;
-                    refresh_weight += alpha[local_ind * S * CC + state] * beta[state];
+                    const int state = unordered_state_index(z, other, C);
+                    refresh_weight += alpha[local_ind * S * U + state] * beta[state];
                 }
             Scalar transition_weight = 0;
             if(s > 0)
             {
                 for(int z2 = 0; z2 < C; ++z2)
                 {
-                    const int state = z * C + z2;
+                    const int state = unordered_state_index(z, z2, C);
                     transition_weight += emit[state] * beta[state]
                                          * (r[1 + 3 * m] * alpha_marginal[z2] + r[2 + 3 * m] * h[z2]);
                 }
@@ -297,18 +320,19 @@ __global__ void backward_posterior_kernel(const Scalar * gl,
             const Scalar g1 = gl[local_ind * S * 3 + S + s];
             const Scalar g2 = gl[local_ind * S * 3 + 2 * S + s];
             Scalar gp0 = 0, gp1 = 0, gp2 = 0;
-            for(int z1 = 0; z1 < C; ++z1)
-                for(int z2 = 0; z2 < C; ++z2)
-                {
-                    const int state = z1 * C + z2;
-                    const Scalar gamma_over_emit =
-                        alpha[(local_ind * S + s) * CC + state] * beta[state] / emit[state];
-                    const Scalar p1 = p[m + M * z1];
-                    const Scalar p2 = p[m + M * z2];
-                    gp0 += gamma_over_emit * g0 * (1 - p1) * (1 - p2);
-                    gp1 += gamma_over_emit * g1 * ((1 - p1) * p2 + p1 * (1 - p2));
-                    gp2 += gamma_over_emit * g2 * p1 * p2;
-                }
+            for(int state = 0; state < U; ++state)
+            {
+                const int z1 = pair_z1[state];
+                const int z2 = pair_z2[state];
+                const Scalar multiplicity = z1 == z2 ? Scalar(1) : Scalar(2);
+                const Scalar gamma_over_emit =
+                    multiplicity * alpha[(local_ind * S + s) * U + state] * beta[state] / emit[state];
+                const Scalar p1 = p[m + M * z1];
+                const Scalar p2 = p[m + M * z2];
+                gp0 += gamma_over_emit * g0 * (1 - p1) * (1 - p2);
+                gp1 += gamma_over_emit * g1 * ((1 - p1) * p2 + p1 * (1 - p2));
+                gp2 += gamma_over_emit * g2 * p1 * p2;
+            }
             gp[3 * m + 3 * M * ind] = gp0;
             gp[3 * m + 1 + 3 * M * ind] = gp1;
             gp[3 * m + 2 + 3 * M * ind] = gp2;
@@ -323,31 +347,32 @@ __global__ void backward_posterior_kernel(const Scalar * gl,
                     Scalar sum = 0;
                     for(int z2 = 0; z2 < C; ++z2)
                     {
-                        const int state = z1 * C + z2;
+                        const int state = unordered_state_index(z1, z2, C);
                         sum += emit[state] * beta[state] * h[z2] * r[1 + 3 * m];
                     }
                     row_sum[z1] = sum;
                 }
                 Scalar total = 0;
-                for(int z1 = 0; z1 < C; ++z1)
-                    for(int z2 = 0; z2 < C; ++z2)
-                    {
-                        const int state = z1 * C + z2;
-                        total += emit[state] * beta[state] * h[z1] * h[z2] * r[2 + 3 * m];
-                    }
+                for(int state = 0; state < U; ++state)
+                {
+                    const int z1 = pair_z1[state];
+                    const int z2 = pair_z2[state];
+                    const Scalar multiplicity = z1 == z2 ? Scalar(1) : Scalar(2);
+                    total += multiplicity * emit[state] * beta[state] * h[z1] * h[z2] * r[2 + 3 * m];
+                }
                 constant[0] = total;
             }
             __syncthreads();
-            if(tid < CC)
+            if(tid < U)
             {
-                const int z1 = tid / C;
-                const int z2 = tid - z1 * C;
+                const int z1 = pair_z1[tid];
+                const int z2 = pair_z2[tid];
                 previous_beta[tid] =
                     (emit[tid] * beta[tid] * r[3 * m] + row_sum[z1] + row_sum[z2] + constant[0])
                     * cs[local_ind * S + s];
             }
             __syncthreads();
-            if(tid < CC) beta[tid] = previous_beta[tid];
+            if(tid < U) beta[tid] = previous_beta[tid];
             __syncthreads();
         }
     }
@@ -425,6 +450,7 @@ struct CudaWorkspace
     std::vector<DeviceBuffer<Scalar>> gl_chunks;
     std::vector<Scalar> flat_f;
     DeviceBuffer<Scalar> p, q, f, r;
+    DeviceBuffer<int> pair_z1, pair_z2;
     DeviceBuffer<Scalar> e_a1, e_a2, e_ancestry, e_cluster, gp, likelihood;
     DeviceBuffer<Scalar> alpha, cs, cached_h, cached_emit;
     DeviceBuffer<Scalar> partial_a1, partial_a2, partial_cluster;
@@ -432,8 +458,20 @@ struct CudaWorkspace
     CudaWorkspace(const Phaseless & model, const MyFloat2D & gl)
     : model_owner(&model), gl_owner(&gl), K(model.K), C(model.C), N(model.N), M(model.M),
       flat_f(static_cast<size_t>(K) * C * M), p(model.P.size()), q(model.Q.size()), f(flat_f.size()),
-      r(model.R.size()), e_a1(C * M), e_a2(C * M), e_ancestry(K * N), e_cluster(C * K * M), likelihood(N)
+      r(model.R.size()), pair_z1(unordered_state_count(C)), pair_z2(unordered_state_count(C)), e_a1(C * M),
+      e_a2(C * M), e_ancestry(K * N), e_cluster(C * K * M), likelihood(N)
     {
+        std::vector<int> host_z1, host_z2;
+        host_z1.reserve(unordered_state_count(C));
+        host_z2.reserve(unordered_state_count(C));
+        for(int z1 = 0; z1 < C; ++z1)
+            for(int z2 = z1; z2 < C; ++z2)
+            {
+                host_z1.push_back(z1);
+                host_z2.push_back(z2);
+            }
+        pair_z1.upload(host_z1.data(), host_z1.size());
+        pair_z2.upload(host_z2.data(), host_z2.size());
         chunk_sizes.reserve(gl.size());
         batch_capacities.assign(gl.size(), 0);
         gl_chunks.reserve(gl.size());
@@ -476,10 +514,11 @@ struct CudaWorkspace
     void ensure_batch(int batch, int S)
     {
         const size_t sites = static_cast<size_t>(batch) * S;
-        alpha.ensure(sites * C * C);
+        const int U = unordered_state_count(C);
+        alpha.ensure(sites * U);
         cs.ensure(sites);
         cached_h.ensure(sites * C);
-        cached_emit.ensure(sites * C * C);
+        cached_emit.ensure(sites * U);
         partial_a1.ensure(sites * C);
         partial_a2.ensure(sites * C);
         partial_cluster.ensure(sites * K * C);
@@ -530,16 +569,16 @@ double joint_cuda_e_step(Phaseless & model, const MyFloat2D & gl, bool final_ite
     w.clear_outputs(final_iteration);
     size_t free_bytes = 0, total_bytes = 0;
     cuda_check(cudaMemGetInfo(&free_bytes, &total_bytes), "cudaMemGetInfo");
-    const int CC = model.C * model.C;
-    const size_t forward_shared = static_cast<size_t>(2 * CC + model.C + 1) * sizeof(Scalar);
-    const size_t backward_shared = static_cast<size_t>(2 * CC + 2 * model.C + 1) * sizeof(Scalar);
+    const int U = unordered_state_count(model.C);
+    const size_t forward_shared = static_cast<size_t>(2 * U + model.C + 1) * sizeof(Scalar);
+    const size_t backward_shared = static_cast<size_t>(2 * U + 2 * model.C + 1) * sizeof(Scalar);
     constexpr int reduction_threads = 256;
 
     for(size_t chunk = 0; chunk < gl.size(); ++chunk)
     {
         const int S = model.pos_chunk[chunk + 1] - model.pos_chunk[chunk];
         const size_t elements_per_ind =
-            static_cast<size_t>(S) * (2 * CC + 3 * model.C + model.K * model.C + 1);
+            static_cast<size_t>(S) * (2 * U + 3 * model.C + model.K * model.C + 1);
         const size_t budget = std::min(free_bytes / 2, total_bytes / 4);
         if(w.batch_capacities[chunk] == 0)
         {
@@ -553,18 +592,19 @@ double joint_cuda_e_step(Phaseless & model, const MyFloat2D & gl, bool final_ite
             const int batch = std::min(batch_capacity, model.N - first);
             w.ensure_batch(batch, S);
             const Scalar * batch_gl = w.gl_chunks[chunk].ptr + static_cast<size_t>(first) * S * 3;
-            cache_inputs_kernel<<<batch, CC>>>(batch_gl, w.p.ptr, w.q.ptr, w.f.ptr, model.K, model.C, model.M,
-                                               S, model.pos_chunk[chunk], first, w.cached_h.ptr,
-                                               w.cached_emit.ptr);
+            cache_inputs_kernel<<<batch, U>>>(batch_gl, w.p.ptr, w.q.ptr, w.f.ptr, model.K, model.C, model.M,
+                                              S, model.pos_chunk[chunk], first, w.pair_z1.ptr, w.pair_z2.ptr,
+                                              w.cached_h.ptr, w.cached_emit.ptr);
             cuda_check(cudaGetLastError(), "launch CUDA input-cache kernel");
-            forward_kernel<<<batch, CC, forward_shared>>>(w.cached_h.ptr, w.cached_emit.ptr, w.r.ptr, model.C,
-                                                          S, model.pos_chunk[chunk], first, w.alpha.ptr,
-                                                          w.cs.ptr, w.likelihood.ptr);
+            forward_kernel<<<batch, U, forward_shared>>>(
+                w.cached_h.ptr, w.cached_emit.ptr, w.r.ptr, model.C, S, model.pos_chunk[chunk], first,
+                w.pair_z1.ptr, w.pair_z2.ptr, w.alpha.ptr, w.cs.ptr, w.likelihood.ptr);
             cuda_check(cudaGetLastError(), "launch CUDA forward kernel");
-            backward_posterior_kernel<<<batch, CC, backward_shared>>>(
+            backward_posterior_kernel<<<batch, U, backward_shared>>>(
                 batch_gl, w.p.ptr, w.q.ptr, w.f.ptr, w.r.ptr, w.cached_h.ptr, w.cached_emit.ptr, w.alpha.ptr,
                 w.cs.ptr, model.K, model.C, model.M, S, model.pos_chunk[chunk], first, final_iteration,
-                w.partial_a1.ptr, w.partial_a2.ptr, w.partial_cluster.ptr, w.gp.ptr);
+                w.pair_z1.ptr, w.pair_z2.ptr, w.partial_a1.ptr, w.partial_a2.ptr, w.partial_cluster.ptr,
+                w.gp.ptr);
             cuda_check(cudaGetLastError(), "launch CUDA backward/posterior kernel");
 
             const int site_values = model.C * S;

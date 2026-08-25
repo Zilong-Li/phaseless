@@ -440,6 +440,44 @@ inline MyArr1D get_emission_by_site(const MyArr1D & gli, const MyArr1D & P, doub
     return emit;
 }
 
+inline int diploid_unordered_state_count(int C)
+{
+    return C * (C + 1) / 2;
+}
+
+inline int diploid_unordered_state_index(int z1, int z2, int C)
+{
+    if(z1 > z2) std::swap(z1, z2);
+    return z1 * C - z1 * (z1 - 1) / 2 + (z2 - z1);
+}
+
+/*
+** Symmetry-compressed emission for the unordered diploid states z1 <= z2.
+** Each stored value is the probability of one ordered representative.  Full
+** diploid sums must count off-diagonal states twice.
+*/
+inline MyArr2D get_emission_by_gl_symmetric(const MyArr2D & gli,
+                                             const MyArr2D & P,
+                                             double minEmission = 1e-10)
+{
+    const int M = P.rows();
+    const int C = P.cols();
+    MyArr2D emit = MyArr2D::Zero(diploid_unordered_state_count(C), M);
+    for(int z1 = 0; z1 < C; ++z1)
+        for(int z2 = z1; z2 < C; ++z2)
+        {
+            const int state = diploid_unordered_state_index(z1, z2, C);
+            for(int g1 = 0; g1 <= 1; ++g1)
+                for(int g2 = 0; g2 <= 1; ++g2)
+                    emit.row(state) +=
+                        (gli.col(g1 + g2)
+                         * (g1 * P.col(z1) + (1 - g1) * (1 - P.col(z1)))
+                         * (g2 * P.col(z2) + (1 - g2) * (1 - P.col(z2))))
+                            .transpose();
+        }
+    return (emit < minEmission).select(minEmission, emit);
+}
+
 /*
 ** @param gli  genotype likelihoods of current individual i, (M, 3)
 ** @param P    cluster-specific allele frequence (M, C)
@@ -552,6 +590,87 @@ inline auto forward_backwards_diploid(const MyArr2D & emit, const MyArr2D & R, c
         }
     }
 
+    return std::tuple(alpha, beta, cs);
+}
+
+/*
+** Exact forward/backward recursion on unordered diploid states.  Alpha and
+** beta store one ordered representative for each z1 <= z2.  Multiplicity is
+** therefore applied to full-state sums, but not to one-copy marginals.
+*/
+inline auto forward_backwards_diploid_symmetric(const MyArr2D & emit,
+                                                 const MyArr2D & R,
+                                                 const MyArr2D & PI)
+{
+    const int M = emit.cols();
+    const int C = PI.rows();
+    const int U = diploid_unordered_state_count(C);
+    MyArr2D alpha(U, M), beta(U, M);
+    MyArr1D marginal(C), cs(M);
+
+    double total = 0;
+    for(int z1 = 0; z1 < C; ++z1)
+        for(int z2 = z1; z2 < C; ++z2)
+        {
+            const int state = diploid_unordered_state_index(z1, z2, C);
+            alpha(state, 0) = emit(state, 0) * PI(z1, 0) * PI(z2, 0);
+            total += (z1 == z2 ? 1.0 : 2.0) * alpha(state, 0);
+        }
+    cs(0) = 1.0 / total;
+    alpha.col(0) *= cs(0);
+
+    for(int s = 1; s < M; ++s)
+    {
+        for(int z = 0; z < C; ++z)
+        {
+            marginal(z) = 0;
+            for(int other = 0; other < C; ++other)
+                marginal(z) += alpha(diploid_unordered_state_index(z, other, C), s - 1);
+            marginal(z) *= R(1, s);
+        }
+        total = 0;
+        for(int z1 = 0; z1 < C; ++z1)
+            for(int z2 = z1; z2 < C; ++z2)
+            {
+                const int state = diploid_unordered_state_index(z1, z2, C);
+                alpha(state, s) =
+                    emit(state, s)
+                    * (alpha(state, s - 1) * R(0, s) + PI(z1, s) * marginal(z2)
+                       + PI(z2, s) * marginal(z1) + PI(z1, s) * PI(z2, s) * R(2, s));
+                total += (z1 == z2 ? 1.0 : 2.0) * alpha(state, s);
+            }
+        cs(s) = 1.0 / total;
+        alpha.col(s) *= cs(s);
+    }
+
+    beta.col(M - 1).setOnes();
+    for(int s = M - 2; s >= 0; --s)
+    {
+        const MyArr1D beta_emit = beta.col(s + 1) * emit.col(s + 1);
+        for(int z = 0; z < C; ++z)
+        {
+            marginal(z) = 0;
+            for(int other = 0; other < C; ++other)
+                marginal(z) += beta_emit(diploid_unordered_state_index(z, other, C)) * PI(other, s + 1);
+            marginal(z) *= R(1, s + 1);
+        }
+        double constant = 0;
+        for(int z1 = 0; z1 < C; ++z1)
+            for(int z2 = z1; z2 < C; ++z2)
+            {
+                const int state = diploid_unordered_state_index(z1, z2, C);
+                constant += (z1 == z2 ? 1.0 : 2.0) * beta_emit(state) * PI(z1, s + 1)
+                            * PI(z2, s + 1) * R(2, s + 1);
+            }
+        for(int z1 = 0; z1 < C; ++z1)
+            for(int z2 = z1; z2 < C; ++z2)
+            {
+                const int state = diploid_unordered_state_index(z1, z2, C);
+                beta(state, s) =
+                    (beta_emit(state) * R(0, s + 1) + marginal(z1) + marginal(z2) + constant)
+                    * cs(s + 1);
+            }
+    }
     return std::tuple(alpha, beta, cs);
 }
 
