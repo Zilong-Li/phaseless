@@ -3,8 +3,7 @@ CXX      = g++
 NVCC     ?= nvcc
 
 # CXXFLAGS = -std=c++17 -Wall -O3 -g -fsanitize=address
-# CXXFLAGS = -std=c++17 -Wall -O3 -march=native -DNDEBUG
-CXXFLAGS = -std=c++17 -Wall -O3 -DNDEBUG -MMD -MP
+CXXFLAGS = -std=c++17 -Wall -O3 -march=native -DNDEBUG -MMD -MP
 INC      = -I./src -I./inst/include -I$(HTSDIR)
 LDFLAGS  =  -L$(HTSDIR) -Wl,-rpath,$(HTSDIR)
 LIBS     =  -llzma -lbz2 -lm -lz -lpthread

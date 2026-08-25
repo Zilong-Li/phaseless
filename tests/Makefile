@@ -1,6 +1,6 @@
 HTSDIR   = ../inst/include/htslib-1.18
 CXX      = g++
-CXXFLAGS = -std=c++17 -Wall -O3 -MMD -MP
+CXXFLAGS = -std=c++17 -Wall -O3 -march=native -MMD -MP
 INC      = -I../src -I../inst/include -I$(HTSDIR)
 # LDFLAGS  =  -L$(HTSDIR) -Wl,-rpath,$(HTSDIR)
 LIBS     = $(HTSDIR)/libhts.a -llzma -lbz2 -lm -lz -lpthread
