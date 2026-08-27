@@ -43,6 +43,32 @@ make CUDA=1                 # override CUDA_ARCH=60 when needed
 
 The CPU and CUDA joint-model backends exploit exchangeability of the two unphased chromosome copies by storing only the =C(C+1)/2= unordered cluster pairs; diagonal states have multiplicity one and off-diagonal states multiplicity two in full diploid sums. The CUDA implementation batches individuals according to available device memory. Genotype likelihoods and device allocations persist across EM iterations; emissions and ancestry-weighted cluster frequencies are cached once per batch; sufficient statistics use a two-stage reduction without global atomics. The regular build and command remain CPU-only; requesting =--gpu= from a CPU-only binary reports an actionable error instead of silently falling back.
 
+** STITCH-inspired joint-model heuristics
+
+The joint model can opt into the label-alignment and unused-cluster revival ideas described in [[https://media.springernature.com/original/springer-static/esm/art%3A10.1038%2Fng.3594/MediaObjects/41588_2016_BFng3594_MOESM53_ESM.pdf][STITCH Supplementary Information, Section 1.6]]:
+
+#+begin_src shell
+./phaseless joint -g data/bgl.gz -c 10 -k 3 --stitch-heuristics -o joint
+#+end_src
+
+During the first 30 ordinary EM scans, cluster labels are aligned every fourth iteration starting at iteration 4 by maximizing agreement between the per-individual cluster marginals implied by =Q= and =F=. All downstream cluster-indexed =P= and =F= parameters in the chunk are permuted together, and =P= is randomly reset within 20 SNPs of a changed boundary. Starting at iteration 6 and alternating every fourth iteration, posterior chromosome-copy occupancy is averaged over 100-SNP blocks; continuous intervals below 0.5% usage are initialized from a usage-weighted donor cluster with 80% donor emissions and 20% uniform noise. SqS3 acceleration starts after this warm-up and uses the remaining scan budget.
+
+The defaults can be changed with =--heuristic-warmup-iterations=, =--heuristic-block-size=, =--heuristic-reset-radius=, =--heuristic-min-usage=, and =--heuristic-donor-weight=. The warm-up delays convergence checks until SqS3 begins, and the highest observed-likelihood parameter checkpoint is restored before output if a later perturbation does not improve it. The random choices use =--seed=. The global =--no-accel= option keeps ordinary EM active after the warm-up.
+
+** Posterior-driven joint-model initialization
+
+The joint model now uses a structured start by default. First it makes =Q= uniform and =F= identical across ancestries and fits a shared-haplotype HMM. Genome-wide posterior cluster-occupancy profiles are then normalized per individual and grouped with multi-start farthest-point/k-means initialization. Distances to the group centroids define soft =Q= values, and each group's weighted cluster profile tilts a copy of the shared =F=. Short fixed-haplotype ancestry refinements select the candidate with the highest observed likelihood.
+
+After candidate selection, a continuation schedule initially shrinks =Q= toward uniform and ancestry-specific =F= toward their common mean, then releases that shrinkage to zero. Each warm-up cycle alternates a =Q,F= update with =P,r= fixed and a =P,r= update with =Q,F= fixed. Convergence history starts only after these initialization cycles. The initialization scans are additional to =--iterations=.
+
+The default initialization uses 10 shared-haplotype scans, 15 ancestry-refinement scans, three starts, noise 0.05, six continuation cycles, and six block warm-up cycles. The joint command uses all available CPU threads by default; pass =-n= to cap it. The ancestry count =-k= is required because there is no generally valid data-independent choice. These settings can be changed with =--init-haplotype-iterations=, =--init-ancestry-iterations=, =--init-restarts=, =--init-noise=, =--continuation-iterations=, and =--block-warmup-iterations=. Use =--random-init= to bypass the structured start for regression comparisons. An explicit =--qfile= also bypasses it so the supplied start is not overwritten. Posterior-driven initialization evaluates its shared-haplotype scans on the CPU so it can retain per-individual profiles; a requested CUDA backend resumes afterward. It can be combined with =--stitch-heuristics=, in which case phase-specific alignment and revival also run during the shared-haplotype fit.
+
+The joint convergence defaults are an Aitken gap per observation of =1e-5=, relative likelihood change of =5e-6=, parameter change of =2e-3=, and three consecutive stable iterations.
+
+SqS3 acceleration compares the fully evaluated extrapolated state with the fully evaluated result of two ordinary EM maps. All of =Q,P,F,r= are snapshotted and restored together, a non-finite proposal falls back to ordinary EM, and the best observed-likelihood state is retained across every optimization mode.
+
+On the CPU backend, per-individual sufficient statistics are merged in sample order rather than thread-completion order. Consequently, repeated runs with the same input, options, and =--seed= make the same threshold, donor, and noise decisions during cluster revival, independently of the CPU thread count.
+
 #+begin_src shell
 phaseless impute -g data/bgl.gz -c 10 -n 4 -s 100000
 #+end_src

@@ -240,6 +240,7 @@ __global__ void backward_posterior_kernel(const Scalar * gl,
                                           const int * pair_z2,
                                           Scalar * partial_a1,
                                           Scalar * partial_a2,
+                                          Scalar * partial_usage,
                                           Scalar * partial_cluster,
                                           Scalar * gp)
 {
@@ -276,9 +277,11 @@ __global__ void backward_posterior_kernel(const Scalar * gl,
             const Scalar g1 = gl[local_ind * S * 3 + S + s];
             const Scalar g2 = gl[local_ind * S * 3 + 2 * S + s];
             Scalar a1 = 0, a2 = 0;
+            Scalar usage = 0;
             for(int other = 0; other < C; ++other)
             {
                 const int state = unordered_state_index(z, other, C);
+                usage += 2 * alpha[(local_ind * S + s) * U + state] * beta[state];
                 const Scalar gamma_over_emit =
                     alpha[(local_ind * S + s) * U + state] * beta[state] / emit[state];
                 const Scalar po = p[m + M * other];
@@ -287,6 +290,7 @@ __global__ void backward_posterior_kernel(const Scalar * gl,
             }
             partial_a1[(local_ind * S + s) * C + z] = a1;
             partial_a2[(local_ind * S + s) * C + z] = a2;
+            partial_usage[(local_ind * S + s) * C + z] = usage;
 
             Scalar refresh_weight = 0;
             if(s == 0)
@@ -380,27 +384,31 @@ __global__ void backward_posterior_kernel(const Scalar * gl,
 
 __global__ void reduce_site_partials_kernel(const Scalar * partial_a1,
                                             const Scalar * partial_a2,
+                                            const Scalar * partial_usage,
                                             int batch,
                                             int C,
                                             int S,
                                             int global_start,
                                             Scalar * e_a1,
-                                            Scalar * e_a2)
+                                            Scalar * e_a2,
+                                            Scalar * e_usage)
 {
     const int index = blockIdx.x * blockDim.x + threadIdx.x;
     if(index >= C * S) return;
     const int z = index % C;
     const int s = index / C;
-    Scalar a1 = 0, a2 = 0;
+    Scalar a1 = 0, a2 = 0, usage = 0;
     for(int local_ind = 0; local_ind < batch; ++local_ind)
     {
         const int partial_index = (local_ind * S + s) * C + z;
         a1 += partial_a1[partial_index];
         a2 += partial_a2[partial_index];
+        usage += partial_usage[partial_index];
     }
     const int m = global_start + s;
     e_a1[z + C * m] += a1;
     e_a2[z + C * m] += a2;
+    e_usage[z + C * m] += usage;
 }
 
 __global__ void reduce_cluster_partials_kernel(const Scalar * partial_cluster,
@@ -451,15 +459,15 @@ struct CudaWorkspace
     std::vector<Scalar> flat_f;
     DeviceBuffer<Scalar> p, q, f, r;
     DeviceBuffer<int> pair_z1, pair_z2;
-    DeviceBuffer<Scalar> e_a1, e_a2, e_ancestry, e_cluster, gp, likelihood;
+    DeviceBuffer<Scalar> e_a1, e_a2, e_usage, e_ancestry, e_cluster, gp, likelihood;
     DeviceBuffer<Scalar> alpha, cs, cached_h, cached_emit;
-    DeviceBuffer<Scalar> partial_a1, partial_a2, partial_cluster;
+    DeviceBuffer<Scalar> partial_a1, partial_a2, partial_usage, partial_cluster;
 
     CudaWorkspace(const Phaseless & model, const MyFloat2D & gl)
     : model_owner(&model), gl_owner(&gl), K(model.K), C(model.C), N(model.N), M(model.M),
       flat_f(static_cast<size_t>(K) * C * M), p(model.P.size()), q(model.Q.size()), f(flat_f.size()),
       r(model.R.size()), pair_z1(unordered_state_count(C)), pair_z2(unordered_state_count(C)), e_a1(C * M),
-      e_a2(C * M), e_ancestry(K * N), e_cluster(C * K * M), likelihood(N)
+      e_a2(C * M), e_usage(C * M), e_ancestry(K * N), e_cluster(C * K * M), likelihood(N)
     {
         std::vector<int> host_z1, host_z2;
         host_z1.reserve(unordered_state_count(C));
@@ -506,6 +514,7 @@ struct CudaWorkspace
     {
         e_a1.zero(static_cast<size_t>(C) * M);
         e_a2.zero(static_cast<size_t>(C) * M);
+        e_usage.zero(static_cast<size_t>(C) * M);
         e_ancestry.zero(static_cast<size_t>(K) * N);
         e_cluster.zero(static_cast<size_t>(C) * K * M);
         likelihood.zero(N);
@@ -521,6 +530,7 @@ struct CudaWorkspace
         cached_emit.ensure(sites * U);
         partial_a1.ensure(sites * C);
         partial_a2.ensure(sites * C);
+        partial_usage.ensure(sites * C);
         partial_cluster.ensure(sites * K * C);
     }
 };
@@ -578,7 +588,7 @@ double joint_cuda_e_step(Phaseless & model, const MyFloat2D & gl, bool final_ite
     {
         const int S = model.pos_chunk[chunk + 1] - model.pos_chunk[chunk];
         const size_t elements_per_ind =
-            static_cast<size_t>(S) * (2 * U + 3 * model.C + model.K * model.C + 1);
+            static_cast<size_t>(S) * (2 * U + 4 * model.C + model.K * model.C + 1);
         const size_t budget = std::min(free_bytes / 2, total_bytes / 4);
         if(w.batch_capacities[chunk] == 0)
         {
@@ -603,15 +613,16 @@ double joint_cuda_e_step(Phaseless & model, const MyFloat2D & gl, bool final_ite
             backward_posterior_kernel<<<batch, U, backward_shared>>>(
                 batch_gl, w.p.ptr, w.q.ptr, w.f.ptr, w.r.ptr, w.cached_h.ptr, w.cached_emit.ptr, w.alpha.ptr,
                 w.cs.ptr, model.K, model.C, model.M, S, model.pos_chunk[chunk], first, final_iteration,
-                w.pair_z1.ptr, w.pair_z2.ptr, w.partial_a1.ptr, w.partial_a2.ptr, w.partial_cluster.ptr,
-                w.gp.ptr);
+                w.pair_z1.ptr, w.pair_z2.ptr, w.partial_a1.ptr, w.partial_a2.ptr, w.partial_usage.ptr,
+                w.partial_cluster.ptr, w.gp.ptr);
             cuda_check(cudaGetLastError(), "launch CUDA backward/posterior kernel");
 
             const int site_values = model.C * S;
             reduce_site_partials_kernel<<<(site_values + reduction_threads - 1) / reduction_threads,
-                                          reduction_threads>>>(w.partial_a1.ptr, w.partial_a2.ptr, batch,
-                                                               model.C, S, model.pos_chunk[chunk], w.e_a1.ptr,
-                                                               w.e_a2.ptr);
+                                          reduction_threads>>>(w.partial_a1.ptr, w.partial_a2.ptr,
+                                                               w.partial_usage.ptr, batch, model.C, S,
+                                                               model.pos_chunk[chunk], w.e_a1.ptr, w.e_a2.ptr,
+                                                               w.e_usage.ptr);
             const int cluster_values = model.C * model.K * S;
             reduce_cluster_partials_kernel<<<(cluster_values + reduction_threads - 1) / reduction_threads,
                                              reduction_threads>>>(
@@ -631,6 +642,9 @@ double joint_cuda_e_step(Phaseless & model, const MyFloat2D & gl, bool final_ite
     cuda_check(cudaMemcpy(model.EclusterA2.data(), w.e_a2.ptr, model.C * model.M * sizeof(Scalar),
                           cudaMemcpyDeviceToHost),
                "copy EclusterA2");
+    cuda_check(cudaMemcpy(model.EclusterUsage.data(), w.e_usage.ptr, model.C * model.M * sizeof(Scalar),
+                          cudaMemcpyDeviceToHost),
+               "copy EclusterUsage");
     cuda_check(cudaMemcpy(model.Eancestry.data(), w.e_ancestry.ptr, model.K * model.N * sizeof(Scalar),
                           cudaMemcpyDeviceToHost),
                "copy Eancestry");

@@ -18,7 +18,7 @@ int main(int argc, char * argv[])
 {
     // ========= helper message and parameters parsing ===========================
 
-    const std::string VERSION{"0.5.2"};
+    const std::string VERSION{"0.6.0"};
 
     // below for catching ctrl+c, and dumping files
     struct sigaction sa;
@@ -89,8 +89,8 @@ int main(int argc, char * argv[])
         .default_value(8)
         .scan<'i', int>();
     cmd_joint.add_argument("-k", "--ancestry")
-        .help("number of ancestry")
-        .default_value(3)
+        .help("number of ancestries (required)")
+        .required()
         .scan<'i', int>();
     cmd_joint.add_argument("-g", "--beagle")
         .help("gziped beagle format as input")
@@ -100,8 +100,8 @@ int main(int argc, char * argv[])
         .default_value(1000)
         .scan<'i', int>();
     cmd_joint.add_argument("-n", "--threads")
-        .help("number of threads")
-        .default_value(1)
+        .help("number of threads; -1 selects all available CPUs")
+        .default_value(-1)
         .scan<'i', int>();
     cmd_joint.add_argument("--gpu")
         .help("run the joint-model E step on an NVIDIA CUDA GPU")
@@ -111,7 +111,7 @@ int main(int argc, char * argv[])
         .default_value(std::string{"joint"});
     cmd_joint.add_argument("-s", "--chunksize")
         .help("size of each chunk in sites unit ")
-        .default_value(4800)
+        .default_value(48000)
         .scan<'i', int>();
     cmd_joint.add_argument("-S", "--single-chunk")
         .help("treat input as big single chunk")
@@ -124,23 +124,73 @@ int main(int argc, char * argv[])
         .flag();
     cmd_joint.add_argument("-d","--seed")
         .help("seed for reproducibility")
-        .default_value(999)
+        .default_value(996)
         .scan<'i', int>();
     cmd_joint.add_argument("--conv-gap-tol")
         .help("Aitken-estimated remaining log likelihood per observation")
-        .default_value(1e-6)
+        .default_value(1e-5)
         .scan<'g', double>();
     cmd_joint.add_argument("--conv-relative-tol")
         .help("relative log likelihood convergence tolerance")
-        .default_value(1e-8)
+        .default_value(5e-6)
         .scan<'g', double>();
     cmd_joint.add_argument("--conv-parameter-tol")
         .help("joint parameter stability tolerance")
-        .default_value(1e-4)
+        .default_value(2e-3)
         .scan<'g', double>();
     cmd_joint.add_argument("--conv-stable-iterations")
         .help("consecutive stable accepted iterations required")
         .default_value(3)
+        .scan<'i', int>();
+    cmd_joint.add_argument("--stitch-heuristics")
+        .help("enable STITCH-inspired label alignment and unused-cluster revival during early EM iterations")
+        .flag();
+    cmd_joint.add_argument("--random-init")
+        .help("skip posterior-driven joint initialization and retain the legacy random start")
+        .flag();
+    cmd_joint.add_argument("--init-haplotype-iterations")
+        .help("ordinary EM scans used to learn the shared haplotype start")
+        .default_value(10)
+        .scan<'i', int>();
+    cmd_joint.add_argument("--init-ancestry-iterations")
+        .help("ordinary EM scans used to refine each posterior-driven ancestry start")
+        .default_value(15)
+        .scan<'i', int>();
+    cmd_joint.add_argument("--init-noise")
+        .help("relative jitter and soft-assignment temperature for posterior-driven ancestry starts")
+        .default_value(0.05)
+        .scan<'g', double>();
+    cmd_joint.add_argument("--init-restarts")
+        .help("posterior-driven ancestry starts to try, retaining the highest likelihood")
+        .default_value(3)
+        .scan<'i', int>();
+    cmd_joint.add_argument("--continuation-iterations")
+        .help("staged warm-up cycles that gradually release ancestry-specific Q and F")
+        .default_value(6)
+        .scan<'i', int>();
+    cmd_joint.add_argument("--block-warmup-iterations")
+        .help("staged warm-up cycles alternating Q/F and P/r updates")
+        .default_value(6)
+        .scan<'i', int>();
+    cmd_joint.add_argument("--heuristic-block-size")
+        .help("SNP block size used by STITCH-inspired heuristics")
+        .default_value(100)
+        .scan<'i', int>();
+    cmd_joint.add_argument("--heuristic-reset-radius")
+        .help("number of SNPs reset on either side of a relabelled boundary")
+        .default_value(20)
+        .scan<'i', int>();
+    cmd_joint.add_argument("--heuristic-min-usage")
+        .help("posterior chromosome-copy usage below which a cluster interval is revived")
+        .default_value(0.01)
+        .scan<'g', double>();
+    cmd_joint.add_argument("--heuristic-donor-weight")
+        .help("weight of the sampled donor emissions when reviving a cluster")
+        .default_value(0.8)
+        .scan<'g', double>();
+    cmd_joint.add_argument("--heuristic-warmup-iterations")
+        .help("ordinary EM scans with STITCH heuristics before switching to SqS3")
+        .default_value(20)
         .scan<'i', int>();
     // cmd_joint.add_parents(program);
 
@@ -187,7 +237,7 @@ int main(int argc, char * argv[])
         .flag();
     cmd_impute.add_argument("-d","--seed")
         .help("seed for reproducibility")
-        .default_value(999)
+        .default_value(996)
         .scan<'i', int>();
     cmd_impute.add_argument("--write-hapsum")
         .help("write Hapsum instead of AE into parse.bin")
@@ -228,7 +278,7 @@ int main(int argc, char * argv[])
         .default_value(std::string{"admix"});
     cmd_admix.add_argument("-d","--seed")
         .help("seed for reproducibility")
-        .default_value(999)
+        .default_value(996)
         .scan<'i', int>();
     cmd_admix.add_argument("-f", "--force-accept")
         .help("always accept the acceleration solution")
@@ -304,9 +354,31 @@ int main(int argc, char * argv[])
             opts.conv_relative_tol = cmd_joint.get<double>("--conv-relative-tol");
             opts.conv_parameter_tol = cmd_joint.get<double>("--conv-parameter-tol");
             opts.conv_stable_iterations = cmd_joint.get<int>("--conv-stable-iterations");
+            opts.stitch_heuristics = cmd_joint.get<bool>("--stitch-heuristics");
+            opts.random_init = cmd_joint.get<bool>("--random-init");
+            opts.init_haplotype_iterations = cmd_joint.get<int>("--init-haplotype-iterations");
+            opts.init_ancestry_iterations = cmd_joint.get<int>("--init-ancestry-iterations");
+            opts.init_noise = cmd_joint.get<double>("--init-noise");
+            opts.init_restarts = cmd_joint.get<int>("--init-restarts");
+            opts.continuation_iterations = cmd_joint.get<int>("--continuation-iterations");
+            opts.block_warmup_iterations = cmd_joint.get<int>("--block-warmup-iterations");
+            opts.heuristic_block_size = cmd_joint.get<int>("--heuristic-block-size");
+            opts.heuristic_reset_radius = cmd_joint.get<int>("--heuristic-reset-radius");
+            opts.heuristic_min_usage = cmd_joint.get<double>("--heuristic-min-usage");
+            opts.heuristic_donor_weight = cmd_joint.get<double>("--heuristic-donor-weight");
+            opts.heuristic_warmup_iterations = cmd_joint.get<int>("--heuristic-warmup-iterations");
             if(opts.conv_gap_tol <= 0 || opts.conv_relative_tol <= 0 || opts.conv_parameter_tol <= 0
                || opts.conv_stable_iterations < 1)
                 throw std::invalid_argument("joint convergence tolerances and stable iterations must be positive");
+            if(opts.heuristic_block_size < 1 || opts.heuristic_reset_radius < 0
+               || opts.heuristic_warmup_iterations < 1
+               || opts.heuristic_min_usage < 0 || opts.heuristic_min_usage >= 1
+               || opts.heuristic_donor_weight < 0 || opts.heuristic_donor_weight > 1)
+                throw std::invalid_argument("invalid STITCH heuristic configuration");
+            if(opts.init_haplotype_iterations < 1 || opts.init_ancestry_iterations < 1 || opts.init_restarts < 1
+               || opts.init_noise < 0 || opts.init_noise > 1
+               || opts.continuation_iterations < 0 || opts.block_warmup_iterations < 0)
+                throw std::invalid_argument("invalid joint initialization configuration");
             opts.chunksize = cmd_joint.get<int>("--chunksize");
             opts.single_chunk = cmd_joint.get<bool>("--single-chunk");
             opts.oVCF = cmd_joint.get<bool>("--vcf");

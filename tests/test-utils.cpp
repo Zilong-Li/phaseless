@@ -23,7 +23,10 @@ TEST_CASE("runtime safeguards", "[test-utils]")
 {
     REQUIRE(resolve_thread_count(8, 4) == 4);
     REQUIRE(resolve_thread_count(8, 0) == 1);
+    REQUIRE(resolve_thread_count(-1, 4) == 4);
+    REQUIRE(resolve_thread_count(-1, 0) == 1);
     REQUIRE_THROWS_AS(resolve_thread_count(0, 4), std::invalid_argument);
+    REQUIRE_THROWS_AS(resolve_thread_count(-2, 4), std::invalid_argument);
 
     REQUIRE(likelihood_converged(1e-5, 1e-4));
     REQUIRE_FALSE(likelihood_converged(-1e-5, 1e-4));

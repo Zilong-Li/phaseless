@@ -22,6 +22,7 @@
 #include <iterator>
 #include <map>
 #include <memory>
+#include <numeric>
 #include <random>
 #include <stdexcept>
 #include <string>
@@ -48,8 +49,9 @@ inline void handler(int s)
 
 inline int resolve_thread_count(int requested, unsigned int available)
 {
-    if(requested < 1) throw std::invalid_argument("number of threads must be at least 1");
     const int usable = available == 0 ? 1 : static_cast<int>(available);
+    if(requested == -1) return usable;
+    if(requested < 1) throw std::invalid_argument("number of threads must be -1 (automatic) or at least 1");
     return std::min(requested, usable);
 }
 
@@ -156,15 +158,20 @@ inline MatrixType RandomUniform(const Eigen::Index numRows,
 
 struct Options
 {
-    int ichunk{0}, chunksize{50000}, K{2}, C{10}, nadmix{1000}, nimpute{40}, nthreads{1}, seed{999};
+    int ichunk{0}, chunksize{48000}, K{3}, C{8}, nadmix{1000}, nimpute{1000}, nthreads{-1}, seed{996};
     int gridsize{1}, refillHaps{0}, buffer{0};
     double ltol{1e-1}, info{0}, tol_pi{0.99}, tol_r{1e-5};
-    double conv_gap_tol{1e-6}, conv_relative_tol{1e-8}, conv_parameter_tol{1e-4};
+    double conv_gap_tol{1e-5}, conv_relative_tol{5e-6}, conv_parameter_tol{2e-3};
     int conv_stable_iterations{3};
+    int heuristic_block_size{100}, heuristic_reset_radius{20}, heuristic_warmup_iterations{20};
+    int init_haplotype_iterations{10}, init_ancestry_iterations{15}, init_restarts{3};
+    int continuation_iterations{6}, block_warmup_iterations{6};
+    double heuristic_min_usage{0.01}, heuristic_donor_weight{0.8};
+    double init_noise{0.05};
     double ptol{1e-6}; // threshold for P
     double ftol{1e-6}; // threshold for F
     double qtol{1e-6}; // threshold for Q
-    bool noaccel{0}, noscreen{0}, single_chunk{0}, debug{0}, collapse{0}, gpu{0};
+    bool noaccel{0}, noscreen{0}, single_chunk{0}, debug{0}, collapse{0}, gpu{0}, stitch_heuristics{0}, random_init{0};
     bool nQ{0}, nP{0}, nF{0}, nR{0}, aQ{0}, oVCF{0}, eHap{0}, oF{0}, cF{0}, force{0};
     std::string out, in_beagle, in_vcf, in_bin, in_impute, in_joint;
     std::string samples{""}, region{""}, in_plink{""}, in_qfile{""}, in_pfile{""}, in_rfile{""};

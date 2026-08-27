@@ -24,6 +24,72 @@ struct JointParameterSnapshot
     MyArr1D er;
 };
 
+void restore_parameters(Phaseless & model, const JointParameterSnapshot & snapshot)
+{
+    model.Q = snapshot.Q;
+    model.P = snapshot.P;
+    for(int k = 0; k < model.K; ++k) model.F[k] = snapshot.F.middleRows(k * model.C, model.C);
+    model.er = snapshot.er;
+    model.R = er2R(model.er);
+}
+
+std::vector<int> maximum_weight_assignment(const MyArr2D & score)
+{
+    const int n = score.rows();
+    if(score.cols() != n) throw std::invalid_argument("cluster assignment score must be square");
+    std::vector<double> u(n + 1), v(n + 1);
+    std::vector<int> p(n + 1), way(n + 1);
+    for(int i = 1; i <= n; ++i)
+    {
+        p[0] = i;
+        int j0 = 0;
+        std::vector<double> minv(n + 1, std::numeric_limits<double>::infinity());
+        std::vector<bool> used(n + 1, false);
+        do
+        {
+            used[j0] = true;
+            const int i0 = p[j0];
+            double delta = std::numeric_limits<double>::infinity();
+            int j1 = 0;
+            for(int j = 1; j <= n; ++j)
+            {
+                if(used[j]) continue;
+                const double cur = -score(i0 - 1, j - 1) - u[i0] - v[j];
+                if(cur < minv[j])
+                {
+                    minv[j] = cur;
+                    way[j] = j0;
+                }
+                if(minv[j] < delta)
+                {
+                    delta = minv[j];
+                    j1 = j;
+                }
+            }
+            for(int j = 0; j <= n; ++j)
+            {
+                if(used[j])
+                {
+                    u[p[j]] += delta;
+                    v[j] -= delta;
+                }
+                else
+                    minv[j] -= delta;
+            }
+            j0 = j1;
+        } while(p[j0] != 0);
+        do
+        {
+            const int j1 = way[j0];
+            p[j0] = p[j1];
+            j0 = j1;
+        } while(j0 != 0);
+    }
+    std::vector<int> assignment(n);
+    for(int j = 1; j <= n; ++j) assignment[p[j] - 1] = j - 1;
+    return assignment;
+}
+
 struct JointParameterChange
 {
     double q_max{0};
@@ -163,12 +229,281 @@ void Phaseless::protectPars()
     }
 }
 
+void Phaseless::initializeSharedHaplotypeStart()
+{
+    MyArr2D common = MyArr2D::Zero(C, M);
+    for(const auto & frequencies : F) common += frequencies;
+    common /= static_cast<double>(K);
+    common.rowwise() /= common.colwise().sum();
+    for(auto & frequencies : F) frequencies = common;
+    Q.setConstant(1.0 / static_cast<double>(K));
+}
+
+bool Phaseless::initializeAncestryFromPosterior(double noise, int restart)
+{
+    if(noise < 0 || noise > 1) throw std::invalid_argument("ancestry initialization noise must be in [0, 1]");
+    if(restart < 0) throw std::invalid_argument("ancestry initialization restart must be non-negative");
+    if(K == 1)
+    {
+        Q.setOnes();
+        return true;
+    }
+    auto jittered_symmetric_fallback = [&]()
+    {
+        const MyArr2D common = F.front();
+        Q = RandomUniform<MyArr2D, std::default_random_engine>(K, N, rng, admixtureThreshold,
+                                                                1 - admixtureThreshold);
+        Q.rowwise() /= Q.colwise().sum();
+        for(auto & frequencies : F)
+        {
+            const MyArr2D jitter = RandomUniform<MyArr2D, std::default_random_engine>(
+                C, M, rng, 1 - noise, 1 + noise);
+            frequencies = common * jitter;
+            frequencies.rowwise() /= frequencies.colwise().sum();
+        }
+        protectPars();
+        return false;
+    };
+    if(EindividualClusterUsage.rows() != C || EindividualClusterUsage.cols() != N || N == 0)
+        return jittered_symmetric_fallback();
+
+    MyArr2D profiles = EindividualClusterUsage;
+    for(int i = 0; i < N; ++i)
+    {
+        const double total = profiles.col(i).sum();
+        if(!std::isfinite(total) || total <= 0) return jittered_symmetric_fallback();
+        profiles.col(i) /= total;
+    }
+    const MyArr1D mean_profile = profiles.rowwise().mean();
+    const double total_variation = (profiles.colwise() - mean_profile).square().mean();
+    if(!std::isfinite(total_variation) || total_variation <= std::numeric_limits<double>::epsilon())
+        return jittered_symmetric_fallback();
+
+    MyArr2D centroids(C, K);
+    Int1D selected(K, 0);
+    if(restart == 0)
+    {
+        MyArr1D distance(N);
+        for(int i = 0; i < N; ++i) distance(i) = (profiles.col(i) - mean_profile).square().sum();
+        Eigen::Index first = 0;
+        distance.maxCoeff(&first);
+        selected[0] = static_cast<int>(first);
+    }
+    else
+    {
+        std::uniform_int_distribution<int> first(0, N - 1);
+        selected[0] = first(rng);
+    }
+    centroids.col(0) = profiles.col(selected[0]);
+    MyArr1D nearest = MyArr1D::Constant(N, std::numeric_limits<double>::infinity());
+    for(int k = 1; k < K; ++k)
+    {
+        for(int i = 0; i < N; ++i)
+            nearest(i) = std::min<double>(nearest(i), (profiles.col(i) - centroids.col(k - 1)).square().sum());
+        int choice = k % N;
+        if(restart == 0)
+        {
+            Eigen::Index farthest = 0;
+            nearest.maxCoeff(&farthest);
+            choice = static_cast<int>(farthest);
+        }
+        else if(nearest.sum() > std::numeric_limits<double>::epsilon())
+        {
+            MyFloat1D weights(nearest.data(), nearest.data() + nearest.size());
+            std::discrete_distribution<int> choose(weights.begin(), weights.end());
+            choice = choose(rng);
+        }
+        selected[k] = choice;
+        centroids.col(k) = profiles.col(choice);
+    }
+
+    Int1D labels(N, -1);
+    for(int iteration = 0; iteration < 50; ++iteration)
+    {
+        bool changed = false;
+        for(int i = 0; i < N; ++i)
+        {
+            int best = 0;
+            double best_distance = std::numeric_limits<double>::infinity();
+            for(int k = 0; k < K; ++k)
+            {
+                const double distance = (profiles.col(i) - centroids.col(k)).square().sum();
+                if(distance < best_distance)
+                {
+                    best_distance = distance;
+                    best = k;
+                }
+            }
+            changed = changed || labels[i] != best;
+            labels[i] = best;
+        }
+        MyArr2D next = MyArr2D::Zero(C, K);
+        Int1D counts(K, 0);
+        for(int i = 0; i < N; ++i)
+        {
+            next.col(labels[i]) += profiles.col(i);
+            ++counts[labels[i]];
+        }
+        for(int k = 0; k < K; ++k)
+        {
+            if(counts[k])
+                next.col(k) /= counts[k];
+            else
+                next.col(k) = profiles.col(selected[k]);
+        }
+        centroids = std::move(next);
+        if(!changed) break;
+    }
+
+    double within = 0;
+    for(int i = 0; i < N; ++i) within += (profiles.col(i) - centroids.col(labels[i])).square().sum();
+    const double temperature = std::max({within / std::max(1, N),
+                                         (0.02 + noise) * total_variation * C,
+                                         100 * std::numeric_limits<double>::epsilon()});
+    for(int i = 0; i < N; ++i)
+    {
+        for(int k = 0; k < K; ++k)
+        {
+            const double distance = (profiles.col(i) - centroids.col(k)).square().sum();
+            Q(k, i) = std::exp(-0.5 * distance / temperature);
+        }
+        Q.col(i) += admixtureThreshold;
+        Q.col(i) /= Q.col(i).sum();
+    }
+
+    const MyArr2D common = F.front();
+    for(int k = 0; k < K; ++k)
+    {
+        const double weight = Q.row(k).sum();
+        MyArr1D ancestry_profile = MyArr1D::Zero(C);
+        for(int i = 0; i < N; ++i) ancestry_profile += Q(k, i) * profiles.col(i);
+        ancestry_profile /= std::max(weight, std::numeric_limits<double>::epsilon());
+        MyArr1D ratio = (ancestry_profile + clusterFreqThreshold)
+                      / (mean_profile + clusterFreqThreshold);
+        ratio = ratio.sqrt();
+        const MyArr2D jitter = RandomUniform<MyArr2D, std::default_random_engine>(
+            C, M, rng, 1 - noise, 1 + noise);
+        F[k] = common.colwise() * ratio;
+        F[k] *= jitter;
+        F[k].rowwise() /= F[k].colwise().sum();
+    }
+    protectPars();
+    return true;
+}
+
+void Phaseless::shrinkAncestryCoupling(double strength)
+{
+    if(strength < 0 || strength > 1) throw std::invalid_argument("ancestry coupling strength must be in [0, 1]");
+    if(!NQ) Q = strength * Q + (1 - strength) / static_cast<double>(K);
+    if(!NF)
+    {
+        MyArr2D common = MyArr2D::Zero(C, M);
+        for(const auto & frequencies : F) common += frequencies;
+        common /= static_cast<double>(K);
+        for(auto & frequencies : F) frequencies = strength * frequencies + (1 - strength) * common;
+    }
+    protectPars();
+}
+
+void Phaseless::configurePhaseAlignment(int boundary_stride)
+{
+    phaseAlignmentBoundaries.clear();
+    phaseAlignmentIndex.assign(M, -1);
+    EphaseAlignmentCross.clear();
+    EphaseAlignmentSquares.resize(0, 0);
+    if(boundary_stride <= 0) return;
+    if(pos_chunk.empty()) throw std::logic_error("phase alignment requires initialized recombination chunks");
+    for(size_t ic = 0; ic + 1 < pos_chunk.size(); ++ic)
+        for(int boundary = pos_chunk[ic] + boundary_stride; boundary < pos_chunk[ic + 1]; boundary += boundary_stride)
+        {
+            phaseAlignmentIndex[boundary] = static_cast<int>(phaseAlignmentBoundaries.size());
+            phaseAlignmentBoundaries.push_back(boundary);
+            EphaseAlignmentCross.emplace_back(MyArr2D::Zero(C, C));
+        }
+    EphaseAlignmentSquares.setZero(2 * C, phaseAlignmentBoundaries.size());
+}
+
+JointHeuristicReport Phaseless::alignPhaseClusterLabels(int reset_radius)
+{
+    if(reset_radius < 0) throw std::invalid_argument("heuristic reset radius cannot be negative");
+    JointHeuristicReport report;
+    if(C < 2 || phaseAlignmentBoundaries.empty()) return report;
+    Int1D current_to_original(C);
+    std::iota(current_to_original.begin(), current_to_original.end(), 0);
+    size_t current_chunk = 0;
+
+    for(size_t b = 0; b < phaseAlignmentBoundaries.size(); ++b)
+    {
+        const int boundary = phaseAlignmentBoundaries[b];
+        while(current_chunk + 1 < pos_chunk.size() && boundary >= pos_chunk[current_chunk + 1])
+        {
+            ++current_chunk;
+            std::iota(current_to_original.begin(), current_to_original.end(), 0);
+        }
+        MyArr2D score = MyArr2D::Zero(C, C);
+        for(int left = 0; left < C; ++left)
+            for(int right = 0; right < C; ++right)
+            {
+                const int original_left = current_to_original[left];
+                const int original_right = current_to_original[right];
+                const double left_sum = EclusterUsage(original_left, boundary - 1);
+                const double right_sum = EclusterUsage(original_right, boundary);
+                const double covariance = EphaseAlignmentCross[b](original_left, original_right)
+                                        - left_sum * right_sum / N;
+                const double left_variance = EphaseAlignmentSquares(original_left, b)
+                                           - left_sum * left_sum / N;
+                const double right_variance = EphaseAlignmentSquares(C + original_right, b)
+                                            - right_sum * right_sum / N;
+                const double scale = std::sqrt(std::max(0.0, left_variance) * std::max(0.0, right_variance));
+                if(scale > std::numeric_limits<double>::epsilon()) score(left, right) = covariance / scale;
+            }
+        const auto assignment = maximum_weight_assignment(score);
+        double identity_score = 0, assigned_score = 0;
+        for(int c = 0; c < C; ++c)
+        {
+            identity_score += score(c, c);
+            assigned_score += score(c, assignment[c]);
+        }
+        const double improvement_tolerance = 1e-12 * std::max(1.0, std::abs(identity_score));
+        if(assigned_score <= identity_score + improvement_tolerance) continue;
+
+        const int chunk_end = pos_chunk[current_chunk + 1];
+        const int tail_length = chunk_end - boundary;
+        const MyArr2D old_p = P.middleRows(boundary, tail_length);
+        for(int c = 0; c < C; ++c) P.middleRows(boundary, tail_length).col(c) = old_p.col(assignment[c]);
+        for(int k = 0; k < K; ++k)
+        {
+            const MyArr2D old_f = F[k].middleCols(boundary, tail_length);
+            for(int c = 0; c < C; ++c)
+                F[k].middleCols(boundary, tail_length).row(c) = old_f.row(assignment[c]);
+        }
+        Int1D next_to_original(C);
+        for(int c = 0; c < C; ++c) next_to_original[c] = current_to_original[assignment[c]];
+        current_to_original = std::move(next_to_original);
+
+        const int reset_start = std::max(pos_chunk[current_chunk], boundary - reset_radius);
+        const int reset_end = std::min(chunk_end, boundary + reset_radius + 1);
+        P.middleRows(reset_start, reset_end - reset_start) =
+            RandomUniform<MyArr2D, std::default_random_engine>(reset_end - reset_start, C, rng,
+                                                              alleleEmitThreshold, 1 - alleleEmitThreshold);
+        report.reset_sites += reset_end - reset_start;
+        ++report.relabelled_boundaries;
+    }
+    protectPars();
+    return report;
+}
+
 void Phaseless::initIteration()
 {
     EclusterK.setZero(C * K, M);
     EclusterA1.setZero(C, M);
     EclusterA2.setZero(C, M);
     Eancestry.setZero(K, N);
+    EclusterUsage.setZero(C, M);
+    EindividualClusterUsage.setZero(C, N);
+    for(auto & cross : EphaseAlignmentCross) cross.setZero();
+    if(EphaseAlignmentSquares.size()) EphaseAlignmentSquares.setZero();
+    next_merge_ind.assign(pos_chunk.empty() ? 0 : pos_chunk.size() - 1, 0);
 }
 
 void Phaseless::updateIteration()
@@ -190,6 +525,135 @@ void Phaseless::updateIteration()
     }
     if(!NR) er = 1.0 - EclusterK.colwise().sum() / N;
     protectPars();
+}
+
+JointHeuristicReport Phaseless::alignClusterLabels(int boundary_stride, int reset_radius)
+{
+    if(boundary_stride < 1) throw std::invalid_argument("heuristic block size must be positive");
+    if(reset_radius < 0) throw std::invalid_argument("heuristic reset radius cannot be negative");
+    JointHeuristicReport report;
+    if(C < 2 || M < 2) return report;
+    const MyArr2D individual_ancestry_gram = (Q.matrix() * Q.matrix().transpose()).array();
+
+    for(size_t ic = 0; ic + 1 < pos_chunk.size(); ++ic)
+    {
+        const int chunk_start = pos_chunk[ic];
+        const int chunk_end = pos_chunk[ic + 1];
+        for(int boundary = chunk_start + boundary_stride; boundary < chunk_end; boundary += boundary_stride)
+        {
+            MyArr2D left = MyArr2D::Zero(C, K);
+            MyArr2D right = MyArr2D::Zero(C, K);
+            for(int k = 0; k < K; ++k)
+            {
+                left.col(k) = F[k].col(boundary - 1);
+                right.col(k) = F[k].col(boundary);
+            }
+            const MyArr2D score =
+                (left.matrix() * individual_ancestry_gram.matrix() * right.matrix().transpose()).array();
+            const auto assignment = maximum_weight_assignment(score);
+            double identity_score = 0, assigned_score = 0;
+            for(int c = 0; c < C; ++c)
+            {
+                identity_score += score(c, c);
+                assigned_score += score(c, assignment[c]);
+            }
+            const double improvement_tolerance = 1e-12 * std::max(1.0, std::abs(identity_score));
+            if(assigned_score <= identity_score + improvement_tolerance) continue;
+
+            const int tail_length = chunk_end - boundary;
+            const MyArr2D old_p = P.middleRows(boundary, tail_length);
+            for(int c = 0; c < C; ++c) P.middleRows(boundary, tail_length).col(c) = old_p.col(assignment[c]);
+            for(int k = 0; k < K; ++k)
+            {
+                const MyArr2D old_f = F[k].middleCols(boundary, tail_length);
+                for(int c = 0; c < C; ++c)
+                    F[k].middleCols(boundary, tail_length).row(c) = old_f.row(assignment[c]);
+            }
+
+            const int reset_start = std::max(chunk_start, boundary - reset_radius);
+            const int reset_end = std::min(chunk_end, boundary + reset_radius + 1);
+            P.middleRows(reset_start, reset_end - reset_start) =
+                RandomUniform<MyArr2D, std::default_random_engine>(reset_end - reset_start, C, rng,
+                                                                  alleleEmitThreshold, 1 - alleleEmitThreshold);
+            report.reset_sites += reset_end - reset_start;
+            ++report.relabelled_boundaries;
+        }
+    }
+    protectPars();
+    return report;
+}
+
+JointHeuristicReport Phaseless::reviveUnusedClusters(double min_usage, int bin_size, double donor_weight)
+{
+    if(min_usage < 0 || min_usage >= 1) throw std::invalid_argument("heuristic minimum usage must be in [0, 1)");
+    if(bin_size < 1) throw std::invalid_argument("heuristic block size must be positive");
+    if(donor_weight < 0 || donor_weight > 1)
+        throw std::invalid_argument("heuristic donor weight must be in [0, 1]");
+    JointHeuristicReport report;
+    if(C < 2 || N < 1) return report;
+
+    const double usage_scale = 2.0 * N;
+    for(size_t ic = 0; ic + 1 < pos_chunk.size(); ++ic)
+    {
+        const int chunk_start = pos_chunk[ic];
+        const int chunk_end = pos_chunk[ic + 1];
+        const int bins = (chunk_end - chunk_start + bin_size - 1) / bin_size;
+        for(int c = 0; c < C; ++c)
+        {
+            int b = 0;
+            while(b < bins)
+            {
+                const int bin_start = chunk_start + b * bin_size;
+                const int bin_end = std::min(chunk_end, bin_start + bin_size);
+                const double average = EclusterUsage.row(c).segment(bin_start, bin_end - bin_start).mean()
+                                             / usage_scale;
+                if(average >= min_usage)
+                {
+                    ++b;
+                    continue;
+                }
+                const int run_first_bin = b;
+                do
+                {
+                    ++b;
+                    if(b == bins) break;
+                    const int next_start = chunk_start + b * bin_size;
+                    const int next_end = std::min(chunk_end, next_start + bin_size);
+                    const double next_average =
+                        EclusterUsage.row(c).segment(next_start, next_end - next_start).mean() / usage_scale;
+                    if(next_average >= min_usage) break;
+                } while(true);
+                const int run_start = chunk_start + run_first_bin * bin_size;
+                const int run_end = std::min(chunk_end, chunk_start + b * bin_size);
+
+                MyArr1D donor_usage = EclusterUsage.middleCols(run_start, run_end - run_start).rowwise().sum();
+                donor_usage(c) = 0;
+                int donor = 0;
+                const double donor_total = donor_usage.sum();
+                if(donor_total > 0)
+                {
+                    MyFloat1D weights(donor_usage.data(), donor_usage.data() + donor_usage.size());
+                    std::discrete_distribution<int> distribution(weights.begin(), weights.end());
+                    donor = distribution(rng);
+                }
+                else
+                {
+                    std::uniform_int_distribution<int> distribution(0, C - 2);
+                    donor = distribution(rng);
+                    if(donor >= c) ++donor;
+                }
+                const int length = run_end - run_start;
+                const MyArr1D noise = RandomUniform<MyArr1D, std::default_random_engine>(
+                    length, 1, rng, alleleEmitThreshold, 1 - alleleEmitThreshold);
+                P.col(c).segment(run_start, length) =
+                    donor_weight * P.col(donor).segment(run_start, length) + (1 - donor_weight) * noise;
+                ++report.revived_intervals;
+                report.revived_sites += length;
+            }
+        }
+    }
+    protectPars();
+    return report;
 }
 
 void Phaseless::callGenoLoopC(int ind, int s, int z1, const MyArr2D & gli, const MyArr1D & gamma_div_emit)
@@ -221,6 +685,7 @@ void Phaseless::getPosterios(const int ind,
     const int S = pos_chunk[ic + 1] - pos_chunk[ic];
     int m{0}, s{0}, z1{0}, z2{0}, y1{0}, zz{0};
     MyArr2D ind_post_zg1(C, S), ind_post_zg2(C, S);
+    MyArr2D ind_cluster_usage = MyArr2D::Zero(C, S);
     MyArr2D ind_post_zy(C * K, S);
     MyArr1D gamma_div_emit(diploid_unordered_state_count(C));
     ind_post_zy.setZero();
@@ -228,6 +693,14 @@ void Phaseless::getPosterios(const int ind,
     {
         m = s + pos_chunk[ic];
         gamma_div_emit = (alpha.col(s) * beta.col(s)) / emit.col(s); // what if emit is 0
+        for(z1 = 0; z1 < C; ++z1)
+            for(z2 = z1; z2 < C; ++z2)
+            {
+                const double posterior = 2 * alpha(diploid_unordered_state_index(z1, z2, C), s) * beta(
+                                               diploid_unordered_state_index(z1, z2, C), s);
+                ind_cluster_usage(z1, s) += posterior;
+                if(z2 != z1) ind_cluster_usage(z2, s) += posterior;
+            }
         for(z1 = 0; z1 < C; z1++)
         {
             if(finalIter) callGenoLoopC(ind, m, z1, gli, gamma_div_emit);
@@ -278,11 +751,29 @@ void Phaseless::getPosterios(const int ind,
     // Q is the ancestry distribution at cluster-refresh events.  No-refresh
     // transitions contain no ancestry draw and therefore contribute no count.
     for(y1 = 0; y1 < K; y1++) Eancestry(y1, ind) += ind_post_zy.middleRows(y1 * C, C).sum();
-    { // sum over all samples for updates
-        std::scoped_lock<std::mutex> lock(mutex_it);
+    EindividualClusterUsage.col(ind) += ind_cluster_usage.rowwise().sum();
+    { // Sum individuals in a fixed order so seeded heuristic runs are reproducible across thread schedules.
+        std::unique_lock<std::mutex> lock(mutex_it);
+        merge_cv.wait(lock, [&] { return ind == next_merge_ind[ic]; });
         EclusterA1.middleCols(pos_chunk[ic], S) += ind_post_zg1;
         EclusterA2.middleCols(pos_chunk[ic], S) += ind_post_zg2;
         EclusterK.middleCols(pos_chunk[ic], S) += ind_post_zy;
+        EclusterUsage.middleCols(pos_chunk[ic], S) += ind_cluster_usage;
+        if(!EphaseAlignmentCross.empty())
+            for(int local_boundary = 1; local_boundary < S; ++local_boundary)
+            {
+                const int boundary = pos_chunk[ic] + local_boundary;
+                const int boundary_index = phaseAlignmentIndex[boundary];
+                if(boundary_index < 0) continue;
+                const MyArr1D left = ind_cluster_usage.col(local_boundary - 1);
+                const MyArr1D right = ind_cluster_usage.col(local_boundary);
+                EphaseAlignmentCross[boundary_index] += (left.matrix() * right.matrix().transpose()).array();
+                EphaseAlignmentSquares.col(boundary_index).head(C) += left.square();
+                EphaseAlignmentSquares.col(boundary_index).tail(C) += right.square();
+            }
+        ++next_merge_ind[ic];
+        lock.unlock();
+        merge_cv.notify_all();
     }
 }
 
@@ -342,9 +833,10 @@ int run_phaseless_main(Options & opts)
     faith.setFlags(opts.ptol, opts.ftol, opts.qtol, opts.debug, opts.nQ, opts.nP, opts.nF, opts.nR);
     faith.setStartPoint(opts.in_qfile, opts.in_pfile);
     faith.initRecombination(genome->pos, opts.in_rfile);
+    bool initialization_cpu_e_step{false};
     auto evaluate_e_step = [&](bool final_iteration)
     {
-        if(opts.gpu) return joint_cuda_e_step(faith, genome->gls, final_iteration);
+        if(opts.gpu && !initialization_cpu_e_step) return joint_cuda_e_step(faith, genome->gls, final_iteration);
         double value = 0;
         for(int i = 0; i < faith.N; i++)
             res.emplace_back(pool.enqueue(&Phaseless::runBigass, &faith, i, std::ref(genome->gls), final_iteration));
@@ -352,6 +844,123 @@ int run_phaseless_main(Options & opts)
         res.clear();
         return value;
     };
+    auto run_initialization_stage = [&](const char * name, int scans)
+    {
+        double stage_like = NAN;
+        for(int it = 0; SIG_COND && it < scans; ++it)
+        {
+            tim.clock();
+            faith.initIteration();
+            stage_like = evaluate_e_step(false);
+            faith.updateIteration();
+            cao.print(tim.date(), name, "scan", it + 1, "/", scans, ", likelihood =", stage_like,
+                      ", time", tim.reltime(), "sec");
+        }
+        return stage_like;
+    };
+    const bool posterior_initialization = !opts.random_init && opts.in_qfile.empty();
+    if(!posterior_initialization && !opts.in_qfile.empty())
+        cao.print(tim.date(), "using explicit Q start; posterior-driven initialization is disabled");
+    if(posterior_initialization)
+    {
+        cao.print(tim.date(), "posterior-driven initialization: shared haplotype scans =",
+                  opts.init_haplotype_iterations, ", ancestry refinement scans =", opts.init_ancestry_iterations,
+                  ", ancestry starts =", opts.init_restarts, ", initialization noise =", opts.init_noise,
+                  ", continuation cycles =", opts.continuation_iterations,
+                  ", block warm-up cycles =", opts.block_warmup_iterations);
+
+        // Learn the haplotype map without asking a random ancestry split to
+        // organize the cluster labels at the same time.
+        faith.initializeSharedHaplotypeStart();
+        faith.setFlags(opts.ptol, opts.ftol, opts.qtol, opts.debug, true, opts.nP, false, opts.nR);
+        initialization_cpu_e_step = true;
+        if(opts.gpu)
+            cao.warn(tim.date(), "posterior-driven initialization uses CPU E-steps; GPU resumes afterward");
+        if(opts.stitch_heuristics)
+            faith.configurePhaseAlignment(opts.heuristic_block_size);
+        for(int it = 0; SIG_COND && it < opts.init_haplotype_iterations; ++it)
+        {
+            tim.clock();
+            faith.initIteration();
+            const double stage_like = evaluate_e_step(false);
+            faith.updateIteration();
+            cao.print(tim.date(), "shared-haplotype initialization scan", it + 1, "/",
+                      opts.init_haplotype_iterations, ", likelihood =", stage_like, ", time", tim.reltime(), "sec");
+            if(opts.stitch_heuristics && it >= 4 && it % 4 == 0)
+            {
+                const auto report = faith.alignPhaseClusterLabels(opts.heuristic_reset_radius);
+                cao.warn(tim.date(), "phase-stage posterior label alignment", it, ": relabelled",
+                         report.relabelled_boundaries, "boundaries and reset", report.reset_sites, "SNPs");
+            }
+            if(opts.stitch_heuristics && it >= 6 && (it - 2) % 4 == 0)
+            {
+                const auto report = faith.reviveUnusedClusters(opts.heuristic_min_usage,
+                                                                opts.heuristic_block_size,
+                                                                opts.heuristic_donor_weight);
+                cao.warn(tim.date(), "phase-stage cluster revival", it, ": revived", report.revived_intervals,
+                         "intervals covering", report.revived_sites, "SNPs");
+            }
+        }
+        faith.configurePhaseAlignment(0);
+        initialization_cpu_e_step = false;
+        const JointParameterSnapshot shared_parameters = snapshot_parameters(faith);
+        const MyArr2D posterior_profiles = faith.EindividualClusterUsage;
+
+        // Cluster genome-wide posterior haplotype occupancy, use the resulting
+        // soft groups for Q, and tilt the shared F by each group's profile.
+        faith.setFlags(opts.ptol, opts.ftol, opts.qtol, opts.debug, opts.nQ, true, opts.nF, true);
+        JointParameterSnapshot best_initialization;
+        double best_initialization_like = -std::numeric_limits<double>::infinity();
+        for(int restart = 0; SIG_COND && restart < opts.init_restarts; ++restart)
+        {
+            restore_parameters(faith, shared_parameters);
+            faith.EindividualClusterUsage = posterior_profiles;
+            const bool informative = faith.initializeAncestryFromPosterior(opts.init_noise, restart);
+            if(!informative)
+                cao.warn(tim.date(), "posterior cluster profiles are uninformative; using a jittered symmetric start");
+            cao.print(tim.date(), "posterior-driven ancestry start", restart + 1, "/", opts.init_restarts);
+            run_initialization_stage("fixed-haplotype ancestry refinement", opts.init_ancestry_iterations);
+            faith.initIteration();
+            const double candidate_like = evaluate_e_step(false);
+            cao.print(tim.date(), "fixed-haplotype ancestry candidate", restart + 1,
+                      ", observed likelihood =", candidate_like);
+            if(candidate_like > best_initialization_like)
+            {
+                best_initialization_like = candidate_like;
+                best_initialization = snapshot_parameters(faith);
+            }
+        }
+        if(std::isfinite(best_initialization_like))
+            restore_parameters(faith, best_initialization);
+        else
+            restore_parameters(faith, shared_parameters);
+
+        faith.setFlags(opts.ptol, opts.ftol, opts.qtol, opts.debug, opts.nQ, opts.nP, opts.nF, opts.nR);
+        const int warmup_cycles = std::max(opts.continuation_iterations, opts.block_warmup_iterations);
+        for(int cycle = 0; SIG_COND && cycle < warmup_cycles; ++cycle)
+        {
+            const double coupling = opts.continuation_iterations > 0
+                                      ? std::min(1.0, static_cast<double>(cycle + 1)
+                                                       / opts.continuation_iterations)
+                                      : 1.0;
+            faith.setFlags(opts.ptol, opts.ftol, opts.qtol, opts.debug, opts.nQ, true, opts.nF, true);
+            faith.initIteration();
+            const double ancestry_like = evaluate_e_step(false);
+            faith.updateIteration();
+            faith.shrinkAncestryCoupling(coupling);
+
+            faith.setFlags(opts.ptol, opts.ftol, opts.qtol, opts.debug, true, opts.nP, true, opts.nR);
+            faith.initIteration();
+            const double haplotype_like = evaluate_e_step(false);
+            faith.updateIteration();
+            cao.print(tim.date(), "joint block warm-up cycle", cycle + 1, "/", warmup_cycles,
+                      ", ancestry coupling =", coupling, ", Q/F likelihood =", ancestry_like,
+                      ", P/r likelihood =", haplotype_like);
+        }
+        faith.setFlags(opts.ptol, opts.ftol, opts.qtol, opts.debug, opts.nQ, opts.nP, opts.nF, opts.nR);
+        cao.print(tim.date(), "posterior-driven initialization complete; selected likelihood =",
+                  best_initialization_like, ", releasing all requested joint parameter blocks");
+    }
     constexpr double monotonicity_tol{1e-10};
     const double gap_tol = opts.conv_gap_tol;
     const double relative_tol = opts.conv_relative_tol;
@@ -360,12 +969,32 @@ int run_phaseless_main(Options & opts)
     const double observations = std::max(1.0, static_cast<double>(faith.N) * faith.M);
     double loglike{NAN}, previous_like{NAN}, previous_previous_like{NAN};
     JointParameterSnapshot previous_parameters;
+    JointParameterSnapshot best_parameters;
     bool have_previous_parameters{false};
+    bool have_best_parameters{false};
     bool did_converge{false};
     int stable_iterations{0};
+    double best_like{-std::numeric_limits<double>::infinity()};
     cao.print(tim.date(), std::scientific, "joint convergence: gap/observation < ", gap_tol,
               ", relative likelihood change < ", relative_tol, ", parameter change < ", parameter_tol, " for ",
               stable_iterations_required, " accepted iterations");
+
+    auto reset_convergence_history = [&]()
+    {
+        loglike = NAN;
+        previous_like = NAN;
+        previous_previous_like = NAN;
+        have_previous_parameters = false;
+        stable_iterations = 0;
+    };
+
+    auto preserve_best = [&](double current_like)
+    {
+        if(!std::isfinite(current_like) || current_like <= best_like) return;
+        best_like = current_like;
+        best_parameters = snapshot_parameters(faith);
+        have_best_parameters = true;
+    };
 
     auto joint_converged = [&](int iteration, double current_like)
     {
@@ -404,33 +1033,89 @@ int run_phaseless_main(Options & opts)
         return stable_iterations >= stable_iterations_required;
     };
 
-    if(opts.noaccel)
+    const int requested_warmup = opts.stitch_heuristics
+                                     ? std::min(opts.heuristic_warmup_iterations, opts.nimpute)
+                                     : 0;
+    const int requested_acceleration_scans = opts.nimpute - requested_warmup;
+    const bool hybrid_acceleration = opts.stitch_heuristics && !opts.noaccel
+                                  && requested_acceleration_scans >= 4;
+    const int regular_iterations = hybrid_acceleration ? requested_warmup : opts.nimpute;
+    auto is_alignment_iteration = [&](int iteration)
     {
-        for(int it = 0; SIG_COND && it <= opts.nimpute; it++)
+        return opts.stitch_heuristics && iteration >= 4 && iteration < requested_warmup && iteration % 4 == 0;
+    };
+    auto is_revival_iteration = [&](int iteration)
+    {
+        return opts.stitch_heuristics && iteration >= 6 && iteration < requested_warmup
+            && (iteration - 2) % 4 == 0;
+    };
+    if(opts.stitch_heuristics)
+    {
+        cao.print(tim.date(), "STITCH heuristics: block size =", opts.heuristic_block_size,
+                  ", reset radius =", opts.heuristic_reset_radius, ", minimum usage =",
+                  opts.heuristic_min_usage, ", donor weight =", opts.heuristic_donor_weight,
+                  ", ordinary-EM warm-up =", requested_warmup,
+                  ", preserve best observed-likelihood checkpoint");
+        if(hybrid_acceleration)
+            cao.print(tim.date(), "SqS3 will start after", requested_warmup, "ordinary EM scans with",
+                      requested_acceleration_scans, "scans left in the requested budget");
+        else if(opts.noaccel)
+            cao.warn(tim.date(), "--no-accel keeps ordinary EM active after the heuristic warm-up");
+    }
+
+    if(opts.noaccel || opts.stitch_heuristics)
+    {
+        for(int it = 0; SIG_COND && it <= regular_iterations; it++)
         {
             tim.clock();
             faith.initIteration();
             loglike = evaluate_e_step(false);
+            preserve_best(loglike);
             cao.print(tim.date(), "run whole genome, iteration", it, ", likelihood =", loglike, ", time",
                       tim.reltime(), " sec");
-            if(joint_converged(it, loglike))
+            const bool can_converge = !hybrid_acceleration
+                                   && (!opts.stitch_heuristics || it >= requested_warmup);
+            if(can_converge && joint_converged(it, loglike))
             {
                 did_converge = true;
                 cao.print(tim.date(), "joint model converged after", stable_iterations,
                           " consecutive stable accepted iterations");
                 break;
             }
-            if(it == opts.nimpute) break;
+            if(it == regular_iterations) break;
             faith.updateIteration();
+            JointHeuristicReport heuristic;
+            if(is_alignment_iteration(it))
+            {
+                heuristic = faith.alignClusterLabels(opts.heuristic_block_size, opts.heuristic_reset_radius);
+                cao.warn(tim.date(), "STITCH label-alignment iteration", it, ": relabelled",
+                         heuristic.relabelled_boundaries, "boundaries and reset", heuristic.reset_sites, "SNPs");
+            }
+            if(is_revival_iteration(it))
+            {
+                heuristic = faith.reviveUnusedClusters(opts.heuristic_min_usage, opts.heuristic_block_size,
+                                                       opts.heuristic_donor_weight);
+                cao.warn(tim.date(), "STITCH cluster-revival iteration", it, ": revived",
+                         heuristic.revived_intervals, "intervals covering", heuristic.revived_sites, "SNPs");
+            }
+            if(heuristic.changed()) reset_convergence_history();
         }
     }
-    else
+    const bool run_acceleration = !opts.noaccel && (!opts.stitch_heuristics || hybrid_acceleration);
+    if(run_acceleration && SIG_COND)
     {
-        MyArr2D Q0, Q1, Q2, Qt;
-        MyArr2D F0, F1, F2, Ft;
+        if(hybrid_acceleration)
+        {
+            reset_convergence_history();
+            cao.print(tim.date(), "STITCH warm-up complete; starting SqS3 acceleration");
+        }
+        MyArr2D Q0, Q1;
+        MyArr2D F0, F1;
         const int istep{4};
-        double alpha{0}, stepMax{4}, alphaMax{1280}, logcheck{0};
-        const int max_outer_iterations = opts.nimpute / 4;
+        double alpha{0}, stepMax{4}, alphaMax{1280};
+        const int acceleration_scans = opts.stitch_heuristics ? requested_acceleration_scans : opts.nimpute;
+        const int max_outer_iterations = acceleration_scans / 4;
+        const int iteration_offset = opts.stitch_heuristics ? requested_warmup : 0;
         for(int it = 0; SIG_COND && it <= max_outer_iterations; it++)
         {
             // Evaluate the current accepted state, then take the first normal EM step.
@@ -439,7 +1124,9 @@ int run_phaseless_main(Options & opts)
             Q0 = faith.Q;
             F0 = cat_stdvec_of_eigen(faith.F);
             loglike = evaluate_e_step(false);
-            if(joint_converged(it, loglike))
+            preserve_best(loglike);
+            const int scan = iteration_offset + 4 * it;
+            if(joint_converged(scan, loglike))
             {
                 did_converge = true;
                 cao.print(tim.date(), "joint model converged after", stable_iterations,
@@ -456,29 +1143,33 @@ int run_phaseless_main(Options & opts)
             faith.updateIteration();
             cao.print(tim.date(), "SqS3 outer iteration", it, ", accepted likelihood =", previous_like,
                       ", second EM likelihood =", loglike, ", time", tim.reltime(), " sec");
-            // save for later comparison
-            Qt = faith.Q;
-            Ft = cat_stdvec_of_eigen(faith.F);
+            const JointParameterSnapshot normal_candidate = snapshot_parameters(faith);
             // calculate alpha based on first two pars
+            double numerator = 0;
+            double denominator = 0;
             if(opts.aQ)
             {
-
-                alpha = ((Q1 - Q0).square().sum()) / ((faith.Q - 2 * Q1 + Q0).square().sum());
+                numerator = (Q1 - Q0).square().sum();
+                denominator = (faith.Q - 2 * Q1 + Q0).square().sum();
             }
             else
             {
-                alpha = ((F1 - F0).square().sum() + (Q1 - Q0).square().sum())
-                        / ((cat_stdvec_of_eigen(faith.F) - 2 * F1 + F0).square().sum()
-                           + (faith.Q - 2 * Q1 + Q0).square().sum());
+                numerator = (F1 - F0).square().sum() + (Q1 - Q0).square().sum();
+                denominator = (cat_stdvec_of_eigen(faith.F) - 2 * F1 + F0).square().sum()
+                            + (faith.Q - 2 * Q1 + Q0).square().sum();
             }
-            alpha = max(1.0, sqrt(alpha));
+            alpha = denominator > std::numeric_limits<double>::epsilon()
+                      ? std::sqrt(numerator / denominator)
+                      : 1.0;
+            if(!std::isfinite(alpha)) alpha = 1.0;
+            alpha = max(1.0, alpha);
             if(alpha >= stepMax)
             {
                 alpha = min(stepMax, alphaMax);
                 stepMax = min(stepMax * istep, alphaMax);
             }
-            // third accel iter
-            // update Q and F using the second em iter
+            // Evaluate the SqS3 point itself.  Both candidates retain the same
+            // P/r values from the second ordinary EM map.
             faith.Q = Q0 + 2 * alpha * (Q1 - Q0) + alpha * alpha * (faith.Q - 2 * Q1 + Q0);
             for(int k = 0; k < faith.K; k++)
                 faith.F[k] = F0.middleRows(k * faith.C, faith.C)
@@ -487,30 +1178,37 @@ int run_phaseless_main(Options & opts)
                                    * (faith.F[k] - 2 * F1.middleRows(k * faith.C, faith.C)
                                       + F0.middleRows(k * faith.C, faith.C));
             faith.protectPars();
+            const JointParameterSnapshot accelerated_candidate = snapshot_parameters(faith);
             faith.initIteration();
-            loglike = evaluate_e_step(false);
-            faith.updateIteration();
-            // save current pars
-            Q2 = faith.Q;
-            F2 = cat_stdvec_of_eigen(faith.F);
-            // check if normal third iter is better
-            faith.Q = Qt;
-            for(int k = 0; k < faith.K; k++) faith.F[k] = Ft.middleRows(k * faith.C, faith.C);
+            const double accelerated_like = evaluate_e_step(false);
+
+            // Compare complete, evaluated parameter states. Rejected SqS3
+            // proposals cannot leak their P/r trajectory into the EM fallback.
+            restore_parameters(faith, normal_candidate);
             faith.initIteration();
-            logcheck = evaluate_e_step(false);
-            faith.updateIteration();
-            if(loglike < logcheck - monotonicity_tol * observations)
+            const double normal_like = evaluate_e_step(false);
+            if(!std::isfinite(accelerated_like)
+               || accelerated_like < normal_like - monotonicity_tol * observations)
             {
                 stepMax = istep;
                 cao.warn(tim.date(), "reset stepMax to 4, normal EM yields better likelihoods than the accelerated EM.",
-                         logcheck, " -", loglike, ">", monotonicity_tol * observations);
+                         normal_like, " -", accelerated_like, ">", monotonicity_tol * observations);
+                loglike = normal_like;
             }
             else
             {
-                faith.Q = Q2;
-                for(int k = 0; k < faith.K; k++) faith.F[k] = F2.middleRows(k * faith.C, faith.C);
+                restore_parameters(faith, accelerated_candidate);
+                loglike = accelerated_like;
             }
+            preserve_best(loglike);
         }
+    }
+    if(have_best_parameters
+       && (!std::isfinite(loglike) || best_like > loglike + monotonicity_tol * observations))
+    {
+        cao.warn(tim.date(), "restoring best observed-likelihood checkpoint:", best_like, "instead of", loglike);
+        restore_parameters(faith, best_parameters);
+        loglike = best_like;
     }
     if(!did_converge)
         cao.warn(tim.date(), "joint model reached the iteration limit before satisfying the convergence criterion");

@@ -34,6 +34,7 @@ TEST_CASE("joint ancestry responsibility uses ancestry-specific cluster frequenc
     REQUIRE(faith.Eancestry(0, 0) == Approx(0.74));
     REQUIRE(faith.Eancestry(1, 0) == Approx(0.26));
     REQUIRE(faith.EclusterK.col(0).sum() == Approx(1.0));
+    REQUIRE(faith.EclusterUsage.col(0).sum() == Approx(2.0));
 
     faith.NF = faith.NP = faith.NR = true;
     faith.updateIteration();
@@ -67,6 +68,154 @@ TEST_CASE("joint ancestry counts only cluster-refresh events", "[test-joint]")
     REQUIRE(faith.Eancestry.col(0).sum() == Approx(1.0));
     REQUIRE(faith.EclusterK.col(0).sum() == Approx(1.0));
     REQUIRE(faith.EclusterK.col(1).sum() == Approx(0.0).margin(1e-12));
+    REQUIRE(faith.EclusterUsage.col(0).sum() == Approx(2.0));
+    REQUIRE(faith.EclusterUsage.col(1).sum() == Approx(2.0));
+}
+
+TEST_CASE("joint STITCH heuristic aligns swapped cluster labels", "[test-joint]")
+{
+    constexpr int K{2}, C{2}, N{2}, M{4};
+    Phaseless faith(K, C, N, M, 7);
+    faith.pos_chunk = {0, M};
+    faith.Q << 1.0, 0.0, 0.0, 1.0;
+    faith.F[0] << 0.9, 0.9, 0.1, 0.1, 0.1, 0.1, 0.9, 0.9;
+    faith.F[1] << 0.1, 0.1, 0.9, 0.9, 0.9, 0.9, 0.1, 0.1;
+    faith.P << 0.1, 0.8, 0.2, 0.7, 0.7, 0.2, 0.8, 0.1;
+
+    const JointHeuristicReport report = faith.alignClusterLabels(2, 0);
+
+    REQUIRE(report.relabelled_boundaries == 1);
+    REQUIRE(report.reset_sites == 1);
+    REQUIRE(faith.F[0](0, 2) == Approx(0.9));
+    REQUIRE(faith.F[1](0, 2) == Approx(0.1));
+    REQUIRE(faith.P(3, 0) == Approx(0.1));
+    REQUIRE(faith.P(3, 1) == Approx(0.8));
+}
+
+TEST_CASE("joint initialization derives Q and F from posterior cluster profiles", "[test-joint]")
+{
+    constexpr int K{2}, C{2}, N{4}, M{3};
+    Phaseless faith(K, C, N, M, 23);
+    faith.initializeSharedHaplotypeStart();
+    for(int k = 1; k < K; ++k) REQUIRE((faith.F[k] - faith.F[0]).abs().maxCoeff() == Approx(0.0));
+    faith.EindividualClusterUsage.resize(C, N);
+    faith.EindividualClusterUsage << 95.0, 90.0, 10.0, 5.0,
+                                      5.0, 10.0, 90.0, 95.0;
+
+    REQUIRE(faith.initializeAncestryFromPosterior(0.05, 0));
+    REQUIRE((faith.F[1] - faith.F[0]).abs().maxCoeff() > 0.0);
+    REQUIRE(std::abs(faith.Q(0, 0) - faith.Q(0, 1)) < 0.1);
+    REQUIRE(std::abs(faith.Q(0, 2) - faith.Q(0, 3)) < 0.1);
+    REQUIRE(std::abs(faith.Q(0, 0) - faith.Q(0, 3)) > 0.8);
+    for(int i = 0; i < N; ++i) REQUIRE(faith.Q.col(i).sum() == Approx(1.0));
+    for(int k = 0; k < K; ++k)
+        for(int m = 0; m < M; ++m) REQUIRE(faith.F[k].col(m).sum() == Approx(1.0));
+}
+
+TEST_CASE("joint continuation shrinks ancestry coupling without breaking simplices", "[test-joint]")
+{
+    constexpr int K{2}, C{2}, N{2}, M{2};
+    Phaseless faith(K, C, N, M, 31);
+    faith.Q << 0.9, 0.1, 0.1, 0.9;
+    faith.F[0] << 0.8, 0.7, 0.2, 0.3;
+    faith.F[1] << 0.2, 0.3, 0.8, 0.7;
+
+    faith.shrinkAncestryCoupling(0.0);
+
+    REQUIRE((faith.Q - 0.5).abs().maxCoeff() == Approx(0.0));
+    REQUIRE((faith.F[0] - faith.F[1]).abs().maxCoeff() == Approx(0.0));
+    for(int i = 0; i < N; ++i) REQUIRE(faith.Q.col(i).sum() == Approx(1.0));
+    for(int k = 0; k < K; ++k)
+        for(int m = 0; m < M; ++m) REQUIRE(faith.F[k].col(m).sum() == Approx(1.0));
+}
+
+TEST_CASE("phase-stage alignment uses centered posterior occupancy profiles", "[test-joint]")
+{
+    constexpr int K{1}, C{2}, N{4}, M{4};
+    Phaseless faith(K, C, N, M, 29);
+    faith.pos_chunk = {0, M};
+    faith.configurePhaseAlignment(2);
+    REQUIRE(faith.phaseAlignmentBoundaries == Int1D{2});
+
+    faith.P << 0.1, 0.8, 0.2, 0.7, 0.7, 0.2, 0.8, 0.1;
+    faith.F[0] << 0.8, 0.7, 0.2, 0.1, 0.2, 0.3, 0.8, 0.9;
+    faith.EclusterUsage.setZero(C, M);
+    faith.EclusterUsage.col(1) << 4.0, 4.0;
+    faith.EclusterUsage.col(2) << 4.0, 4.0;
+    faith.EphaseAlignmentCross[0] << 2.0, 6.0, 6.0, 2.0;
+    faith.EphaseAlignmentSquares.col(0).setConstant(8.0);
+
+    const JointHeuristicReport report = faith.alignPhaseClusterLabels(0);
+
+    REQUIRE(report.relabelled_boundaries == 1);
+    REQUIRE(report.reset_sites == 1);
+    REQUIRE(faith.P(3, 0) == Approx(0.1));
+    REQUIRE(faith.P(3, 1) == Approx(0.8));
+    REQUIRE(faith.F[0](0, 3) == Approx(0.9));
+    REQUIRE(faith.F[0](1, 3) == Approx(0.1));
+}
+
+TEST_CASE("joint STITCH heuristic revives a low-usage cluster with donor plus noise", "[test-joint]")
+{
+    constexpr int K{1}, C{2}, N{10}, M{6};
+    Phaseless faith(K, C, N, M, 11);
+    faith.pos_chunk = {0, M};
+    faith.P.col(0).setConstant(0.25);
+    faith.P.col(1).setConstant(0.95);
+    faith.EclusterUsage.resize(C, M);
+    faith.EclusterUsage.row(0).setConstant(19.98);
+    faith.EclusterUsage.row(1).setConstant(0.02);
+
+    const JointHeuristicReport report = faith.reviveUnusedClusters(0.005, 2, 0.8);
+
+    REQUIRE(report.revived_intervals == 1);
+    REQUIRE(report.revived_sites == M);
+    for(int m = 0; m < M; ++m)
+    {
+        REQUIRE(faith.P(m, 1) >= 0.2);
+        REQUIRE(faith.P(m, 1) <= 0.4);
+    }
+}
+
+TEST_CASE("joint sufficient statistics reduce individuals deterministically", "[test-joint]")
+{
+    constexpr int K{1}, C{1}, N{3}, M{1};
+    Phaseless ordered(K, C, N, M, 19);
+    Phaseless reversed(K, C, N, M, 19);
+    ordered.pos_chunk = reversed.pos_chunk = {0, M};
+    ordered.Q.setOnes();
+    reversed.Q.setOnes();
+    ordered.F[0].setOnes();
+    reversed.F[0].setOnes();
+    ordered.P.setConstant(0.5);
+    reversed.P.setConstant(0.5);
+    ordered.initIteration();
+    reversed.initIteration();
+
+    const MyArr2D gli = MyArr2D::Ones(M, 3);
+    const MyArr2D emit = MyArr2D::Ones(1, M);
+    const MyArr2D H = MyArr2D::Ones(C, M);
+    const MyArr1D cs = MyArr1D::Ones(M);
+    const MyArr2D beta = MyArr2D::Ones(1, M);
+    std::array<MyArr2D, N> alpha{MyArr2D::Constant(1, M, 1e16), MyArr2D::Ones(1, M),
+                                 MyArr2D::Ones(1, M)};
+
+    for(int ind = 0; ind < N; ++ind)
+        ordered.getPosterios(ind, 0, gli, emit, H, cs, alpha[ind], beta, false);
+
+    std::array<std::future<void>, N> futures;
+    for(int launch = 0; launch < N; ++launch)
+    {
+        const int ind = N - 1 - launch;
+        futures[launch] = std::async(std::launch::async, [&, ind]
+        { reversed.getPosterios(ind, 0, gli, emit, H, cs, alpha[ind], beta, false); });
+    }
+    for(auto & result : futures) result.get();
+
+    REQUIRE((reversed.EclusterUsage == ordered.EclusterUsage).all());
+    REQUIRE((reversed.EclusterA1 == ordered.EclusterA1).all());
+    REQUIRE((reversed.EclusterA2 == ordered.EclusterA2).all());
+    REQUIRE((reversed.EclusterK == ordered.EclusterK).all());
 }
 
 TEST_CASE("symmetric diploid recursion matches ordered recursion", "[test-joint]")

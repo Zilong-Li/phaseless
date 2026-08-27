@@ -2,12 +2,28 @@
 #define PHASELESS_H_
 
 #include "common.hpp"
+#include <condition_variable>
 #include <mutex>
+
+struct JointHeuristicReport
+{
+    int relabelled_boundaries{0};
+    int reset_sites{0};
+    int revived_intervals{0};
+    int revived_sites{0};
+
+    bool changed() const
+    {
+        return relabelled_boundaries > 0 || revived_intervals > 0;
+    }
+};
 
 class Phaseless
 {
   private:
     std::mutex mutex_it; // in case of race condition
+    std::condition_variable merge_cv;
+    Int1D next_merge_ind; // deterministic sufficient-statistic reduction order for each chunk
     // randon engine
     std::default_random_engine rng = std::default_random_engine{};
     // BOUNDING
@@ -50,6 +66,12 @@ class Phaseless
     MyArr2D EclusterA1, EclusterA2; // C x M, update P
     MyArr2D Eancestry; // K x N, update Q
     MyArr2D EclusterK; // C x K x M, update F
+    MyArr2D EclusterUsage; // C x M, posterior number of chromosome copies assigned to each cluster
+    MyArr2D EindividualClusterUsage; // C x N, genome-wide posterior cluster profile used for initialization
+    Int1D phaseAlignmentBoundaries; // global site index of each ancestry-free alignment boundary
+    Int1D phaseAlignmentIndex; // M-vector mapping a site to its boundary statistic, or -1
+    std::vector<MyArr2D> EphaseAlignmentCross; // per-boundary cross-individual occupancy products
+    MyArr2D EphaseAlignmentSquares; // 2C x boundaries, left then right squared occupancies
 
     void setStartPoint(std::string, std::string);
     void setStartPoint(const std::unique_ptr<Pars> &);
@@ -57,8 +79,15 @@ class Phaseless
     void initRecombination(const Int2D & pos, std::string rfile = "", int B = 1, double Ne = 20000);
     void setFlags(double, double, double, bool, bool, bool, bool, bool);
     void protectPars();
+    void initializeSharedHaplotypeStart();
+    bool initializeAncestryFromPosterior(double noise, int restart);
+    void shrinkAncestryCoupling(double strength);
+    void configurePhaseAlignment(int boundary_stride);
+    JointHeuristicReport alignPhaseClusterLabels(int reset_radius);
     void initIteration();
     void updateIteration();
+    JointHeuristicReport alignClusterLabels(int boundary_stride, int reset_radius);
+    JointHeuristicReport reviveUnusedClusters(double min_usage, int bin_size, double donor_weight);
     void callGenoLoopC(int, int, int, const MyArr2D &, const MyArr1D &);
     double runForwardBackwards(const int, const int, const MyFloat1D &, bool);
     double runBigass(int, const MyFloat2D &, bool);

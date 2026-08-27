@@ -25,6 +25,7 @@ void require_cuda_matches_cpu(Phaseless & cpu,
     REQUIRE(gpu_likelihood == Approx(cpu_likelihood).epsilon(2e-4));
     REQUIRE((gpu.EclusterA1 - cpu.EclusterA1).abs().maxCoeff() < 2e-4);
     REQUIRE((gpu.EclusterA2 - cpu.EclusterA2).abs().maxCoeff() < 2e-4);
+    REQUIRE((gpu.EclusterUsage - cpu.EclusterUsage).abs().maxCoeff() < 2e-4);
     REQUIRE((gpu.Eancestry - cpu.Eancestry).abs().maxCoeff() < 2e-4);
     REQUIRE((gpu.EclusterK - cpu.EclusterK).abs().maxCoeff() < 2e-4);
     if(final_iteration) REQUIRE((gpu.GP - cpu.GP).abs().maxCoeff() < 2e-4);

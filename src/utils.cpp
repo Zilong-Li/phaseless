@@ -24,6 +24,7 @@ std::string make_beagle_header(std::string fam)
 
 int run_convert_main(Options & opts)
 {
+    opts.nthreads = resolve_thread_count(opts.nthreads, std::thread::hardware_concurrency());
     cao.cao.open(opts.out + ".log");
     cao.is_screen = !opts.noscreen;
     cao.print(opts.opts_in_effect);
