@@ -11,6 +11,7 @@
 #include "joint_cuda.hpp"
 #include "threadpool.hpp"
 #include <alpaca/alpaca.h>
+#include <deque>
 
 using namespace std;
 
@@ -171,6 +172,20 @@ void Phaseless::setFlags(double tol_p, double tol_f, double tol_q, bool debug_, 
     NR = nR;
 }
 
+void Phaseless::setAdmixturePseudocount(double value)
+{
+    if(!std::isfinite(value) || value < 0)
+        throw std::invalid_argument("Q pseudocount must be finite and non-negative");
+    admixturePseudocount = value;
+}
+
+void Phaseless::setEmissionShrinkage(double value)
+{
+    if(!std::isfinite(value) || value < 0)
+        throw std::invalid_argument("P shrinkage must be finite and non-negative");
+    emissionShrinkage = value;
+}
+
 void Phaseless::setStartPoint(std::string qfile, std::string pfile)
 {
     if(!qfile.empty()) load_csv(Q, qfile, true);
@@ -279,6 +294,18 @@ bool Phaseless::initializeAncestryFromPosterior(double noise, int restart)
     if(!std::isfinite(total_variation) || total_variation <= std::numeric_limits<double>::epsilon())
         return jittered_symmetric_fallback();
 
+    // Perturb only the clustering view for later restarts.  The posterior
+    // profiles themselves remain unchanged when constructing Q and F.  This
+    // avoids spending nominal restarts on the same deterministic partition.
+    MyArr2D clustering_profiles = profiles;
+    if(restart > 0 && noise > 0)
+    {
+        const double amplitude = std::min(0.25, noise * (1.0 + 0.25 * restart));
+        clustering_profiles *= RandomUniform<MyArr2D, std::default_random_engine>(
+            C, N, rng, 1 - amplitude, 1 + amplitude);
+        clustering_profiles.rowwise() /= clustering_profiles.colwise().sum();
+    }
+
     MyArr2D centroids(C, K);
     Int1D selected(K, 0);
     if(restart == 0)
@@ -291,15 +318,21 @@ bool Phaseless::initializeAncestryFromPosterior(double noise, int restart)
     }
     else
     {
-        std::uniform_int_distribution<int> first(0, N - 1);
-        selected[0] = first(rng);
+        MyArr1D weights(N);
+        for(int i = 0; i < N; ++i)
+            weights(i) = (clustering_profiles.col(i) - mean_profile).square().sum()
+                       + std::numeric_limits<double>::epsilon();
+        MyFloat1D sampling_weights(weights.data(), weights.data() + weights.size());
+        std::discrete_distribution<int> choose_first(sampling_weights.begin(), sampling_weights.end());
+        selected[0] = choose_first(rng);
     }
-    centroids.col(0) = profiles.col(selected[0]);
+    centroids.col(0) = clustering_profiles.col(selected[0]);
     MyArr1D nearest = MyArr1D::Constant(N, std::numeric_limits<double>::infinity());
     for(int k = 1; k < K; ++k)
     {
         for(int i = 0; i < N; ++i)
-            nearest(i) = std::min<double>(nearest(i), (profiles.col(i) - centroids.col(k - 1)).square().sum());
+            nearest(i) = std::min<double>(nearest(i),
+                                          (clustering_profiles.col(i) - centroids.col(k - 1)).square().sum());
         int choice = k % N;
         if(restart == 0)
         {
@@ -314,7 +347,7 @@ bool Phaseless::initializeAncestryFromPosterior(double noise, int restart)
             choice = choose(rng);
         }
         selected[k] = choice;
-        centroids.col(k) = profiles.col(choice);
+        centroids.col(k) = clustering_profiles.col(choice);
     }
 
     Int1D labels(N, -1);
@@ -327,7 +360,7 @@ bool Phaseless::initializeAncestryFromPosterior(double noise, int restart)
             double best_distance = std::numeric_limits<double>::infinity();
             for(int k = 0; k < K; ++k)
             {
-                const double distance = (profiles.col(i) - centroids.col(k)).square().sum();
+                const double distance = (clustering_profiles.col(i) - centroids.col(k)).square().sum();
                 if(distance < best_distance)
                 {
                     best_distance = distance;
@@ -341,7 +374,7 @@ bool Phaseless::initializeAncestryFromPosterior(double noise, int restart)
         Int1D counts(K, 0);
         for(int i = 0; i < N; ++i)
         {
-            next.col(labels[i]) += profiles.col(i);
+            next.col(labels[i]) += clustering_profiles.col(i);
             ++counts[labels[i]];
         }
         for(int k = 0; k < K; ++k)
@@ -349,17 +382,35 @@ bool Phaseless::initializeAncestryFromPosterior(double noise, int restart)
             if(counts[k])
                 next.col(k) /= counts[k];
             else
-                next.col(k) = profiles.col(selected[k]);
+                next.col(k) = clustering_profiles.col(selected[k]);
         }
         centroids = std::move(next);
         if(!changed) break;
     }
 
+    // Convert the randomized partition back to centroids on the unperturbed
+    // posterior profiles before deriving model parameters.
+    centroids.setZero();
+    Int1D final_counts(K, 0);
+    for(int i = 0; i < N; ++i)
+    {
+        centroids.col(labels[i]) += profiles.col(i);
+        ++final_counts[labels[i]];
+    }
+    for(int k = 0; k < K; ++k)
+        if(final_counts[k]) centroids.col(k) /= final_counts[k];
+        else centroids.col(k) = profiles.col(selected[k]);
+
     double within = 0;
     for(int i = 0; i < N; ++i) within += (profiles.col(i) - centroids.col(labels[i])).square().sum();
-    const double temperature = std::max({within / std::max(1, N),
-                                         (0.02 + noise) * total_variation * C,
-                                         100 * std::numeric_limits<double>::epsilon()});
+    const double base_temperature = std::max({within / std::max(1, N),
+                                              (0.02 + noise) * total_variation * C,
+                                              100 * std::numeric_limits<double>::epsilon()});
+    const int temperature_level = (restart + 1) / 2;
+    const double temperature_scale = restart == 0 ? 1.0
+                                   : restart % 2 ? std::pow(1.5, temperature_level)
+                                                 : std::pow(1.5, -temperature_level);
+    const double temperature = base_temperature * temperature_scale;
     for(int i = 0; i < N; ++i)
     {
         for(int k = 0; k < K; ++k)
@@ -389,20 +440,6 @@ bool Phaseless::initializeAncestryFromPosterior(double noise, int restart)
     }
     protectPars();
     return true;
-}
-
-void Phaseless::shrinkAncestryCoupling(double strength)
-{
-    if(strength < 0 || strength > 1) throw std::invalid_argument("ancestry coupling strength must be in [0, 1]");
-    if(!NQ) Q = strength * Q + (1 - strength) / static_cast<double>(K);
-    if(!NF)
-    {
-        MyArr2D common = MyArr2D::Zero(C, M);
-        for(const auto & frequencies : F) common += frequencies;
-        common /= static_cast<double>(K);
-        for(auto & frequencies : F) frequencies = strength * frequencies + (1 - strength) * common;
-    }
-    protectPars();
 }
 
 void Phaseless::configurePhaseAlignment(int boundary_stride)
@@ -509,10 +546,34 @@ void Phaseless::initIteration()
 void Phaseless::updateIteration()
 {
     // update P
-    if(!NP) P = (EclusterA2 / (EclusterA1 + EclusterA2)).transpose();
+    if(!NP)
+    {
+        if(emissionShrinkage == 0)
+            P = (EclusterA2 / (EclusterA1 + EclusterA2)).transpose();
+        else
+        {
+            // Treat the pooled site frequency as the prior mean and the
+            // configured strength as an effective chromosome-copy count.
+            // This stabilizes low-occupancy cluster/site cells without
+            // pulling rare or common sites indiscriminately toward 0.5.
+            for(int site = 0; site < M; ++site)
+            {
+                const double pooled_alt = EclusterA2.col(site).sum();
+                const double pooled_total = pooled_alt + EclusterA1.col(site).sum();
+                const double pooled_frequency = pooled_total > 0 ? pooled_alt / pooled_total : 0.5;
+                for(int cluster = 0; cluster < C; ++cluster)
+                {
+                    const double cluster_total = EclusterA1(cluster, site) + EclusterA2(cluster, site);
+                    P(site, cluster) = (EclusterA2(cluster, site)
+                                      + emissionShrinkage * pooled_frequency)
+                                     / (cluster_total + emissionShrinkage);
+                }
+            }
+        }
+    }
     if(!NQ)
     { // update Q
-        Q = Eancestry;
+        Q = Eancestry + admixturePseudocount;
         Q.rowwise() /= Q.colwise().sum(); // normalize Q per individual
     }
     if(!NF)
@@ -831,6 +892,10 @@ int run_phaseless_main(Options & opts)
     vector<future<double>> res;
     Phaseless faith(opts.K, opts.C, genome->nsamples, genome->nsnps, opts.seed);
     faith.setFlags(opts.ptol, opts.ftol, opts.qtol, opts.debug, opts.nQ, opts.nP, opts.nF, opts.nR);
+    faith.setAdmixturePseudocount(opts.q_pseudocount);
+    faith.setEmissionShrinkage(opts.p_shrinkage);
+    cao.print(tim.date(), "Q update pseudocount =", opts.q_pseudocount,
+              ", P site-frequency shrinkage =", opts.p_shrinkage);
     faith.setStartPoint(opts.in_qfile, opts.in_pfile);
     faith.initRecombination(genome->pos, opts.in_rfile);
     bool initialization_cpu_e_step{false};
@@ -859,15 +924,18 @@ int run_phaseless_main(Options & opts)
         return stage_like;
     };
     const bool posterior_initialization = !opts.random_init && opts.in_qfile.empty();
+    JointParameterSnapshot initialization_checkpoint;
+    double initialization_checkpoint_like{-std::numeric_limits<double>::infinity()};
+    bool have_initialization_checkpoint{false};
     if(!posterior_initialization && !opts.in_qfile.empty())
         cao.print(tim.date(), "using explicit Q start; posterior-driven initialization is disabled");
     if(posterior_initialization)
     {
         cao.print(tim.date(), "posterior-driven initialization: shared haplotype scans =",
-                  opts.init_haplotype_iterations, ", ancestry refinement scans =", opts.init_ancestry_iterations,
+                  opts.init_haplotype_min_iterations, "-", opts.init_haplotype_iterations,
+                  " (adaptive), ancestry refinement scans =", opts.init_ancestry_iterations,
                   ", ancestry starts =", opts.init_restarts, ", initialization noise =", opts.init_noise,
-                  ", continuation cycles =", opts.continuation_iterations,
-                  ", block warm-up cycles =", opts.block_warmup_iterations);
+                  ", Q pseudocount =", opts.q_pseudocount, ", no block warm-up");
 
         // Learn the haplotype map without asking a random ancestry split to
         // organize the cluster labels at the same time.
@@ -878,33 +946,96 @@ int run_phaseless_main(Options & opts)
             cao.warn(tim.date(), "posterior-driven initialization uses CPU E-steps; GPU resumes afterward");
         if(opts.stitch_heuristics)
             faith.configurePhaseAlignment(opts.heuristic_block_size);
+        // Reserve a clean tail after the last possible heuristic perturbation,
+        // so the selected posterior profiles describe a settled parameter state.
+        constexpr int initialization_heuristic_cooldown{8};
+        const int initialization_heuristic_scans = opts.stitch_heuristics
+            ? std::min(opts.heuristic_warmup_iterations,
+                       std::max(0, opts.init_haplotype_iterations - initialization_heuristic_cooldown))
+            : 0;
+        double previous_stage_like{NAN};
+        MyArr2D previous_profile;
+        bool have_previous_profile{false};
+        int initialization_stable_scans{0};
+        int completed_haplotype_scans{0};
         for(int it = 0; SIG_COND && it < opts.init_haplotype_iterations; ++it)
         {
             tim.clock();
             faith.initIteration();
             const double stage_like = evaluate_e_step(false);
+            MyArr2D current_profile = faith.EindividualClusterUsage;
+            for(int individual = 0; individual < current_profile.cols(); ++individual)
+            {
+                const double total = current_profile.col(individual).sum();
+                if(std::isfinite(total) && total > 0) current_profile.col(individual) /= total;
+                else current_profile.col(individual).setZero();
+            }
             faith.updateIteration();
-            cao.print(tim.date(), "shared-haplotype initialization scan", it + 1, "/",
-                      opts.init_haplotype_iterations, ", likelihood =", stage_like, ", time", tim.reltime(), "sec");
-            if(opts.stitch_heuristics && it >= 4 && it % 4 == 0)
+            JointHeuristicReport heuristic_report;
+            const int scan = it + 1;
+            if(opts.stitch_heuristics && scan <= initialization_heuristic_scans && it >= 4 && it % 4 == 0)
             {
                 const auto report = faith.alignPhaseClusterLabels(opts.heuristic_reset_radius);
-                cao.warn(tim.date(), "phase-stage posterior label alignment", it, ": relabelled",
+                heuristic_report.relabelled_boundaries += report.relabelled_boundaries;
+                heuristic_report.reset_sites += report.reset_sites;
+                cao.warn(tim.date(), "phase-stage posterior label alignment", scan, ": relabelled",
                          report.relabelled_boundaries, "boundaries and reset", report.reset_sites, "SNPs");
             }
-            if(opts.stitch_heuristics && it >= 6 && (it - 2) % 4 == 0)
+            if(opts.stitch_heuristics && scan <= initialization_heuristic_scans && it >= 6 && (it - 2) % 4 == 0)
             {
                 const auto report = faith.reviveUnusedClusters(opts.heuristic_min_usage,
                                                                 opts.heuristic_block_size,
                                                                 opts.heuristic_donor_weight);
-                cao.warn(tim.date(), "phase-stage cluster revival", it, ": revived", report.revived_intervals,
+                heuristic_report.revived_intervals += report.revived_intervals;
+                heuristic_report.revived_sites += report.revived_sites;
+                cao.warn(tim.date(), "phase-stage cluster revival", scan, ": revived", report.revived_intervals,
                          "intervals covering", report.revived_sites, "SNPs");
+            }
+            const double relative_change = std::isfinite(previous_stage_like)
+                ? std::abs(stage_like - previous_stage_like) / std::max(1.0, std::abs(stage_like))
+                : NAN;
+            const double profile_rms = have_previous_profile
+                ? std::sqrt((current_profile - previous_profile).square().mean())
+                : NAN;
+            const bool eligible = scan >= opts.init_haplotype_min_iterations
+                               && scan > initialization_heuristic_scans;
+            const bool stable = eligible && !heuristic_report.changed()
+                             && initialization_converged(relative_change, profile_rms,
+                                                         opts.init_haplotype_relative_tol,
+                                                         opts.init_haplotype_profile_tol);
+            initialization_stable_scans = stable
+                ? std::min(opts.init_haplotype_stable_iterations, initialization_stable_scans + 1)
+                : 0;
+            const bool heuristic_cooldown_complete = !opts.stitch_heuristics
+                || scan >= initialization_heuristic_scans + initialization_heuristic_cooldown;
+            completed_haplotype_scans = scan;
+            cao.print(tim.date(), "shared-haplotype initialization scan", scan, "/",
+                      opts.init_haplotype_iterations, ", likelihood =", stage_like, ", relative =",
+                      relative_change, ", profile RMS =", profile_rms, ", stable =",
+                      initialization_stable_scans, "/", opts.init_haplotype_stable_iterations,
+                      ", time", tim.reltime(), "sec");
+            previous_stage_like = stage_like;
+            previous_profile = std::move(current_profile);
+            have_previous_profile = true;
+            if(initialization_stable_scans >= opts.init_haplotype_stable_iterations
+               && heuristic_cooldown_complete)
+            {
+                cao.print(tim.date(), "shared-haplotype initialization converged after", scan, "scans");
+                break;
             }
         }
         faith.configurePhaseAlignment(0);
-        initialization_cpu_e_step = false;
+        if(completed_haplotype_scans == opts.init_haplotype_iterations
+           && initialization_stable_scans < opts.init_haplotype_stable_iterations)
+            cao.warn(tim.date(), "shared-haplotype initialization reached its scan limit before adaptive convergence");
+        // Re-evaluate once after the last M-step. This makes the profiles used
+        // to seed ancestry correspond exactly to the saved shared state.
+        faith.initIteration();
+        const double final_shared_like = evaluate_e_step(false);
         const JointParameterSnapshot shared_parameters = snapshot_parameters(faith);
         const MyArr2D posterior_profiles = faith.EindividualClusterUsage;
+        cao.print(tim.date(), "shared-haplotype final profile likelihood =", final_shared_like);
+        initialization_cpu_e_step = false;
 
         // Cluster genome-wide posterior haplotype occupancy, use the resulting
         // soft groups for Q, and tilt the shared F by each group's profile.
@@ -931,38 +1062,21 @@ int run_phaseless_main(Options & opts)
             }
         }
         if(std::isfinite(best_initialization_like))
+        {
             restore_parameters(faith, best_initialization);
+            initialization_checkpoint = best_initialization;
+            initialization_checkpoint_like = best_initialization_like;
+            have_initialization_checkpoint = true;
+        }
         else
             restore_parameters(faith, shared_parameters);
 
         faith.setFlags(opts.ptol, opts.ftol, opts.qtol, opts.debug, opts.nQ, opts.nP, opts.nF, opts.nR);
-        const int warmup_cycles = std::max(opts.continuation_iterations, opts.block_warmup_iterations);
-        for(int cycle = 0; SIG_COND && cycle < warmup_cycles; ++cycle)
-        {
-            const double coupling = opts.continuation_iterations > 0
-                                      ? std::min(1.0, static_cast<double>(cycle + 1)
-                                                       / opts.continuation_iterations)
-                                      : 1.0;
-            faith.setFlags(opts.ptol, opts.ftol, opts.qtol, opts.debug, opts.nQ, true, opts.nF, true);
-            faith.initIteration();
-            const double ancestry_like = evaluate_e_step(false);
-            faith.updateIteration();
-            faith.shrinkAncestryCoupling(coupling);
-
-            faith.setFlags(opts.ptol, opts.ftol, opts.qtol, opts.debug, true, opts.nP, true, opts.nR);
-            faith.initIteration();
-            const double haplotype_like = evaluate_e_step(false);
-            faith.updateIteration();
-            cao.print(tim.date(), "joint block warm-up cycle", cycle + 1, "/", warmup_cycles,
-                      ", ancestry coupling =", coupling, ", Q/F likelihood =", ancestry_like,
-                      ", P/r likelihood =", haplotype_like);
-        }
-        faith.setFlags(opts.ptol, opts.ftol, opts.qtol, opts.debug, opts.nQ, opts.nP, opts.nF, opts.nR);
-        cao.print(tim.date(), "posterior-driven initialization complete; selected likelihood =",
+        cao.print(tim.date(), "posterior-driven initialization complete; selected candidate likelihood =",
                   best_initialization_like, ", releasing all requested joint parameter blocks");
     }
     constexpr double monotonicity_tol{1e-10};
-    const double gap_tol = opts.conv_gap_tol;
+    const double improvement_tol = opts.conv_gap_tol;
     const double relative_tol = opts.conv_relative_tol;
     const double parameter_tol = opts.conv_parameter_tol;
     const int stable_iterations_required = opts.conv_stable_iterations;
@@ -975,7 +1089,13 @@ int run_phaseless_main(Options & opts)
     bool did_converge{false};
     int stable_iterations{0};
     double best_like{-std::numeric_limits<double>::infinity()};
-    cao.print(tim.date(), std::scientific, "joint convergence: gap/observation < ", gap_tol,
+    if(have_initialization_checkpoint)
+    {
+        best_parameters = initialization_checkpoint;
+        best_like = initialization_checkpoint_like;
+        have_best_parameters = true;
+    }
+    cao.print(tim.date(), std::scientific, "joint convergence: improvement/observation < ", improvement_tol,
               ", relative likelihood change < ", relative_tol, ", parameter change < ", parameter_tol, " for ",
               stable_iterations_required, " accepted iterations");
 
@@ -1010,7 +1130,7 @@ int run_phaseless_main(Options & opts)
                                                                observations, monotonicity_tol);
         const auto parameters = parameter_change(faith, previous_parameters);
         const bool likelihood_stable = std::isfinite(previous_previous_like)
-                                    && likelihood.gap_per_observation < gap_tol
+                                    && likelihood.improvement_per_observation < improvement_tol
                                     && likelihood.relative_change < relative_tol;
         const bool parameters_stable = parameters.q_max < parameter_tol && parameters.p_rms < parameter_tol
                                     && parameters.f_rms < parameter_tol && parameters.r_rms < parameter_tol;
@@ -1019,7 +1139,9 @@ int run_phaseless_main(Options & opts)
 
         cao.print(tim.date(), "accepted iteration", iteration, ", likelihood =", current_like, ", delta =",
                   likelihood.delta, ", relative =", std::scientific, likelihood.relative_change,
-                  ", gap/observation =", likelihood.gap_per_observation, ", Aitken =", likelihood.aitken_rate,
+                  ", improvement/observation =", likelihood.improvement_per_observation,
+                  ", Aitken rate =", likelihood.aitken_rate, ", Aitken gap/observation =",
+                  likelihood.aitken_gap_per_observation,
                   ", dQ(max) =", parameters.q_max, ", dP(rms) =", parameters.p_rms, ", dF(rms) =",
                   parameters.f_rms, ", dR(rms) =", parameters.r_rms, ", stable =", stable_iterations, "/",
                   stable_iterations_required);
@@ -1102,7 +1224,8 @@ int run_phaseless_main(Options & opts)
         }
     }
     const bool run_acceleration = !opts.noaccel && (!opts.stitch_heuristics || hybrid_acceleration);
-    if(run_acceleration && SIG_COND)
+    int ordinary_finish_start{-1};
+    if(run_acceleration && SIG_COND && !did_converge)
     {
         if(hybrid_acceleration)
         {
@@ -1116,6 +1239,14 @@ int run_phaseless_main(Options & opts)
         const int acceleration_scans = opts.stitch_heuristics ? requested_acceleration_scans : opts.nimpute;
         const int max_outer_iterations = acceleration_scans / 4;
         const int iteration_offset = opts.stitch_heuristics ? requested_warmup : 0;
+        const int finish_reserve = std::min(acceleration_scans,
+                                            std::max(12, 4 * (stable_iterations_required + 2)));
+        const int forced_finish_scan = opts.nimpute - finish_reserve;
+        double accelerated_previous_like{NAN};
+        JointParameterSnapshot accelerated_previous_parameters;
+        bool have_accelerated_previous{false};
+        std::deque<bool> recent_rejections;
+        std::deque<double> recent_realized_gains;
         for(int it = 0; SIG_COND && it <= max_outer_iterations; it++)
         {
             // Evaluate the current accepted state, then take the first normal EM step.
@@ -1126,14 +1257,52 @@ int run_phaseless_main(Options & opts)
             loglike = evaluate_e_step(false);
             preserve_best(loglike);
             const int scan = iteration_offset + 4 * it;
-            if(joint_converged(scan, loglike))
+            bool near_convergence{false};
+            double accelerated_relative{NAN};
+            JointParameterChange accelerated_change;
+            if(have_accelerated_previous)
             {
-                did_converge = true;
-                cao.print(tim.date(), "joint model converged after", stable_iterations,
-                          " consecutive stable accepted iterations");
+                accelerated_relative = std::abs(loglike - accelerated_previous_like)
+                                     / std::max(1.0, std::abs(loglike));
+                accelerated_change = parameter_change(faith, accelerated_previous_parameters);
+                near_convergence = loglike >= accelerated_previous_like - monotonicity_tol * observations
+                                && accelerated_relative < 5 * relative_tol
+                                && accelerated_change.q_max < 2 * parameter_tol
+                                && accelerated_change.p_rms < 2 * parameter_tol
+                                && accelerated_change.f_rms < 2 * parameter_tol
+                                && accelerated_change.r_rms < 2 * parameter_tol;
+                cao.print(tim.date(), "accelerated checkpoint", scan, ", likelihood =", loglike,
+                          ", relative =", accelerated_relative, ", dQ(max) =", accelerated_change.q_max,
+                          ", dP(rms) =", accelerated_change.p_rms, ", dF(rms) =",
+                          accelerated_change.f_rms, ", dR(rms) =", accelerated_change.r_rms);
+            }
+            accelerated_previous_like = loglike;
+            accelerated_previous_parameters = snapshot_parameters(faith);
+            have_accelerated_previous = true;
+            const double accepted_like = loglike;
+
+            const int rejected = static_cast<int>(std::count(recent_rejections.begin(),
+                                                              recent_rejections.end(), true));
+            const double realized_gain_sum = std::accumulate(recent_realized_gains.begin(),
+                                                              recent_realized_gains.end(), 0.0);
+            const auto handoff = assess_sqs3_handoff(static_cast<int>(recent_rejections.size()), rejected,
+                                                     static_cast<int>(recent_realized_gains.size()),
+                                                     realized_gain_sum, accelerated_relative, relative_tol);
+            const bool reserve_plain_em = scan >= forced_finish_scan;
+            if(near_convergence || handoff.persistent_rejection || handoff.low_efficiency
+               || reserve_plain_em || it == max_outer_iterations)
+            {
+                ordinary_finish_start = scan;
+                const char * reason = near_convergence ? "near-convergence threshold"
+                                     : handoff.persistent_rejection ? "persistent rejected SqS3 proposals"
+                                     : handoff.low_efficiency ? "low realized SqS3 gain"
+                                     : "reserved ordinary-EM convergence budget";
+                cao.print(tim.date(), "switching from SqS3 to ordinary-EM finishing at scan", scan,
+                          " because of ", reason, "; rejection rate =", handoff.rejection_rate,
+                          ", mean realized gain =", handoff.mean_realized_gain, ", ",
+                          opts.nimpute - scan, " scans remain");
                 break;
             }
-            if(it == max_outer_iterations) break;
             faith.updateIteration();
             // second normal iter
             faith.initIteration();
@@ -1141,7 +1310,7 @@ int run_phaseless_main(Options & opts)
             F1 = cat_stdvec_of_eigen(faith.F);
             loglike = evaluate_e_step(false);
             faith.updateIteration();
-            cao.print(tim.date(), "SqS3 outer iteration", it, ", accepted likelihood =", previous_like,
+            cao.print(tim.date(), "SqS3 outer iteration", it, ", accepted likelihood =", accepted_like,
                       ", second EM likelihood =", loglike, ", time", tim.reltime(), " sec");
             const JointParameterSnapshot normal_candidate = snapshot_parameters(faith);
             // calculate alpha based on first two pars
@@ -1149,14 +1318,16 @@ int run_phaseless_main(Options & opts)
             double denominator = 0;
             if(opts.aQ)
             {
-                numerator = (Q1 - Q0).square().sum();
-                denominator = (faith.Q - 2 * Q1 + Q0).square().sum();
+                numerator = (Q1 - Q0).square().mean();
+                denominator = (faith.Q - 2 * Q1 + Q0).square().mean();
             }
             else
             {
-                numerator = (F1 - F0).square().sum() + (Q1 - Q0).square().sum();
-                denominator = (cat_stdvec_of_eigen(faith.F) - 2 * F1 + F0).square().sum()
-                            + (faith.Q - 2 * Q1 + Q0).square().sum();
+                // Balance ancestry blocks rather than allowing the much
+                // larger F array to dominate the common SqS3 step length.
+                numerator = (F1 - F0).square().mean() + (Q1 - Q0).square().mean();
+                denominator = (cat_stdvec_of_eigen(faith.F) - 2 * F1 + F0).square().mean()
+                            + (faith.Q - 2 * Q1 + Q0).square().mean();
             }
             alpha = denominator > std::numeric_limits<double>::epsilon()
                       ? std::sqrt(numerator / denominator)
@@ -1187,8 +1358,10 @@ int run_phaseless_main(Options & opts)
             restore_parameters(faith, normal_candidate);
             faith.initIteration();
             const double normal_like = evaluate_e_step(false);
-            if(!std::isfinite(accelerated_like)
-               || accelerated_like < normal_like - monotonicity_tol * observations)
+            const bool rejected_acceleration = !std::isfinite(accelerated_like)
+                                            || accelerated_like < normal_like
+                                                                     - monotonicity_tol * observations;
+            if(rejected_acceleration)
             {
                 stepMax = istep;
                 cao.warn(tim.date(), "reset stepMax to 4, normal EM yields better likelihoods than the accelerated EM.",
@@ -1201,6 +1374,40 @@ int run_phaseless_main(Options & opts)
                 loglike = accelerated_like;
             }
             preserve_best(loglike);
+            recent_rejections.push_back(rejected_acceleration);
+            if(recent_rejections.size() > 24) recent_rejections.pop_front();
+            const double ordinary_progress = std::max(normal_like - accepted_like,
+                                                       monotonicity_tol * observations);
+            const double realized_gain = rejected_acceleration
+                ? 0.0
+                : std::min(10.0, std::max(0.0, accelerated_like - normal_like) / ordinary_progress);
+            recent_realized_gains.push_back(realized_gain);
+            if(recent_realized_gains.size() > 16) recent_realized_gains.pop_front();
+            cao.print(tim.date(), "SqS3 proposal alpha =", alpha, ", accelerated likelihood =",
+                      accelerated_like, ", normal likelihood =", normal_like, ", selected =",
+                      rejected_acceleration ? "ordinary EM" : "SqS3", ", realized gain =", realized_gain);
+        }
+    }
+    if(ordinary_finish_start >= 0 && SIG_COND && !did_converge)
+    {
+        reset_convergence_history();
+        for(int scan = ordinary_finish_start; SIG_COND && scan <= opts.nimpute; ++scan)
+        {
+            tim.clock();
+            faith.initIteration();
+            loglike = evaluate_e_step(false);
+            preserve_best(loglike);
+            cao.print(tim.date(), "ordinary-EM finishing scan", scan, ", likelihood =", loglike,
+                      ", time", tim.reltime(), "sec");
+            if(joint_converged(scan, loglike))
+            {
+                did_converge = true;
+                cao.print(tim.date(), "joint model converged during ordinary-EM finishing after",
+                          stable_iterations, " consecutive stable iterations");
+                break;
+            }
+            if(scan == opts.nimpute) break;
+            faith.updateIteration();
         }
     }
     if(have_best_parameters

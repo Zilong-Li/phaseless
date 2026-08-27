@@ -29,8 +29,10 @@ class Phaseless
     // BOUNDING
     double minRate{0.1}, maxRate{100}; // threshold for R
     double alleleEmitThreshold{1e-6}; // threshold for P
-    double clusterFreqThreshold{1e-6}; // threshold for F
-    double admixtureThreshold{1e-6}; // threshold for Q
+    double clusterFreqThreshold{1e-9}; // threshold for F
+    double admixtureThreshold{1e-9}; // threshold for Q
+    double admixturePseudocount{0}; // symmetric weak regularization for Q updates
+    double emissionShrinkage{0}; // prior weight centered on each site's pooled allele frequency
 
   public:
     Phaseless(int k, int c, int n, int m, int seed) : K(k), C(c), N(n), M(m), KK(k * k), CC(c * c)
@@ -78,10 +80,11 @@ class Phaseless
     void initRecombination(const Int1D & pos, std::string rfile = "", int B = 1, double Ne = 20000);
     void initRecombination(const Int2D & pos, std::string rfile = "", int B = 1, double Ne = 20000);
     void setFlags(double, double, double, bool, bool, bool, bool, bool);
+    void setAdmixturePseudocount(double value);
+    void setEmissionShrinkage(double value);
     void protectPars();
     void initializeSharedHaplotypeStart();
     bool initializeAncestryFromPosterior(double noise, int restart);
-    void shrinkAncestryCoupling(double strength);
     void configurePhaseAlignment(int boundary_stride);
     JointHeuristicReport alignPhaseClusterLabels(int reset_radius);
     void initIteration();

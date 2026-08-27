@@ -72,6 +72,45 @@ TEST_CASE("joint ancestry counts only cluster-refresh events", "[test-joint]")
     REQUIRE(faith.EclusterUsage.col(1).sum() == Approx(2.0));
 }
 
+TEST_CASE("joint Q update applies a symmetric ancestry pseudocount", "[test-joint]")
+{
+    Phaseless faith(3, 2, 1, 1, 5);
+    faith.NP = faith.NF = faith.NR = true;
+    faith.NQ = false;
+    faith.Eancestry.resize(3, 1);
+    faith.Eancestry << 9.0, 1.0, 0.0;
+    faith.setAdmixturePseudocount(0.5);
+
+    faith.updateIteration();
+
+    REQUIRE(faith.Q(0, 0) == Approx(9.5 / 11.5));
+    REQUIRE(faith.Q(1, 0) == Approx(1.5 / 11.5));
+    REQUIRE(faith.Q(2, 0) == Approx(0.5 / 11.5));
+    REQUIRE(faith.Q.col(0).sum() == Approx(1.0));
+    REQUIRE_THROWS_AS(faith.setAdmixturePseudocount(-0.1), std::invalid_argument);
+}
+
+TEST_CASE("joint P update shrinks low-occupancy cells toward pooled site frequency", "[test-joint]")
+{
+    Phaseless faith(1, 2, 1, 2, 7);
+    faith.initIteration();
+    faith.NQ = faith.NF = faith.NR = true;
+    faith.NP = false;
+    faith.EclusterA1 << 9.0, 0.0,
+                        0.0, 10.0;
+    faith.EclusterA2 << 1.0, 10.0,
+                        0.0, 0.0;
+    faith.setEmissionShrinkage(1.0);
+
+    faith.updateIteration();
+
+    REQUIRE(faith.P(0, 0) == Approx(0.1));
+    REQUIRE(faith.P(0, 1) == Approx(0.1));
+    REQUIRE(faith.P(1, 0) == Approx(10.5 / 11.0));
+    REQUIRE(faith.P(1, 1) == Approx(0.5 / 11.0));
+    REQUIRE_THROWS_AS(faith.setEmissionShrinkage(-0.1), std::invalid_argument);
+}
+
 TEST_CASE("joint STITCH heuristic aligns swapped cluster labels", "[test-joint]")
 {
     constexpr int K{2}, C{2}, N{2}, M{4};
@@ -112,21 +151,29 @@ TEST_CASE("joint initialization derives Q and F from posterior cluster profiles"
         for(int m = 0; m < M; ++m) REQUIRE(faith.F[k].col(m).sum() == Approx(1.0));
 }
 
-TEST_CASE("joint continuation shrinks ancestry coupling without breaking simplices", "[test-joint]")
+TEST_CASE("posterior initialization restarts perturb the clustering view", "[test-joint]")
 {
-    constexpr int K{2}, C{2}, N{2}, M{2};
-    Phaseless faith(K, C, N, M, 31);
-    faith.Q << 0.9, 0.1, 0.1, 0.9;
-    faith.F[0] << 0.8, 0.7, 0.2, 0.3;
-    faith.F[1] << 0.2, 0.3, 0.8, 0.7;
+    constexpr int K{3}, C{4}, N{8}, M{2};
+    Phaseless first(K, C, N, M, 41);
+    Phaseless second(K, C, N, M, 41);
+    MyArr2D profiles(C, N);
+    profiles << 70, 60, 45, 35, 25, 15, 10, 5,
+                10, 20, 35, 45, 50, 55, 20, 10,
+                15, 15, 10, 10, 15, 20, 55, 70,
+                 5,  5, 10, 10, 10, 10, 15, 15;
+    first.initializeSharedHaplotypeStart();
+    second.initializeSharedHaplotypeStart();
+    first.EindividualClusterUsage = profiles;
+    second.EindividualClusterUsage = profiles;
 
-    faith.shrinkAncestryCoupling(0.0);
-
-    REQUIRE((faith.Q - 0.5).abs().maxCoeff() == Approx(0.0));
-    REQUIRE((faith.F[0] - faith.F[1]).abs().maxCoeff() == Approx(0.0));
-    for(int i = 0; i < N; ++i) REQUIRE(faith.Q.col(i).sum() == Approx(1.0));
-    for(int k = 0; k < K; ++k)
-        for(int m = 0; m < M; ++m) REQUIRE(faith.F[k].col(m).sum() == Approx(1.0));
+    REQUIRE(first.initializeAncestryFromPosterior(0.05, 1));
+    REQUIRE(second.initializeAncestryFromPosterior(0.05, 2));
+    REQUIRE((first.Q - second.Q).abs().maxCoeff() > 1e-6);
+    for(int i = 0; i < N; ++i)
+    {
+        REQUIRE(first.Q.col(i).sum() == Approx(1.0));
+        REQUIRE(second.Q.col(i).sum() == Approx(1.0));
+    }
 }
 
 TEST_CASE("phase-stage alignment uses centered posterior occupancy profiles", "[test-joint]")

@@ -64,11 +64,50 @@ struct LikelihoodConvergenceMetrics
 {
     double delta{NAN};
     double relative_change{NAN};
-    double gap_per_observation{NAN};
+    double improvement_per_observation{NAN};
     double aitken_rate{NAN};
+    double aitken_gap_per_observation{NAN};
     bool monotone{false};
     bool aitken_valid{false};
 };
+
+inline bool initialization_converged(double relative_likelihood_change,
+                                     double posterior_profile_rms,
+                                     double relative_tolerance,
+                                     double profile_tolerance)
+{
+    return std::isfinite(relative_likelihood_change) && std::isfinite(posterior_profile_rms)
+        && relative_likelihood_change < relative_tolerance && posterior_profile_rms < profile_tolerance;
+}
+
+struct SqS3HandoffMetrics
+{
+    double rejection_rate{NAN};
+    double mean_realized_gain{NAN};
+    bool persistent_rejection{false};
+    bool low_efficiency{false};
+};
+
+inline SqS3HandoffMetrics assess_sqs3_handoff(int rejection_attempts,
+                                              int rejected,
+                                              int efficiency_attempts,
+                                              double realized_gain_sum,
+                                              double relative_change,
+                                              double relative_tolerance)
+{
+    SqS3HandoffMetrics out;
+    if(rejection_attempts > 0)
+        out.rejection_rate = static_cast<double>(rejected) / rejection_attempts;
+    if(efficiency_attempts > 0)
+        out.mean_realized_gain = realized_gain_sum / efficiency_attempts;
+    out.persistent_rejection = rejection_attempts >= 24 && out.rejection_rate >= 0.20
+                            && std::isfinite(relative_change)
+                            && relative_change < 100 * relative_tolerance;
+    out.low_efficiency = efficiency_attempts >= 16 && out.mean_realized_gain < 0.05
+                      && std::isfinite(relative_change)
+                      && relative_change < 50 * relative_tolerance;
+    return out;
+}
 
 inline LikelihoodConvergenceMetrics assess_likelihood_convergence(double current,
                                                                   double previous,
@@ -82,7 +121,10 @@ inline LikelihoodConvergenceMetrics assess_likelihood_convergence(double current
     LikelihoodConvergenceMetrics out;
     out.delta = current - previous;
     out.relative_change = std::abs(out.delta) / std::max(1.0, std::abs(current));
-    out.gap_per_observation = std::abs(out.delta) / observations;
+    // Use the observed one-step improvement for stopping.  Unlike an Aitken
+    // estimate, this quantity is continuous when successive EM increments
+    // have a ratio near one.  Aitken remains a diagnostic only.
+    out.improvement_per_observation = std::abs(out.delta) / observations;
     out.monotone = out.delta >= -monotonicity_tol * observations;
 
     if(std::isfinite(previous_previous))
@@ -96,7 +138,7 @@ inline LikelihoodConvergenceMetrics assess_likelihood_convergence(double current
             if(out.aitken_rate >= 0 && out.aitken_rate < 1
                && std::abs(1 - out.aitken_rate) > numerical_floor)
             {
-                out.gap_per_observation =
+                out.aitken_gap_per_observation =
                     std::abs(out.aitken_rate * out.delta / (1 - out.aitken_rate)) / observations;
                 out.aitken_valid = true;
             }
@@ -164,10 +206,11 @@ struct Options
     double conv_gap_tol{1e-5}, conv_relative_tol{5e-6}, conv_parameter_tol{2e-3};
     int conv_stable_iterations{3};
     int heuristic_block_size{100}, heuristic_reset_radius{20}, heuristic_warmup_iterations{20};
-    int init_haplotype_iterations{10}, init_ancestry_iterations{15}, init_restarts{3};
-    int continuation_iterations{6}, block_warmup_iterations{6};
+    int init_haplotype_iterations{50}, init_haplotype_min_iterations{12};
+    int init_haplotype_stable_iterations{3}, init_ancestry_iterations{15}, init_restarts{3};
     double heuristic_min_usage{0.01}, heuristic_donor_weight{0.8};
-    double init_noise{0.05};
+    double init_noise{0.05}, init_haplotype_relative_tol{1e-4}, init_haplotype_profile_tol{2e-3};
+    double q_pseudocount{0.5}, p_shrinkage{0.5};
     double ptol{1e-6}; // threshold for P
     double ftol{1e-6}; // threshold for F
     double qtol{1e-6}; // threshold for Q

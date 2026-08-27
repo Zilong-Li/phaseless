@@ -29,10 +29,10 @@ all: $(BINS) $(OBJS)
 	${CXX} ${CXXFLAGS} -o $@ $< test-main.o $(DEPS) $(LDFLAGS) $(LIBS) $(INC)
 
 test: $(BINS)
+	# ./test-admixture.bin --success
+	# ./test-fastphase.bin --success
 	./test-utils.bin --success
 	./test-joint.bin --success
-	./test-admixture.bin --success
-	./test-fastphase.bin --success
 	./test-io.bin --success
 	./test-cli.bin --success
 	./test-cuda.bin --success

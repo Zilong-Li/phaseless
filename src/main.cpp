@@ -111,7 +111,7 @@ int main(int argc, char * argv[])
         .default_value(std::string{"joint"});
     cmd_joint.add_argument("-s", "--chunksize")
         .help("size of each chunk in sites unit ")
-        .default_value(48000)
+        .default_value(32000)
         .scan<'i', int>();
     cmd_joint.add_argument("-S", "--single-chunk")
         .help("treat input as big single chunk")
@@ -127,16 +127,16 @@ int main(int argc, char * argv[])
         .default_value(996)
         .scan<'i', int>();
     cmd_joint.add_argument("--conv-gap-tol")
-        .help("Aitken-estimated remaining log likelihood per observation")
+        .help("observed log likelihood improvement per observation")
         .default_value(1e-5)
         .scan<'g', double>();
     cmd_joint.add_argument("--conv-relative-tol")
         .help("relative log likelihood convergence tolerance")
-        .default_value(5e-6)
+        .default_value(2e-6)
         .scan<'g', double>();
     cmd_joint.add_argument("--conv-parameter-tol")
         .help("joint parameter stability tolerance")
-        .default_value(2e-3)
+        .default_value(1e-3)
         .scan<'g', double>();
     cmd_joint.add_argument("--conv-stable-iterations")
         .help("consecutive stable accepted iterations required")
@@ -149,8 +149,24 @@ int main(int argc, char * argv[])
         .help("skip posterior-driven joint initialization and retain the legacy random start")
         .flag();
     cmd_joint.add_argument("--init-haplotype-iterations")
-        .help("ordinary EM scans used to learn the shared haplotype start")
-        .default_value(10)
+        .help("maximum ordinary EM scans used to learn the shared haplotype start")
+        .default_value(50)
+        .scan<'i', int>();
+    cmd_joint.add_argument("--init-haplotype-min-iterations")
+        .help("minimum shared-haplotype scans before adaptive stopping")
+        .default_value(12)
+        .scan<'i', int>();
+    cmd_joint.add_argument("--init-haplotype-relative-tol")
+        .help("relative likelihood tolerance for adaptive shared-haplotype stopping")
+        .default_value(1e-4)
+        .scan<'g', double>();
+    cmd_joint.add_argument("--init-haplotype-profile-tol")
+        .help("posterior cluster-profile RMS tolerance for adaptive shared-haplotype stopping")
+        .default_value(2e-3)
+        .scan<'g', double>();
+    cmd_joint.add_argument("--init-haplotype-stable-iterations")
+        .help("consecutive stable shared-haplotype scans required")
+        .default_value(3)
         .scan<'i', int>();
     cmd_joint.add_argument("--init-ancestry-iterations")
         .help("ordinary EM scans used to refine each posterior-driven ancestry start")
@@ -164,14 +180,14 @@ int main(int argc, char * argv[])
         .help("posterior-driven ancestry starts to try, retaining the highest likelihood")
         .default_value(3)
         .scan<'i', int>();
-    cmd_joint.add_argument("--continuation-iterations")
-        .help("staged warm-up cycles that gradually release ancestry-specific Q and F")
-        .default_value(6)
-        .scan<'i', int>();
-    cmd_joint.add_argument("--block-warmup-iterations")
-        .help("staged warm-up cycles alternating Q/F and P/r updates")
-        .default_value(6)
-        .scan<'i', int>();
+    cmd_joint.add_argument("--q-pseudocount")
+        .help("symmetric pseudocount added to each ancestry when updating Q; 0 disables it")
+        .default_value(0.5)
+        .scan<'g', double>();
+    cmd_joint.add_argument("--p-shrinkage")
+        .help("site-frequency-centered prior weight for P updates; 0 disables it")
+        .default_value(0.5)
+        .scan<'g', double>();
     cmd_joint.add_argument("--heuristic-block-size")
         .help("SNP block size used by STITCH-inspired heuristics")
         .default_value(100)
@@ -332,6 +348,9 @@ int main(int argc, char * argv[])
         opts.ptol = program.get<double>("--ptol");
         opts.ftol = program.get<double>("--ftol");
         opts.qtol = program.get<double>("--qtol");
+        if(opts.ptol <= 0 || opts.ptol >= 0.5 || opts.ftol <= 0 || opts.ftol >= 0.5
+           || opts.qtol <= 0 || opts.qtol >= 0.5)
+            throw std::invalid_argument("P, F, and Q lower boundaries must be between zero and 0.5");
         opts.nQ = program.get<bool>("--NQ");
         opts.nP = program.get<bool>("--NP");
         opts.nR = program.get<bool>("--NR");
@@ -357,11 +376,15 @@ int main(int argc, char * argv[])
             opts.stitch_heuristics = cmd_joint.get<bool>("--stitch-heuristics");
             opts.random_init = cmd_joint.get<bool>("--random-init");
             opts.init_haplotype_iterations = cmd_joint.get<int>("--init-haplotype-iterations");
+            opts.init_haplotype_min_iterations = cmd_joint.get<int>("--init-haplotype-min-iterations");
+            opts.init_haplotype_relative_tol = cmd_joint.get<double>("--init-haplotype-relative-tol");
+            opts.init_haplotype_profile_tol = cmd_joint.get<double>("--init-haplotype-profile-tol");
+            opts.init_haplotype_stable_iterations = cmd_joint.get<int>("--init-haplotype-stable-iterations");
             opts.init_ancestry_iterations = cmd_joint.get<int>("--init-ancestry-iterations");
             opts.init_noise = cmd_joint.get<double>("--init-noise");
             opts.init_restarts = cmd_joint.get<int>("--init-restarts");
-            opts.continuation_iterations = cmd_joint.get<int>("--continuation-iterations");
-            opts.block_warmup_iterations = cmd_joint.get<int>("--block-warmup-iterations");
+            opts.q_pseudocount = cmd_joint.get<double>("--q-pseudocount");
+            opts.p_shrinkage = cmd_joint.get<double>("--p-shrinkage");
             opts.heuristic_block_size = cmd_joint.get<int>("--heuristic-block-size");
             opts.heuristic_reset_radius = cmd_joint.get<int>("--heuristic-reset-radius");
             opts.heuristic_min_usage = cmd_joint.get<double>("--heuristic-min-usage");
@@ -375,9 +398,13 @@ int main(int argc, char * argv[])
                || opts.heuristic_min_usage < 0 || opts.heuristic_min_usage >= 1
                || opts.heuristic_donor_weight < 0 || opts.heuristic_donor_weight > 1)
                 throw std::invalid_argument("invalid STITCH heuristic configuration");
-            if(opts.init_haplotype_iterations < 1 || opts.init_ancestry_iterations < 1 || opts.init_restarts < 1
-               || opts.init_noise < 0 || opts.init_noise > 1
-               || opts.continuation_iterations < 0 || opts.block_warmup_iterations < 0)
+            if(opts.init_haplotype_iterations < 1 || opts.init_haplotype_min_iterations < 1
+               || opts.init_haplotype_min_iterations > opts.init_haplotype_iterations
+               || opts.init_haplotype_relative_tol <= 0 || opts.init_haplotype_profile_tol <= 0
+               || opts.init_haplotype_stable_iterations < 1 || opts.init_ancestry_iterations < 1
+               || opts.init_restarts < 1 || opts.init_noise < 0 || opts.init_noise > 1
+               || !std::isfinite(opts.q_pseudocount) || opts.q_pseudocount < 0
+               || !std::isfinite(opts.p_shrinkage) || opts.p_shrinkage < 0)
                 throw std::invalid_argument("invalid joint initialization configuration");
             opts.chunksize = cmd_joint.get<int>("--chunksize");
             opts.single_chunk = cmd_joint.get<bool>("--single-chunk");
