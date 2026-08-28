@@ -82,6 +82,30 @@ TEST_CASE("SqS3 handoff uses long rejection and efficiency windows", "[test-util
     REQUIRE(inefficient.low_efficiency);
 }
 
+TEST_CASE("SqS3 step moments balance parameter blocks by mean-square change", "[test-utils]")
+{
+    const MyArr1D small0 = MyArr1D::Zero(1);
+    const MyArr1D small1 = MyArr1D::Ones(1);
+    const MyArr1D small2 = MyArr1D::Constant(1, 1.5);
+    const MyArr2D large0 = MyArr2D::Zero(10, 20);
+    const MyArr2D large1 = MyArr2D::Constant(10, 20, 2.0);
+    const MyArr2D large2 = MyArr2D::Constant(10, 20, 3.0);
+
+    SqS3StepMoments moments;
+    add_sqs3_block_moments(moments, small0, small1, small2);
+    add_sqs3_block_moments(moments, large0, large1, large2);
+
+    REQUIRE(moments.blocks == 2);
+    REQUIRE(moments.first_difference == Approx(5.0));
+    REQUIRE(moments.second_difference == Approx(1.25));
+    REQUIRE(sqs3_step_length(moments) == Approx(2.0));
+
+    SqS3StepMoments linear;
+    add_sqs3_block_moments(linear, small0, small1, 2 * small1);
+    REQUIRE(sqs3_step_length(linear) == Approx(1.0));
+    REQUIRE(sqs3_step_length(SqS3StepMoments{}) == Approx(1.0));
+}
+
 TEST_CASE("allele frequency EM normalizes over samples", "[test-utils]")
 {
     const int N = 2, M = 2;

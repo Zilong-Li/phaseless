@@ -88,6 +88,36 @@ struct SqS3HandoffMetrics
     bool low_efficiency{false};
 };
 
+struct SqS3StepMoments
+{
+    double first_difference{0};
+    double second_difference{0};
+    int blocks{0};
+};
+
+template<typename Array0, typename Array1, typename Array2>
+inline void add_sqs3_block_moments(SqS3StepMoments & moments,
+                                   const Array0 & x0,
+                                   const Array1 & x1,
+                                   const Array2 & x2)
+{
+    // Each parameter block contributes one mean-square term, independent of
+    // its number of entries. This prevents site-level P/F/r arrays from
+    // overwhelming the much smaller per-individual Q array.
+    moments.first_difference += (x1 - x0).square().mean();
+    moments.second_difference += (x2 - 2 * x1 + x0).square().mean();
+    ++moments.blocks;
+}
+
+inline double sqs3_step_length(const SqS3StepMoments & moments)
+{
+    if(moments.blocks == 0
+       || moments.second_difference <= std::numeric_limits<double>::epsilon())
+        return 1.0;
+    const double alpha = std::sqrt(moments.first_difference / moments.second_difference);
+    return std::isfinite(alpha) ? std::max(1.0, alpha) : 1.0;
+}
+
 inline SqS3HandoffMetrics assess_sqs3_handoff(int rejection_attempts,
                                               int rejected,
                                               int efficiency_attempts,

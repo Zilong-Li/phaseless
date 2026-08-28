@@ -1215,8 +1215,6 @@ int run_phaseless_main(Options & opts)
     int ordinary_finish_start{-1};
     if(run_acceleration && SIG_COND && !did_converge)
     {
-        MyArr2D Q0, Q1;
-        MyArr2D F0, F1;
         const int istep{4};
         double alpha{0}, stepMax{4}, alphaMax{1280};
         const int acceleration_scans = opts.nimpute;
@@ -1235,8 +1233,7 @@ int run_phaseless_main(Options & opts)
             // Evaluate the current accepted state, then take the first normal EM step.
             tim.clock();
             faith.initIteration();
-            Q0 = faith.Q;
-            F0 = cat_stdvec_of_eigen(faith.F);
+            const JointParameterSnapshot sqs3_x0 = snapshot_parameters(faith);
             loglike = evaluate_e_step(false);
             preserve_best(loglike);
             const int scan = iteration_offset + 4 * it;
@@ -1289,48 +1286,54 @@ int run_phaseless_main(Options & opts)
             faith.updateIteration();
             // second normal iter
             faith.initIteration();
-            Q1 = faith.Q;
-            F1 = cat_stdvec_of_eigen(faith.F);
+            const JointParameterSnapshot sqs3_x1 = snapshot_parameters(faith);
             loglike = evaluate_e_step(false);
             faith.updateIteration();
             cao.print(tim.date(), "SqS3 outer iteration", it, ", accepted likelihood =", accepted_like,
                       ", second EM likelihood =", loglike, ", time", tim.reltime(), " sec");
             const JointParameterSnapshot normal_candidate = snapshot_parameters(faith);
-            // calculate alpha based on first two pars
-            double numerator = 0;
-            double denominator = 0;
+            SqS3StepMoments step_moments;
             if(opts.aQ)
-            {
-                numerator = (Q1 - Q0).square().mean();
-                denominator = (faith.Q - 2 * Q1 + Q0).square().mean();
-            }
+                add_sqs3_block_moments(step_moments, sqs3_x0.Q, sqs3_x1.Q, normal_candidate.Q);
             else
             {
-                // Balance ancestry blocks rather than allowing the much
-                // larger F array to dominate the common SqS3 step length.
-                numerator = (F1 - F0).square().mean() + (Q1 - Q0).square().mean();
-                denominator = (cat_stdvec_of_eigen(faith.F) - 2 * F1 + F0).square().mean()
-                            + (faith.Q - 2 * Q1 + Q0).square().mean();
+                // Estimate one common step from every active parameter block.
+                // Block means give Q, P, F, and r equal geometric weight even
+                // though their arrays have very different sizes.
+                if(!faith.NQ)
+                    add_sqs3_block_moments(step_moments, sqs3_x0.Q, sqs3_x1.Q, normal_candidate.Q);
+                if(!faith.NP)
+                    add_sqs3_block_moments(step_moments, sqs3_x0.P, sqs3_x1.P, normal_candidate.P);
+                if(!faith.NF)
+                    add_sqs3_block_moments(step_moments, sqs3_x0.F, sqs3_x1.F, normal_candidate.F);
+                if(!faith.NR)
+                    add_sqs3_block_moments(step_moments, sqs3_x0.er, sqs3_x1.er, normal_candidate.er);
             }
-            alpha = denominator > std::numeric_limits<double>::epsilon()
-                      ? std::sqrt(numerator / denominator)
-                      : 1.0;
-            if(!std::isfinite(alpha)) alpha = 1.0;
-            alpha = max(1.0, alpha);
+            alpha = sqs3_step_length(step_moments);
             if(alpha >= stepMax)
             {
                 alpha = min(stepMax, alphaMax);
                 stepMax = min(stepMax * istep, alphaMax);
             }
-            // Evaluate the SqS3 point itself.  Both candidates retain the same
-            // P/r values from the second ordinary EM map.
-            faith.Q = Q0 + 2 * alpha * (Q1 - Q0) + alpha * alpha * (faith.Q - 2 * Q1 + Q0);
-            for(int k = 0; k < faith.K; k++)
-                faith.F[k] = F0.middleRows(k * faith.C, faith.C)
-                             + 2 * alpha * (F1.middleRows(k * faith.C, faith.C) - F0.middleRows(k * faith.C, faith.C))
-                             + alpha * alpha
-                                   * (faith.F[k] - 2 * F1.middleRows(k * faith.C, faith.C)
-                                      + F0.middleRows(k * faith.C, faith.C));
+            // Extrapolate the same complete active state used to estimate the
+            // step length. Frozen blocks remain at their second-EM values.
+            if(!faith.NQ)
+                faith.Q = sqs3_x0.Q + 2 * alpha * (sqs3_x1.Q - sqs3_x0.Q)
+                        + alpha * alpha * (normal_candidate.Q - 2 * sqs3_x1.Q + sqs3_x0.Q);
+            if(!faith.NP)
+                faith.P = sqs3_x0.P + 2 * alpha * (sqs3_x1.P - sqs3_x0.P)
+                        + alpha * alpha * (normal_candidate.P - 2 * sqs3_x1.P + sqs3_x0.P);
+            if(!faith.NF)
+            {
+                const MyArr2D extrapolated_F = sqs3_x0.F + 2 * alpha * (sqs3_x1.F - sqs3_x0.F)
+                                             + alpha * alpha
+                                                   * (normal_candidate.F - 2 * sqs3_x1.F + sqs3_x0.F);
+                for(int k = 0; k < faith.K; ++k)
+                    faith.F[k] = extrapolated_F.middleRows(k * faith.C, faith.C);
+            }
+            if(!faith.NR)
+                faith.er = sqs3_x0.er + 2 * alpha * (sqs3_x1.er - sqs3_x0.er)
+                         + alpha * alpha * (normal_candidate.er - 2 * sqs3_x1.er + sqs3_x0.er);
             faith.protectPars();
             const JointParameterSnapshot accelerated_candidate = snapshot_parameters(faith);
             faith.initIteration();
