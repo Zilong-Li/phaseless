@@ -935,7 +935,8 @@ int run_phaseless_main(Options & opts)
                   opts.init_haplotype_min_iterations, "-", opts.init_haplotype_iterations,
                   " (adaptive), ancestry refinement scans =", opts.init_ancestry_iterations,
                   ", ancestry starts =", opts.init_restarts, ", initialization noise =", opts.init_noise,
-                  ", Q pseudocount =", opts.q_pseudocount, ", no block warm-up");
+                  ", Q pseudocount =", opts.q_pseudocount, ", STITCH heuristics =",
+                  opts.stitch_heuristics ? "integrated" : "disabled", ", no block warm-up");
 
         // Learn the haplotype map without asking a random ancestry split to
         // organize the cluster labels at the same time.
@@ -946,18 +947,20 @@ int run_phaseless_main(Options & opts)
             cao.warn(tim.date(), "posterior-driven initialization uses CPU E-steps; GPU resumes afterward");
         if(opts.stitch_heuristics)
             faith.configurePhaseAlignment(opts.heuristic_block_size);
-        // Reserve a clean tail after the last possible heuristic perturbation,
-        // so the selected posterior profiles describe a settled parameter state.
+        // Heuristics belong exclusively to this shared-haplotype fit. End
+        // them once the unperturbed profile first looks stable, or early
+        // enough to guarantee a clean tail before the scan limit.
         constexpr int initialization_heuristic_cooldown{8};
-        const int initialization_heuristic_scans = opts.stitch_heuristics
-            ? std::min(opts.heuristic_warmup_iterations,
-                       std::max(0, opts.init_haplotype_iterations - initialization_heuristic_cooldown))
-            : 0;
+        const int last_initialization_heuristic_scan =
+            std::max(0, opts.init_haplotype_iterations - initialization_heuristic_cooldown);
+        bool initialization_heuristics_active = opts.stitch_heuristics;
+        int initialization_heuristics_end_scan{0};
         double previous_stage_like{NAN};
         MyArr2D previous_profile;
         bool have_previous_profile{false};
         int initialization_stable_scans{0};
         int completed_haplotype_scans{0};
+        bool shared_haplotype_converged{false};
         for(int it = 0; SIG_COND && it < opts.init_haplotype_iterations; ++it)
         {
             tim.clock();
@@ -973,22 +976,24 @@ int run_phaseless_main(Options & opts)
             faith.updateIteration();
             JointHeuristicReport heuristic_report;
             const int scan = it + 1;
-            if(opts.stitch_heuristics && scan <= initialization_heuristic_scans && it >= 4 && it % 4 == 0)
+            if(initialization_heuristics_active && scan <= last_initialization_heuristic_scan
+               && it >= 4 && it % 4 == 0)
             {
                 const auto report = faith.alignPhaseClusterLabels(opts.heuristic_reset_radius);
                 heuristic_report.relabelled_boundaries += report.relabelled_boundaries;
                 heuristic_report.reset_sites += report.reset_sites;
-                cao.warn(tim.date(), "phase-stage posterior label alignment", scan, ": relabelled",
+                cao.warn(tim.date(), "initialization posterior label alignment", scan, ": relabelled",
                          report.relabelled_boundaries, "boundaries and reset", report.reset_sites, "SNPs");
             }
-            if(opts.stitch_heuristics && scan <= initialization_heuristic_scans && it >= 6 && (it - 2) % 4 == 0)
+            if(initialization_heuristics_active && scan <= last_initialization_heuristic_scan
+               && it >= 6 && (it - 2) % 4 == 0)
             {
                 const auto report = faith.reviveUnusedClusters(opts.heuristic_min_usage,
                                                                 opts.heuristic_block_size,
                                                                 opts.heuristic_donor_weight);
                 heuristic_report.revived_intervals += report.revived_intervals;
                 heuristic_report.revived_sites += report.revived_sites;
-                cao.warn(tim.date(), "phase-stage cluster revival", scan, ": revived", report.revived_intervals,
+                cao.warn(tim.date(), "initialization cluster revival", scan, ": revived", report.revived_intervals,
                          "intervals covering", report.revived_sites, "SNPs");
             }
             const double relative_change = std::isfinite(previous_stage_like)
@@ -997,17 +1002,38 @@ int run_phaseless_main(Options & opts)
             const double profile_rms = have_previous_profile
                 ? std::sqrt((current_profile - previous_profile).square().mean())
                 : NAN;
+            const bool profile_stable = !heuristic_report.changed()
+                                     && initialization_converged(relative_change, profile_rms,
+                                                                 opts.init_haplotype_relative_tol,
+                                                                 opts.init_haplotype_profile_tol);
+            if(initialization_heuristics_active && scan >= opts.init_haplotype_min_iterations
+               && profile_stable)
+            {
+                initialization_heuristics_active = false;
+                initialization_heuristics_end_scan = scan;
+                initialization_stable_scans = 0;
+                cao.print(tim.date(), "shared-haplotype profile stabilized; ending STITCH heuristics at scan",
+                          scan, "and starting clean posterior-profile cooldown");
+            }
+            else if(initialization_heuristics_active && scan >= last_initialization_heuristic_scan)
+            {
+                initialization_heuristics_active = false;
+                initialization_heuristics_end_scan = scan;
+                initialization_stable_scans = 0;
+                cao.print(tim.date(), "ending STITCH heuristics at scan", scan,
+                          "to reserve the posterior-profile cooldown");
+            }
             const bool eligible = scan >= opts.init_haplotype_min_iterations
-                               && scan > initialization_heuristic_scans;
-            const bool stable = eligible && !heuristic_report.changed()
-                             && initialization_converged(relative_change, profile_rms,
-                                                         opts.init_haplotype_relative_tol,
-                                                         opts.init_haplotype_profile_tol);
+                               && (!opts.stitch_heuristics
+                                   || (!initialization_heuristics_active
+                                       && scan > initialization_heuristics_end_scan));
+            const bool stable = eligible && profile_stable;
             initialization_stable_scans = stable
                 ? std::min(opts.init_haplotype_stable_iterations, initialization_stable_scans + 1)
                 : 0;
             const bool heuristic_cooldown_complete = !opts.stitch_heuristics
-                || scan >= initialization_heuristic_scans + initialization_heuristic_cooldown;
+                || (!initialization_heuristics_active
+                    && scan >= initialization_heuristics_end_scan + initialization_heuristic_cooldown);
             completed_haplotype_scans = scan;
             cao.print(tim.date(), "shared-haplotype initialization scan", scan, "/",
                       opts.init_haplotype_iterations, ", likelihood =", stage_like, ", relative =",
@@ -1020,13 +1046,13 @@ int run_phaseless_main(Options & opts)
             if(initialization_stable_scans >= opts.init_haplotype_stable_iterations
                && heuristic_cooldown_complete)
             {
+                shared_haplotype_converged = true;
                 cao.print(tim.date(), "shared-haplotype initialization converged after", scan, "scans");
                 break;
             }
         }
         faith.configurePhaseAlignment(0);
-        if(completed_haplotype_scans == opts.init_haplotype_iterations
-           && initialization_stable_scans < opts.init_haplotype_stable_iterations)
+        if(completed_haplotype_scans == opts.init_haplotype_iterations && !shared_haplotype_converged)
             cao.warn(tim.date(), "shared-haplotype initialization reached its scan limit before adaptive convergence");
         // Re-evaluate once after the last M-step. This makes the profiles used
         // to seed ancestry correspond exactly to the saved shared state.
@@ -1155,39 +1181,18 @@ int run_phaseless_main(Options & opts)
         return stable_iterations >= stable_iterations_required;
     };
 
-    const int requested_warmup = opts.stitch_heuristics
-                                     ? std::min(opts.heuristic_warmup_iterations, opts.nimpute)
-                                     : 0;
-    const int requested_acceleration_scans = opts.nimpute - requested_warmup;
-    const bool hybrid_acceleration = opts.stitch_heuristics && !opts.noaccel
-                                  && requested_acceleration_scans >= 4;
-    const int regular_iterations = hybrid_acceleration ? requested_warmup : opts.nimpute;
-    auto is_alignment_iteration = [&](int iteration)
-    {
-        return opts.stitch_heuristics && iteration >= 4 && iteration < requested_warmup && iteration % 4 == 0;
-    };
-    auto is_revival_iteration = [&](int iteration)
-    {
-        return opts.stitch_heuristics && iteration >= 6 && iteration < requested_warmup
-            && (iteration - 2) % 4 == 0;
-    };
     if(opts.stitch_heuristics)
     {
-        cao.print(tim.date(), "STITCH heuristics: block size =", opts.heuristic_block_size,
-                  ", reset radius =", opts.heuristic_reset_radius, ", minimum usage =",
-                  opts.heuristic_min_usage, ", donor weight =", opts.heuristic_donor_weight,
-                  ", ordinary-EM warm-up =", requested_warmup,
-                  ", preserve best observed-likelihood checkpoint");
-        if(hybrid_acceleration)
-            cao.print(tim.date(), "SqS3 will start after", requested_warmup, "ordinary EM scans with",
-                      requested_acceleration_scans, "scans left in the requested budget");
-        else if(opts.noaccel)
-            cao.warn(tim.date(), "--no-accel keeps ordinary EM active after the heuristic warm-up");
+        if(posterior_initialization)
+            cao.print(tim.date(), "STITCH heuristics completed inside shared-haplotype initialization;",
+                      "joint optimization will not perturb clusters a second time");
+        else
+            cao.warn(tim.date(), "--stitch-heuristics requires posterior-driven initialization and was not applied");
     }
 
-    if(opts.noaccel || opts.stitch_heuristics)
+    if(opts.noaccel)
     {
-        for(int it = 0; SIG_COND && it <= regular_iterations; it++)
+        for(int it = 0; SIG_COND && it <= opts.nimpute; it++)
         {
             tim.clock();
             faith.initIteration();
@@ -1195,50 +1200,28 @@ int run_phaseless_main(Options & opts)
             preserve_best(loglike);
             cao.print(tim.date(), "run whole genome, iteration", it, ", likelihood =", loglike, ", time",
                       tim.reltime(), " sec");
-            const bool can_converge = !hybrid_acceleration
-                                   && (!opts.stitch_heuristics || it >= requested_warmup);
-            if(can_converge && joint_converged(it, loglike))
+            if(joint_converged(it, loglike))
             {
                 did_converge = true;
                 cao.print(tim.date(), "joint model converged after", stable_iterations,
                           " consecutive stable accepted iterations");
                 break;
             }
-            if(it == regular_iterations) break;
+            if(it == opts.nimpute) break;
             faith.updateIteration();
-            JointHeuristicReport heuristic;
-            if(is_alignment_iteration(it))
-            {
-                heuristic = faith.alignClusterLabels(opts.heuristic_block_size, opts.heuristic_reset_radius);
-                cao.warn(tim.date(), "STITCH label-alignment iteration", it, ": relabelled",
-                         heuristic.relabelled_boundaries, "boundaries and reset", heuristic.reset_sites, "SNPs");
-            }
-            if(is_revival_iteration(it))
-            {
-                heuristic = faith.reviveUnusedClusters(opts.heuristic_min_usage, opts.heuristic_block_size,
-                                                       opts.heuristic_donor_weight);
-                cao.warn(tim.date(), "STITCH cluster-revival iteration", it, ": revived",
-                         heuristic.revived_intervals, "intervals covering", heuristic.revived_sites, "SNPs");
-            }
-            if(heuristic.changed()) reset_convergence_history();
         }
     }
-    const bool run_acceleration = !opts.noaccel && (!opts.stitch_heuristics || hybrid_acceleration);
+    const bool run_acceleration = !opts.noaccel;
     int ordinary_finish_start{-1};
     if(run_acceleration && SIG_COND && !did_converge)
     {
-        if(hybrid_acceleration)
-        {
-            reset_convergence_history();
-            cao.print(tim.date(), "STITCH warm-up complete; starting SqS3 acceleration");
-        }
         MyArr2D Q0, Q1;
         MyArr2D F0, F1;
         const int istep{4};
         double alpha{0}, stepMax{4}, alphaMax{1280};
-        const int acceleration_scans = opts.stitch_heuristics ? requested_acceleration_scans : opts.nimpute;
+        const int acceleration_scans = opts.nimpute;
         const int max_outer_iterations = acceleration_scans / 4;
-        const int iteration_offset = opts.stitch_heuristics ? requested_warmup : 0;
+        const int iteration_offset = 0;
         const int finish_reserve = std::min(acceleration_scans,
                                             std::max(12, 4 * (stable_iterations_required + 2)));
         const int forced_finish_scan = opts.nimpute - finish_reserve;

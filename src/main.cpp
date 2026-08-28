@@ -143,7 +143,7 @@ int main(int argc, char * argv[])
         .default_value(3)
         .scan<'i', int>();
     cmd_joint.add_argument("--stitch-heuristics")
-        .help("enable STITCH-inspired label alignment and unused-cluster revival during early EM iterations")
+        .help("enable STITCH-inspired alignment and revival inside shared-haplotype initialization")
         .flag();
     cmd_joint.add_argument("--random-init")
         .help("skip posterior-driven joint initialization and retain the legacy random start")
@@ -204,10 +204,6 @@ int main(int argc, char * argv[])
         .help("weight of the sampled donor emissions when reviving a cluster")
         .default_value(0.8)
         .scan<'g', double>();
-    cmd_joint.add_argument("--heuristic-warmup-iterations")
-        .help("ordinary EM scans with STITCH heuristics before switching to SqS3")
-        .default_value(20)
-        .scan<'i', int>();
     // cmd_joint.add_parents(program);
 
     argparse::ArgumentParser cmd_impute("impute", VERSION, default_arguments::help);
@@ -389,17 +385,17 @@ int main(int argc, char * argv[])
             opts.heuristic_reset_radius = cmd_joint.get<int>("--heuristic-reset-radius");
             opts.heuristic_min_usage = cmd_joint.get<double>("--heuristic-min-usage");
             opts.heuristic_donor_weight = cmd_joint.get<double>("--heuristic-donor-weight");
-            opts.heuristic_warmup_iterations = cmd_joint.get<int>("--heuristic-warmup-iterations");
             if(opts.conv_gap_tol <= 0 || opts.conv_relative_tol <= 0 || opts.conv_parameter_tol <= 0
                || opts.conv_stable_iterations < 1)
                 throw std::invalid_argument("joint convergence tolerances and stable iterations must be positive");
             if(opts.heuristic_block_size < 1 || opts.heuristic_reset_radius < 0
-               || opts.heuristic_warmup_iterations < 1
                || opts.heuristic_min_usage < 0 || opts.heuristic_min_usage >= 1
                || opts.heuristic_donor_weight < 0 || opts.heuristic_donor_weight > 1)
                 throw std::invalid_argument("invalid STITCH heuristic configuration");
             if(opts.init_haplotype_iterations < 1 || opts.init_haplotype_min_iterations < 1
                || opts.init_haplotype_min_iterations > opts.init_haplotype_iterations
+               || (opts.stitch_heuristics && !opts.random_init && opts.in_qfile.empty()
+                   && opts.init_haplotype_iterations < opts.init_haplotype_min_iterations + 8)
                || opts.init_haplotype_relative_tol <= 0 || opts.init_haplotype_profile_tol <= 0
                || opts.init_haplotype_stable_iterations < 1 || opts.init_ancestry_iterations < 1
                || opts.init_restarts < 1 || opts.init_noise < 0 || opts.init_noise > 1

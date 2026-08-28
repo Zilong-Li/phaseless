@@ -205,7 +205,7 @@ struct Options
     double ltol{1e-1}, info{0}, tol_pi{0.99}, tol_r{1e-5};
     double conv_gap_tol{1e-5}, conv_relative_tol{5e-6}, conv_parameter_tol{2e-3};
     int conv_stable_iterations{3};
-    int heuristic_block_size{100}, heuristic_reset_radius{20}, heuristic_warmup_iterations{20};
+    int heuristic_block_size{100}, heuristic_reset_radius{20};
     int init_haplotype_iterations{50}, init_haplotype_min_iterations{12};
     int init_haplotype_stable_iterations{3}, init_ancestry_iterations{15}, init_restarts{3};
     double heuristic_min_usage{0.01}, heuristic_donor_weight{0.8};
