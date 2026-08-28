@@ -150,23 +150,38 @@ int main(int argc, char * argv[])
         .flag();
     cmd_joint.add_argument("--init-haplotype-iterations")
         .help("maximum ordinary EM scans used to learn the shared haplotype start")
-        .default_value(50)
+        .default_value(40)
         .scan<'i', int>();
     cmd_joint.add_argument("--init-haplotype-min-iterations")
         .help("minimum shared-haplotype scans before adaptive stopping")
-        .default_value(12)
+        .default_value(20)
         .scan<'i', int>();
     cmd_joint.add_argument("--init-haplotype-relative-tol")
         .help("relative likelihood tolerance for adaptive shared-haplotype stopping")
-        .default_value(1e-4)
+        .default_value(5e-4)
         .scan<'g', double>();
     cmd_joint.add_argument("--init-haplotype-profile-tol")
         .help("posterior cluster-profile RMS tolerance for adaptive shared-haplotype stopping")
-        .default_value(2e-3)
+        .default_value(5e-3)
         .scan<'g', double>();
     cmd_joint.add_argument("--init-haplotype-stable-iterations")
         .help("consecutive stable shared-haplotype scans required")
         .default_value(3)
+        .scan<'i', int>();
+    cmd_joint.add_argument("--init-profile-pruning")
+        .help("use low-cost informative-SNP pruning in the posterior profile used to initialize Q and F")
+        .flag();
+    cmd_joint.add_argument("--init-profile-block-size")
+        .help("SNP block size for low-cost informative-site selection in the initialization profile")
+        .default_value(100)
+        .scan<'i', int>();
+    cmd_joint.add_argument("--init-profile-information-fraction")
+        .help("fraction of cluster-allele mutual information retained within each profile block")
+        .default_value(0.95)
+        .scan<'g', double>();
+    cmd_joint.add_argument("--init-profile-min-snps")
+        .help("minimum informative SNPs retained per initialization-profile block")
+        .default_value(5)
         .scan<'i', int>();
     cmd_joint.add_argument("--init-ancestry-iterations")
         .help("ordinary EM scans used to refine each posterior-driven ancestry start")
@@ -376,6 +391,11 @@ int main(int argc, char * argv[])
             opts.init_haplotype_relative_tol = cmd_joint.get<double>("--init-haplotype-relative-tol");
             opts.init_haplotype_profile_tol = cmd_joint.get<double>("--init-haplotype-profile-tol");
             opts.init_haplotype_stable_iterations = cmd_joint.get<int>("--init-haplotype-stable-iterations");
+            opts.init_profile_pruning = cmd_joint.get<bool>("--init-profile-pruning");
+            opts.init_profile_block_size = cmd_joint.get<int>("--init-profile-block-size");
+            opts.init_profile_information_fraction =
+                cmd_joint.get<double>("--init-profile-information-fraction");
+            opts.init_profile_min_snps = cmd_joint.get<int>("--init-profile-min-snps");
             opts.init_ancestry_iterations = cmd_joint.get<int>("--init-ancestry-iterations");
             opts.init_noise = cmd_joint.get<double>("--init-noise");
             opts.init_restarts = cmd_joint.get<int>("--init-restarts");
@@ -399,6 +419,11 @@ int main(int argc, char * argv[])
                || opts.init_haplotype_relative_tol <= 0 || opts.init_haplotype_profile_tol <= 0
                || opts.init_haplotype_stable_iterations < 1 || opts.init_ancestry_iterations < 1
                || opts.init_restarts < 1 || opts.init_noise < 0 || opts.init_noise > 1
+               || opts.init_profile_block_size < 1 || opts.init_profile_min_snps < 1
+               || opts.init_profile_min_snps > opts.init_profile_block_size
+               || !std::isfinite(opts.init_profile_information_fraction)
+               || opts.init_profile_information_fraction <= 0
+               || opts.init_profile_information_fraction > 1
                || !std::isfinite(opts.q_pseudocount) || opts.q_pseudocount < 0
                || !std::isfinite(opts.p_shrinkage) || opts.p_shrinkage < 0)
                 throw std::invalid_argument("invalid joint initialization configuration");

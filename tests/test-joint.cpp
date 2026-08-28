@@ -151,6 +151,64 @@ TEST_CASE("joint initialization derives Q and F from posterior cluster profiles"
         for(int m = 0; m < M; ++m) REQUIRE(faith.F[k].col(m).sum() == Approx(1.0));
 }
 
+TEST_CASE("low-cost initialization profile pruning retains cluster-informative SNPs", "[test-joint]")
+{
+    constexpr int K{1}, C{2}, N{10}, M{6};
+    Phaseless faith(K, C, N, M, 31);
+    faith.pos_chunk = {0, M};
+    faith.EclusterUsage.setConstant(C, M, 10.0);
+    faith.P << 0.50, 0.50,
+               0.10, 0.90,
+               0.20, 0.80,
+               0.50, 0.50,
+               0.01, 0.99,
+               0.45, 0.55;
+
+    const auto report = faith.configureInformativeProfileSites(3, 0.80, 1);
+
+    REQUIRE_FALSE(report.used_all_sites_fallback);
+    REQUIRE(report.blocks == 2);
+    REQUIRE(report.informative_blocks == 2);
+    REQUIRE(report.informative_sites == 4);
+    REQUIRE(report.retained_sites == 3);
+    REQUIRE(faith.initializationProfileWeights(0) == Approx(0.0));
+    REQUIRE(faith.initializationProfileWeights(1) == Approx(1.5));
+    REQUIRE(faith.initializationProfileWeights(2) == Approx(1.5));
+    REQUIRE(faith.initializationProfileWeights(3) == Approx(0.0));
+    REQUIRE(faith.initializationProfileWeights(4) == Approx(3.0));
+    REQUIRE(faith.initializationProfileWeights(5) == Approx(0.0));
+
+    faith.P.setConstant(0.5);
+    const auto fallback = faith.configureInformativeProfileSites(3, 0.95, 1);
+    REQUIRE(fallback.used_all_sites_fallback);
+    REQUIRE((faith.initializationProfileWeights == 1.0).all());
+}
+
+TEST_CASE("initialization profile weights affect only per-individual profile aggregation", "[test-joint]")
+{
+    constexpr int K{1}, C{2}, N{1}, M{3};
+    Phaseless faith(K, C, N, M, 37);
+    faith.pos_chunk = {0, M};
+    faith.initializationProfileWeights.resize(M);
+    faith.initializationProfileWeights << 0.0, 3.0, 0.0;
+    faith.initIteration();
+
+    const MyArr2D gli = MyArr2D::Ones(M, 3);
+    const MyArr2D emit = MyArr2D::Ones(diploid_unordered_state_count(C), M);
+    const MyArr2D H = MyArr2D::Constant(C, M, 0.5);
+    const MyArr1D cs = MyArr1D::Ones(M);
+    MyArr2D alpha = MyArr2D::Zero(diploid_unordered_state_count(C), M);
+    alpha.row(diploid_unordered_state_index(0, 0, C)).setOnes();
+    const MyArr2D beta = MyArr2D::Ones(diploid_unordered_state_count(C), M);
+
+    faith.getPosterios(0, 0, gli, emit, H, cs, alpha, beta, false);
+
+    REQUIRE(faith.EindividualClusterUsage(0, 0) == Approx(6.0));
+    REQUIRE(faith.EindividualClusterUsage(1, 0) == Approx(0.0));
+    REQUIRE((faith.EclusterUsage.row(0) == 2.0).all());
+    REQUIRE((faith.EclusterUsage.row(1) == 0.0).all());
+}
+
 TEST_CASE("posterior initialization restarts perturb the clustering view", "[test-joint]")
 {
     constexpr int K{3}, C{4}, N{8}, M{2};

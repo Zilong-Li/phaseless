@@ -717,6 +717,107 @@ JointHeuristicReport Phaseless::reviveUnusedClusters(double min_usage, int bin_s
     return report;
 }
 
+InitializationProfilePruningReport Phaseless::configureInformativeProfileSites(int block_size,
+                                                                                double information_fraction,
+                                                                                int minimum_sites)
+{
+    if(block_size < 1) throw std::invalid_argument("initialization profile block size must be positive");
+    if(!std::isfinite(information_fraction) || information_fraction <= 0 || information_fraction > 1)
+        throw std::invalid_argument("initialization profile information fraction must be in (0, 1]");
+    if(minimum_sites < 1 || minimum_sites > block_size)
+        throw std::invalid_argument("initialization profile minimum sites must be in [1, block size]");
+    if(P.rows() != M || P.cols() != C || EclusterUsage.rows() != C || EclusterUsage.cols() != M)
+        throw std::logic_error("initialization profile pruning requires P and posterior cluster usage");
+
+    InitializationProfilePruningReport report;
+    MyArr1D information = MyArr1D::Zero(M);
+    auto binary_entropy = [](double probability)
+    {
+        if(probability <= 0 || probability >= 1) return 0.0;
+        return -probability * std::log(probability)
+             - (1 - probability) * std::log1p(-probability);
+    };
+    for(int site = 0; site < M; ++site)
+    {
+        const double total_usage = EclusterUsage.col(site).sum();
+        if(!std::isfinite(total_usage) || total_usage <= 0) continue;
+        double pooled_frequency = 0;
+        double conditional_entropy = 0;
+        for(int cluster = 0; cluster < C; ++cluster)
+        {
+            const double weight = EclusterUsage(cluster, site) / total_usage;
+            const double frequency = std::clamp<double>(P(site, cluster), 0, 1);
+            pooled_frequency += weight * frequency;
+            conditional_entropy += weight * binary_entropy(frequency);
+        }
+        const double score = binary_entropy(pooled_frequency) - conditional_entropy;
+        if(std::isfinite(score) && score > 0) information(site) = score;
+    }
+
+    initializationProfileWeights = MyArr1D::Zero(M);
+    std::vector<std::pair<int, int>> chunks;
+    if(pos_chunk.size() >= 2)
+    {
+        for(size_t chunk = 0; chunk + 1 < pos_chunk.size(); ++chunk)
+            chunks.emplace_back(pos_chunk[chunk], pos_chunk[chunk + 1]);
+    }
+    else
+        chunks.emplace_back(0, M);
+
+    constexpr double information_epsilon = 64 * std::numeric_limits<double>::epsilon();
+    for(const auto & [chunk_start, chunk_end] : chunks)
+        for(int block_start = chunk_start; block_start < chunk_end; block_start += block_size)
+        {
+            const int block_end = std::min(chunk_end, block_start + block_size);
+            ++report.blocks;
+            std::vector<int> ranked;
+            double block_information = 0;
+            for(int site = block_start; site < block_end; ++site)
+                if(information(site) > information_epsilon)
+                {
+                    ranked.push_back(site);
+                    block_information += information(site);
+                }
+            report.informative_sites += static_cast<int>(ranked.size());
+            report.total_information += block_information;
+            if(ranked.empty() || block_information <= 0) continue;
+            ++report.informative_blocks;
+            std::stable_sort(ranked.begin(), ranked.end(), [&](int left, int right)
+            {
+                return information(left) > information(right);
+            });
+            const double target = information_fraction * block_information;
+            double retained = 0;
+            int keep = 0;
+            const int required = std::min<int>(minimum_sites, ranked.size());
+            while(keep < static_cast<int>(ranked.size()) && (keep < required || retained < target))
+            {
+                retained += information(ranked[keep]);
+                ++keep;
+            }
+            // Preserve the block's former total profile weight while using
+            // only its informative representatives. Uninformative blocks
+            // intentionally receive zero weight.
+            const double site_weight = static_cast<double>(block_end - block_start) / keep;
+            for(int rank = 0; rank < keep; ++rank) initializationProfileWeights(ranked[rank]) = site_weight;
+            report.retained_sites += keep;
+            report.retained_information += retained;
+        }
+
+    if(report.retained_sites == 0)
+    {
+        initializationProfileWeights.setOnes();
+        report.retained_sites = M;
+        report.used_all_sites_fallback = true;
+    }
+    return report;
+}
+
+void Phaseless::clearInformativeProfileSites()
+{
+    initializationProfileWeights.resize(0);
+}
+
 void Phaseless::callGenoLoopC(int ind, int s, int z1, const MyArr2D & gli, const MyArr1D & gamma_div_emit)
 {
     MyArr1D tmp_zg(4);
@@ -812,7 +913,12 @@ void Phaseless::getPosterios(const int ind,
     // Q is the ancestry distribution at cluster-refresh events.  No-refresh
     // transitions contain no ancestry draw and therefore contribute no count.
     for(y1 = 0; y1 < K; y1++) Eancestry(y1, ind) += ind_post_zy.middleRows(y1 * C, C).sum();
-    EindividualClusterUsage.col(ind) += ind_cluster_usage.rowwise().sum();
+    if(initializationProfileWeights.size() == M)
+        EindividualClusterUsage.col(ind) +=
+            (ind_cluster_usage.matrix()
+             * initializationProfileWeights.segment(pos_chunk[ic], S).matrix()).array();
+    else
+        EindividualClusterUsage.col(ind) += ind_cluster_usage.rowwise().sum();
     { // Sum individuals in a fixed order so seeded heuristic runs are reproducible across thread schedules.
         std::unique_lock<std::mutex> lock(mutex_it);
         merge_cv.wait(lock, [&] { return ind == next_merge_ind[ic]; });
@@ -1054,12 +1160,31 @@ int run_phaseless_main(Options & opts)
         faith.configurePhaseAlignment(0);
         if(completed_haplotype_scans == opts.init_haplotype_iterations && !shared_haplotype_converged)
             cao.warn(tim.date(), "shared-haplotype initialization reached its scan limit before adaptive convergence");
+        if(opts.init_profile_pruning)
+        {
+            const auto report = faith.configureInformativeProfileSites(opts.init_profile_block_size,
+                                                                        opts.init_profile_information_fraction,
+                                                                        opts.init_profile_min_snps);
+            if(report.used_all_sites_fallback)
+                cao.warn(tim.date(), "shared-haplotype SNP information scores were all zero;",
+                         "using every SNP in the ancestry initialization profile");
+            else
+                cao.print(tim.date(), "initialization-profile SNP pruning retained", report.retained_sites,
+                          "/", faith.M, "sites across", report.informative_blocks, "/", report.blocks,
+                          "informative blocks and", 100 * report.retained_information / report.total_information,
+                          "% of cluster-allele information");
+        }
+        else
+            faith.clearInformativeProfileSites();
         // Re-evaluate once after the last M-step. This makes the profiles used
-        // to seed ancestry correspond exactly to the saved shared state.
+        // to seed ancestry correspond exactly to the saved shared state. The
+        // optional low-cost site weights affect only profile aggregation; all
+        // SNPs remain in this HMM E-step and in final genotype imputation.
         faith.initIteration();
         const double final_shared_like = evaluate_e_step(false);
         const JointParameterSnapshot shared_parameters = snapshot_parameters(faith);
         const MyArr2D posterior_profiles = faith.EindividualClusterUsage;
+        faith.clearInformativeProfileSites();
         cao.print(tim.date(), "shared-haplotype final profile likelihood =", final_shared_like);
         initialization_cpu_e_step = false;
 
@@ -1237,7 +1362,6 @@ int run_phaseless_main(Options & opts)
             loglike = evaluate_e_step(false);
             preserve_best(loglike);
             const int scan = iteration_offset + 4 * it;
-            bool near_convergence{false};
             double accelerated_relative{NAN};
             JointParameterChange accelerated_change;
             if(have_accelerated_previous)
@@ -1245,12 +1369,6 @@ int run_phaseless_main(Options & opts)
                 accelerated_relative = std::abs(loglike - accelerated_previous_like)
                                      / std::max(1.0, std::abs(loglike));
                 accelerated_change = parameter_change(faith, accelerated_previous_parameters);
-                near_convergence = loglike >= accelerated_previous_like - monotonicity_tol * observations
-                                && accelerated_relative < 5 * relative_tol
-                                && accelerated_change.q_max < 2 * parameter_tol
-                                && accelerated_change.p_rms < 2 * parameter_tol
-                                && accelerated_change.f_rms < 2 * parameter_tol
-                                && accelerated_change.r_rms < 2 * parameter_tol;
                 cao.print(tim.date(), "accelerated checkpoint", scan, ", likelihood =", loglike,
                           ", relative =", accelerated_relative, ", dQ(max) =", accelerated_change.q_max,
                           ", dP(rms) =", accelerated_change.p_rms, ", dF(rms) =",
@@ -1269,12 +1387,11 @@ int run_phaseless_main(Options & opts)
                                                      static_cast<int>(recent_realized_gains.size()),
                                                      realized_gain_sum, accelerated_relative, relative_tol);
             const bool reserve_plain_em = scan >= forced_finish_scan;
-            if(near_convergence || handoff.persistent_rejection || handoff.low_efficiency
-               || reserve_plain_em || it == max_outer_iterations)
+            if(handoff.persistent_rejection || handoff.low_efficiency || reserve_plain_em
+               || it == max_outer_iterations)
             {
                 ordinary_finish_start = scan;
-                const char * reason = near_convergence ? "near-convergence threshold"
-                                     : handoff.persistent_rejection ? "persistent rejected SqS3 proposals"
+                const char * reason = handoff.persistent_rejection ? "persistent rejected SqS3 proposals"
                                      : handoff.low_efficiency ? "low realized SqS3 gain"
                                      : "reserved ordinary-EM convergence budget";
                 cao.print(tim.date(), "switching from SqS3 to ordinary-EM finishing at scan", scan,
@@ -1292,6 +1409,30 @@ int run_phaseless_main(Options & opts)
             cao.print(tim.date(), "SqS3 outer iteration", it, ", accepted likelihood =", accepted_like,
                       ", second EM likelihood =", loglike, ", time", tim.reltime(), " sec");
             const JointParameterSnapshot normal_candidate = snapshot_parameters(faith);
+            // Decide when to finish from the underlying ordinary EM map, not
+            // from the deliberately enlarged distance between extrapolated
+            // checkpoints.  The likelihood change is x0 -> x1 and the
+            // parameter change is x1 -> x2, so both measure one ordinary map.
+            const double ordinary_relative = std::abs(loglike - accepted_like)
+                                           / std::max(1.0, std::abs(loglike));
+            const JointParameterChange ordinary_change = parameter_change(faith, sqs3_x1);
+            const bool ordinary_near_convergence = ordinary_em_near_convergence(
+                loglike >= accepted_like - monotonicity_tol * observations,
+                ordinary_relative, ordinary_change.q_max, ordinary_change.p_rms,
+                ordinary_change.f_rms, ordinary_change.r_rms, relative_tol, parameter_tol);
+            cao.print(tim.date(), "ordinary-EM map checkpoint", scan + 2, ", relative =", ordinary_relative,
+                      ", dQ(max) =", ordinary_change.q_max, ", dP(rms) =", ordinary_change.p_rms,
+                      ", dF(rms) =", ordinary_change.f_rms, ", dR(rms) =", ordinary_change.r_rms);
+            if(ordinary_near_convergence)
+            {
+                ordinary_finish_start = scan + 2;
+                cao.print(tim.date(), "switching from SqS3 to ordinary-EM finishing at scan",
+                          ordinary_finish_start, " because the ordinary EM map reached the near-convergence",
+                          " threshold; rejection rate =", handoff.rejection_rate,
+                          ", mean realized gain =", handoff.mean_realized_gain, ", ",
+                          opts.nimpute - ordinary_finish_start, " scans remain");
+                break;
+            }
             SqS3StepMoments step_moments;
             if(opts.aQ)
                 add_sqs3_block_moments(step_moments, sqs3_x0.Q, sqs3_x1.Q, normal_candidate.Q);

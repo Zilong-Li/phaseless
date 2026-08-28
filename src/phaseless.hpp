@@ -18,6 +18,17 @@ struct JointHeuristicReport
     }
 };
 
+struct InitializationProfilePruningReport
+{
+    int blocks{0};
+    int informative_blocks{0};
+    int informative_sites{0};
+    int retained_sites{0};
+    double total_information{0};
+    double retained_information{0};
+    bool used_all_sites_fallback{false};
+};
+
 class Phaseless
 {
   private:
@@ -70,6 +81,7 @@ class Phaseless
     MyArr2D EclusterK; // C x K x M, update F
     MyArr2D EclusterUsage; // C x M, posterior number of chromosome copies assigned to each cluster
     MyArr2D EindividualClusterUsage; // C x N, genome-wide posterior cluster profile used for initialization
+    MyArr1D initializationProfileWeights; // optional M-vector used only when accumulating the initialization profile
     Int1D phaseAlignmentBoundaries; // global site index of each ancestry-free alignment boundary
     Int1D phaseAlignmentIndex; // M-vector mapping a site to its boundary statistic, or -1
     std::vector<MyArr2D> EphaseAlignmentCross; // per-boundary cross-individual occupancy products
@@ -91,6 +103,10 @@ class Phaseless
     void updateIteration();
     JointHeuristicReport alignClusterLabels(int boundary_stride, int reset_radius);
     JointHeuristicReport reviveUnusedClusters(double min_usage, int bin_size, double donor_weight);
+    InitializationProfilePruningReport configureInformativeProfileSites(int block_size,
+                                                                         double information_fraction,
+                                                                         int minimum_sites);
+    void clearInformativeProfileSites();
     void callGenoLoopC(int, int, int, const MyArr2D &, const MyArr1D &);
     double runForwardBackwards(const int, const int, const MyFloat1D &, bool);
     double runBigass(int, const MyFloat2D &, bool);

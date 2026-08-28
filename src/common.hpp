@@ -118,6 +118,23 @@ inline double sqs3_step_length(const SqS3StepMoments & moments)
     return std::isfinite(alpha) ? std::max(1.0, alpha) : 1.0;
 }
 
+inline bool ordinary_em_near_convergence(bool monotone,
+                                         double relative_likelihood_change,
+                                         double q_change,
+                                         double p_change,
+                                         double f_change,
+                                         double r_change,
+                                         double relative_tolerance,
+                                         double parameter_tolerance)
+{
+    return monotone && std::isfinite(relative_likelihood_change)
+        && relative_likelihood_change < 5 * relative_tolerance
+        && q_change < 2 * parameter_tolerance
+        && p_change < 2 * parameter_tolerance
+        && f_change < 2 * parameter_tolerance
+        && r_change < 2 * parameter_tolerance;
+}
+
 inline SqS3HandoffMetrics assess_sqs3_handoff(int rejection_attempts,
                                               int rejected,
                                               int efficiency_attempts,
@@ -236,15 +253,18 @@ struct Options
     double conv_gap_tol{1e-5}, conv_relative_tol{5e-6}, conv_parameter_tol{2e-3};
     int conv_stable_iterations{3};
     int heuristic_block_size{100}, heuristic_reset_radius{20};
-    int init_haplotype_iterations{50}, init_haplotype_min_iterations{12};
+    int init_haplotype_iterations{75}, init_haplotype_min_iterations{12};
     int init_haplotype_stable_iterations{3}, init_ancestry_iterations{15}, init_restarts{3};
+    int init_profile_block_size{100}, init_profile_min_snps{5};
     double heuristic_min_usage{0.01}, heuristic_donor_weight{0.8};
     double init_noise{0.05}, init_haplotype_relative_tol{1e-4}, init_haplotype_profile_tol{2e-3};
+    double init_profile_information_fraction{0.95};
     double q_pseudocount{0.5}, p_shrinkage{0.5};
     double ptol{1e-6}; // threshold for P
     double ftol{1e-6}; // threshold for F
     double qtol{1e-6}; // threshold for Q
     bool noaccel{0}, noscreen{0}, single_chunk{0}, debug{0}, collapse{0}, gpu{0}, stitch_heuristics{0}, random_init{0};
+    bool init_profile_pruning{0};
     bool nQ{0}, nP{0}, nF{0}, nR{0}, aQ{0}, oVCF{0}, eHap{0}, oF{0}, cF{0}, force{0};
     std::string out, in_beagle, in_vcf, in_bin, in_impute, in_joint;
     std::string samples{""}, region{""}, in_plink{""}, in_qfile{""}, in_pfile{""}, in_rfile{""};

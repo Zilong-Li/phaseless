@@ -106,6 +106,18 @@ TEST_CASE("SqS3 step moments balance parameter blocks by mean-square change", "[
     REQUIRE(sqs3_step_length(SqS3StepMoments{}) == Approx(1.0));
 }
 
+TEST_CASE("SqS3 near-convergence handoff follows the ordinary EM map", "[test-utils]")
+{
+    REQUIRE(ordinary_em_near_convergence(true, 8e-6, 1.5e-3, 1.0e-3, 1.8e-3, 2e-4,
+                                         2e-6, 1e-3));
+    REQUIRE_FALSE(ordinary_em_near_convergence(true, 1.1e-5, 1.5e-3, 1.0e-3, 1.8e-3, 2e-4,
+                                               2e-6, 1e-3));
+    REQUIRE_FALSE(ordinary_em_near_convergence(true, 8e-6, 2.1e-3, 1.0e-3, 1.8e-3, 2e-4,
+                                               2e-6, 1e-3));
+    REQUIRE_FALSE(ordinary_em_near_convergence(false, 8e-6, 1.5e-3, 1.0e-3, 1.8e-3, 2e-4,
+                                               2e-6, 1e-3));
+}
+
 TEST_CASE("allele frequency EM normalizes over samples", "[test-utils]")
 {
     const int N = 2, M = 2;
