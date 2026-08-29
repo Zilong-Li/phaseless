@@ -256,15 +256,17 @@ struct Options
     int init_haplotype_iterations{75}, init_haplotype_min_iterations{12};
     int init_haplotype_stable_iterations{3}, init_ancestry_iterations{15}, init_restarts{3};
     int init_profile_block_size{100}, init_profile_min_snps{5};
+    int joint_f_block_size{500};
     double heuristic_min_usage{0.01}, heuristic_donor_weight{0.8};
     double init_noise{0.05}, init_haplotype_relative_tol{1e-4}, init_haplotype_profile_tol{2e-3};
     double init_profile_information_fraction{0.95};
     double q_pseudocount{0.5}, p_shrinkage{0.5};
+    double joint_f_block_shrinkage{0.0}; // Moderate protection against low-depth or low-occupancy blocks.
     double ptol{1e-6}; // threshold for P
     double ftol{1e-6}; // threshold for F
     double qtol{1e-6}; // threshold for Q
     bool noaccel{0}, noscreen{0}, single_chunk{0}, debug{0}, collapse{0}, gpu{0}, stitch_heuristics{0}, random_init{0};
-    bool init_profile_pruning{0};
+    bool init_profile_pruning{0}, full_joint{0};
     bool nQ{0}, nP{0}, nF{0}, nR{0}, aQ{0}, oVCF{0}, eHap{0}, oF{0}, cF{0}, force{0};
     std::string out, in_beagle, in_vcf, in_bin, in_impute, in_joint;
     std::string samples{""}, region{""}, in_plink{""}, in_qfile{""}, in_pfile{""}, in_rfile{""};

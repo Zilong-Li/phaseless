@@ -44,6 +44,12 @@ class Phaseless
     double admixtureThreshold{1e-9}; // threshold for Q
     double admixturePseudocount{0}; // symmetric weak regularization for Q updates
     double emissionShrinkage{0}; // prior weight centered on each site's pooled allele frequency
+    bool blockRegularizedF{false};
+    int fBlockSize{0};
+    double fBlockShrinkage{0};
+    MyArr2D sharedF; // C x M shared-haplotype baseline for ancestry deviations
+
+    void updateBlockRegularizedF();
 
   public:
     Phaseless(int k, int c, int n, int m, int seed) : K(k), C(c), N(n), M(m), KK(k * k), CC(c * c)
@@ -94,6 +100,8 @@ class Phaseless
     void setFlags(double, double, double, bool, bool, bool, bool, bool);
     void setAdmixturePseudocount(double value);
     void setEmissionShrinkage(double value);
+    void configureBlockRegularizedF(const MyArr2D & baseline, int block_size, double shrinkage);
+    double regularizationLogPrior() const;
     void protectPars();
     void initializeSharedHaplotypeStart();
     bool initializeAncestryFromPosterior(double noise, int restart);

@@ -203,6 +203,17 @@ int main(int argc, char * argv[])
         .help("site-frequency-centered prior weight for P updates; 0 disables it")
         .default_value(0.5)
         .scan<'g', double>();
+    cmd_joint.add_argument("--full-joint")
+        .help("release P and r and use unrestricted sitewise F after initialization")
+        .flag();
+    cmd_joint.add_argument("--joint-f-block-size")
+        .help("SNP block size for ancestry deviations from the shared F baseline")
+        .default_value(500)
+        .scan<'i', int>();
+    cmd_joint.add_argument("--joint-f-block-shrinkage")
+        .help("effective shared-baseline refresh count per F deviation block; 0 disables shrinkage")
+        .default_value(0.0)
+        .scan<'g', double>();
     cmd_joint.add_argument("--heuristic-block-size")
         .help("SNP block size used by STITCH-inspired heuristics")
         .default_value(100)
@@ -401,6 +412,9 @@ int main(int argc, char * argv[])
             opts.init_restarts = cmd_joint.get<int>("--init-restarts");
             opts.q_pseudocount = cmd_joint.get<double>("--q-pseudocount");
             opts.p_shrinkage = cmd_joint.get<double>("--p-shrinkage");
+            opts.full_joint = cmd_joint.get<bool>("--full-joint");
+            opts.joint_f_block_size = cmd_joint.get<int>("--joint-f-block-size");
+            opts.joint_f_block_shrinkage = cmd_joint.get<double>("--joint-f-block-shrinkage");
             opts.heuristic_block_size = cmd_joint.get<int>("--heuristic-block-size");
             opts.heuristic_reset_radius = cmd_joint.get<int>("--heuristic-reset-radius");
             opts.heuristic_min_usage = cmd_joint.get<double>("--heuristic-min-usage");
@@ -425,7 +439,10 @@ int main(int argc, char * argv[])
                || opts.init_profile_information_fraction <= 0
                || opts.init_profile_information_fraction > 1
                || !std::isfinite(opts.q_pseudocount) || opts.q_pseudocount < 0
-               || !std::isfinite(opts.p_shrinkage) || opts.p_shrinkage < 0)
+               || !std::isfinite(opts.p_shrinkage) || opts.p_shrinkage < 0
+               || opts.joint_f_block_size < 1
+               || !std::isfinite(opts.joint_f_block_shrinkage)
+               || opts.joint_f_block_shrinkage < 0)
                 throw std::invalid_argument("invalid joint initialization configuration");
             opts.chunksize = cmd_joint.get<int>("--chunksize");
             opts.single_chunk = cmd_joint.get<bool>("--single-chunk");

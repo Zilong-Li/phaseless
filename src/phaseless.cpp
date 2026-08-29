@@ -186,6 +186,178 @@ void Phaseless::setEmissionShrinkage(double value)
     emissionShrinkage = value;
 }
 
+void Phaseless::configureBlockRegularizedF(const MyArr2D & baseline, int block_size, double shrinkage)
+{
+    if(baseline.rows() != C || baseline.cols() != M)
+        throw std::invalid_argument("shared F baseline must have dimensions C x M");
+    if(block_size < 1) throw std::invalid_argument("F deviation block size must be positive");
+    if(!std::isfinite(shrinkage) || shrinkage < 0)
+        throw std::invalid_argument("F block shrinkage must be finite and non-negative");
+    if(!baseline.isFinite().all() || (baseline <= 0).any())
+        throw std::invalid_argument("shared F baseline must be finite and strictly positive");
+
+    sharedF = baseline;
+    sharedF.rowwise() /= sharedF.colwise().sum();
+    fBlockSize = block_size;
+    fBlockShrinkage = shrinkage;
+    blockRegularizedF = true;
+}
+
+double Phaseless::regularizationLogPrior() const
+{
+    if(!blockRegularizedF) return 0;
+    double value = 0;
+    if(admixturePseudocount > 0)
+        value += admixturePseudocount * Q.max(admixtureThreshold).log().sum();
+    if(fBlockShrinkage <= 0) return value;
+
+    const Int1D boundaries = pos_chunk.empty() ? Int1D{0, M} : pos_chunk;
+    for(int ancestry = 0; ancestry < K; ++ancestry)
+        for(size_t chunk = 0; chunk + 1 < boundaries.size(); ++chunk)
+            for(int begin = boundaries[chunk]; begin < boundaries[chunk + 1]; begin += fBlockSize)
+            {
+                const int end = std::min(boundaries[chunk + 1], begin + fBlockSize);
+                const int length = end - begin;
+                value += (fBlockShrinkage / static_cast<double>(length))
+                       * (sharedF.middleCols(begin, length)
+                          * F[ancestry].middleCols(begin, length).max(clusterFreqThreshold).log()).sum();
+            }
+    return value;
+}
+
+void Phaseless::updateBlockRegularizedF()
+{
+    if(!blockRegularizedF) throw std::logic_error("block-regularized F update is not configured");
+
+    // Within a block, F_ksc is the shared K=1 baseline multiplied by one
+    // ancestry/cluster odds offset.  Conditional on the E-step refresh counts,
+    // this is a concave multinomial-logit problem with site-specific offsets.
+    // The final cluster is the reference category, leaving C-1 free offsets.
+    const int dimensions = C - 1;
+    const Int1D boundaries = pos_chunk.empty() ? Int1D{0, M} : pos_chunk;
+    for(int ancestry = 0; ancestry < K; ++ancestry)
+    {
+        const MyArr2D ancestry_counts = EclusterK.middleRows(ancestry * C, C);
+        for(size_t chunk = 0; chunk + 1 < boundaries.size(); ++chunk)
+            for(int begin = boundaries[chunk]; begin < boundaries[chunk + 1]; begin += fBlockSize)
+            {
+                const int end = std::min(boundaries[chunk + 1], begin + fBlockSize);
+                const int length = end - begin;
+                MyArr2D counts = ancestry_counts.middleCols(begin, length);
+                if(fBlockShrinkage > 0)
+                    counts += sharedF.middleCols(begin, length)
+                            * (fBlockShrinkage / static_cast<double>(length));
+                const double block_total = counts.sum();
+                if(!(block_total > 0) || !std::isfinite(block_total))
+                {
+                    F[ancestry].middleCols(begin, length) = sharedF.middleCols(begin, length);
+                    continue;
+                }
+
+                Eigen::VectorXd theta = Eigen::VectorXd::Zero(dimensions);
+                if(dimensions > 0)
+                {
+                    // Warm-start from the current dense F while keeping a
+                    // single odds offset across all sites in the block.
+                    for(int cluster = 0; cluster < dimensions; ++cluster)
+                    {
+                        double average = 0;
+                        for(int site = begin; site < end; ++site)
+                            average += std::log(F[ancestry](cluster, site) / sharedF(cluster, site))
+                                     - std::log(F[ancestry](C - 1, site) / sharedF(C - 1, site));
+                        theta(cluster) = average / length;
+                    }
+                }
+
+                auto objective = [&](const Eigen::VectorXd & candidate)
+                {
+                    double value = 0;
+                    for(int local = 0; local < length; ++local)
+                    {
+                        const int site = begin + local;
+                        double maximum = std::log(sharedF(C - 1, site));
+                        for(int cluster = 0; cluster < dimensions; ++cluster)
+                            maximum = std::max(maximum,
+                                               std::log(sharedF(cluster, site)) + candidate(cluster));
+                        double denominator = std::exp(std::log(sharedF(C - 1, site)) - maximum);
+                        for(int cluster = 0; cluster < dimensions; ++cluster)
+                            denominator += std::exp(std::log(sharedF(cluster, site))
+                                                  + candidate(cluster) - maximum);
+                        const double log_normalizer = maximum + std::log(denominator);
+                        for(int cluster = 0; cluster < C; ++cluster)
+                        {
+                            const double offset = cluster < dimensions ? candidate(cluster) : 0.0;
+                            value += counts(cluster, local)
+                                   * (std::log(sharedF(cluster, site)) + offset - log_normalizer);
+                        }
+                    }
+                    return value;
+                };
+
+                for(int iteration = 0; iteration < 30 && dimensions > 0; ++iteration)
+                {
+                    Eigen::VectorXd gradient = Eigen::VectorXd::Zero(dimensions);
+                    Eigen::MatrixXd information = Eigen::MatrixXd::Zero(dimensions, dimensions);
+                    for(int local = 0; local < length; ++local)
+                    {
+                        const int site = begin + local;
+                        Eigen::VectorXd probability(C);
+                        double maximum = std::log(sharedF(C - 1, site));
+                        for(int cluster = 0; cluster < dimensions; ++cluster)
+                            maximum = std::max(maximum,
+                                               std::log(sharedF(cluster, site)) + theta(cluster));
+                        probability(C - 1) = std::exp(std::log(sharedF(C - 1, site)) - maximum);
+                        for(int cluster = 0; cluster < dimensions; ++cluster)
+                            probability(cluster) = std::exp(std::log(sharedF(cluster, site))
+                                                          + theta(cluster) - maximum);
+                        probability /= probability.sum();
+                        const double site_total = counts.col(local).sum();
+                        for(int left = 0; left < dimensions; ++left)
+                        {
+                            gradient(left) += counts(left, local) - site_total * probability(left);
+                            for(int right = 0; right < dimensions; ++right)
+                                information(left, right) += site_total * probability(left)
+                                    * ((left == right ? 1.0 : 0.0) - probability(right));
+                        }
+                    }
+                    if(gradient.cwiseAbs().maxCoeff() < 1e-9 * std::max(1.0, block_total)) break;
+                    Eigen::LDLT<Eigen::MatrixXd> decomposition(information);
+                    if(decomposition.info() != Eigen::Success) break;
+                    const Eigen::VectorXd step = decomposition.solve(gradient);
+                    if(!step.allFinite()) break;
+                    const double current_objective = objective(theta);
+                    double scale = 1.0;
+                    bool accepted = false;
+                    while(scale >= 1.0 / 1024)
+                    {
+                        Eigen::VectorXd candidate = theta + scale * step;
+                        candidate = candidate.cwiseMax(-30.0).cwiseMin(30.0);
+                        if(objective(candidate) >= current_objective)
+                        {
+                            theta = candidate;
+                            accepted = true;
+                            break;
+                        }
+                        scale *= 0.5;
+                    }
+                    if(!accepted || (scale * step).cwiseAbs().maxCoeff() < 1e-8) break;
+                }
+
+                for(int site = begin; site < end; ++site)
+                {
+                    double total = sharedF(C - 1, site);
+                    F[ancestry](C - 1, site) = sharedF(C - 1, site);
+                    for(int cluster = 0; cluster < dimensions; ++cluster)
+                    {
+                        F[ancestry](cluster, site) = sharedF(cluster, site) * std::exp(theta(cluster));
+                        total += F[ancestry](cluster, site);
+                    }
+                    F[ancestry].col(site) /= total;
+                }
+            }
+    }
+}
+
 void Phaseless::setStartPoint(std::string qfile, std::string pfile)
 {
     if(!qfile.empty()) load_csv(Q, qfile, true);
@@ -271,9 +443,14 @@ bool Phaseless::initializeAncestryFromPosterior(double noise, int restart)
         Q.rowwise() /= Q.colwise().sum();
         for(auto & frequencies : F)
         {
-            const MyArr2D jitter = RandomUniform<MyArr2D, std::default_random_engine>(
-                C, M, rng, 1 - noise, 1 + noise);
-            frequencies = common * jitter;
+            if(blockRegularizedF)
+                frequencies = sharedF;
+            else
+            {
+                const MyArr2D jitter = RandomUniform<MyArr2D, std::default_random_engine>(
+                    C, M, rng, 1 - noise, 1 + noise);
+                frequencies = common * jitter;
+            }
             frequencies.rowwise() /= frequencies.colwise().sum();
         }
         protectPars();
@@ -432,10 +609,9 @@ bool Phaseless::initializeAncestryFromPosterior(double noise, int restart)
         MyArr1D ratio = (ancestry_profile + clusterFreqThreshold)
                       / (mean_profile + clusterFreqThreshold);
         ratio = ratio.sqrt();
-        const MyArr2D jitter = RandomUniform<MyArr2D, std::default_random_engine>(
-            C, M, rng, 1 - noise, 1 + noise);
         F[k] = common.colwise() * ratio;
-        F[k] *= jitter;
+        if(!blockRegularizedF)
+            F[k] *= RandomUniform<MyArr2D, std::default_random_engine>(C, M, rng, 1 - noise, 1 + noise);
         F[k].rowwise() /= F[k].colwise().sum();
     }
     protectPars();
@@ -578,11 +754,14 @@ void Phaseless::updateIteration()
     }
     if(!NF)
     { // update F
-        for(int k = 0; k < K; k++)
-        {
-            F[k] = EclusterK.middleRows(k * C, C); // C x M
-            F[k].rowwise() /= F[k].colwise().sum(); // normalize F per site per K
-        }
+        if(blockRegularizedF)
+            updateBlockRegularizedF();
+        else
+            for(int k = 0; k < K; k++)
+            {
+                F[k] = EclusterK.middleRows(k * C, C); // C x M
+                F[k].rowwise() /= F[k].colwise().sum(); // normalize F per site per K
+            }
     }
     if(!NR) er = 1.0 - EclusterK.colwise().sum() / N;
     protectPars();
@@ -1004,6 +1183,9 @@ int run_phaseless_main(Options & opts)
               ", P site-frequency shrinkage =", opts.p_shrinkage);
     faith.setStartPoint(opts.in_qfile, opts.in_pfile);
     faith.initRecombination(genome->pos, opts.in_rfile);
+    const bool posterior_initialization = !opts.random_init && opts.in_qfile.empty();
+    const bool regularized_partial_joint = posterior_initialization && !opts.full_joint;
+    const char * joint_score_label = regularized_partial_joint ? "penalized objective" : "likelihood";
     bool initialization_cpu_e_step{false};
     auto evaluate_e_step = [&](bool final_iteration)
     {
@@ -1013,7 +1195,7 @@ int run_phaseless_main(Options & opts)
             res.emplace_back(pool.enqueue(&Phaseless::runBigass, &faith, i, std::ref(genome->gls), final_iteration));
         for(auto && ll : res) value += ll.get();
         res.clear();
-        return value;
+        return value + faith.regularizationLogPrior();
     };
     auto run_initialization_stage = [&](const char * name, int scans)
     {
@@ -1024,17 +1206,19 @@ int run_phaseless_main(Options & opts)
             faith.initIteration();
             stage_like = evaluate_e_step(false);
             faith.updateIteration();
-            cao.print(tim.date(), name, "scan", it + 1, "/", scans, ", likelihood =", stage_like,
+            cao.print(tim.date(), name, "scan", it + 1, "/", scans, ", ", joint_score_label, "=", stage_like,
                       ", time", tim.reltime(), "sec");
         }
         return stage_like;
     };
-    const bool posterior_initialization = !opts.random_init && opts.in_qfile.empty();
     JointParameterSnapshot initialization_checkpoint;
     double initialization_checkpoint_like{-std::numeric_limits<double>::infinity()};
     bool have_initialization_checkpoint{false};
     if(!posterior_initialization && !opts.in_qfile.empty())
         cao.print(tim.date(), "using explicit Q start; posterior-driven initialization is disabled");
+    if(!posterior_initialization && !opts.full_joint)
+        cao.warn(tim.date(), "regularized partial-joint fitting requires the shared-haplotype baseline;",
+                 "falling back to the requested legacy joint parameter blocks");
     if(posterior_initialization)
     {
         cao.print(tim.date(), "posterior-driven initialization: shared haplotype scans =",
@@ -1187,6 +1371,16 @@ int run_phaseless_main(Options & opts)
         faith.clearInformativeProfileSites();
         cao.print(tim.date(), "shared-haplotype final profile likelihood =", final_shared_like);
         initialization_cpu_e_step = false;
+        if(regularized_partial_joint)
+        {
+            faith.configureBlockRegularizedF(shared_parameters.F.topRows(faith.C),
+                                             opts.joint_f_block_size,
+                                             opts.joint_f_block_shrinkage);
+            cao.print(tim.date(), "configured regularized partial-joint model: fixed P and r,",
+                      opts.nF ? "F frozen" : "block-regularized F", ", F deviation block size =",
+                      opts.joint_f_block_size, ", shared-baseline effective refresh count =",
+                      opts.joint_f_block_shrinkage);
+        }
 
         // Cluster genome-wide posterior haplotype occupancy, use the resulting
         // soft groups for Q, and tilt the shared F by each group's profile.
@@ -1204,8 +1398,8 @@ int run_phaseless_main(Options & opts)
             run_initialization_stage("fixed-haplotype ancestry refinement", opts.init_ancestry_iterations);
             faith.initIteration();
             const double candidate_like = evaluate_e_step(false);
-            cao.print(tim.date(), "fixed-haplotype ancestry candidate", restart + 1,
-                      ", observed likelihood =", candidate_like);
+            cao.print(tim.date(), "fixed-haplotype ancestry candidate", restart + 1, ", ",
+                      joint_score_label, "=", candidate_like);
             if(candidate_like > best_initialization_like)
             {
                 best_initialization_like = candidate_like;
@@ -1222,9 +1416,14 @@ int run_phaseless_main(Options & opts)
         else
             restore_parameters(faith, shared_parameters);
 
-        faith.setFlags(opts.ptol, opts.ftol, opts.qtol, opts.debug, opts.nQ, opts.nP, opts.nF, opts.nR);
-        cao.print(tim.date(), "posterior-driven initialization complete; selected candidate likelihood =",
-                  best_initialization_like, ", releasing all requested joint parameter blocks");
+        faith.setFlags(opts.ptol, opts.ftol, opts.qtol, opts.debug, opts.nQ,
+                       opts.nP || regularized_partial_joint, opts.nF,
+                       opts.nR || regularized_partial_joint);
+        cao.print(tim.date(), "posterior-driven initialization complete; selected candidate ",
+                  joint_score_label, "=", best_initialization_like,
+                  regularized_partial_joint
+                      ? ", optimizing Q and block-regularized F with P and r fixed"
+                      : ", releasing all requested joint parameter blocks");
     }
     constexpr double monotonicity_tol{1e-10};
     const double improvement_tol = opts.conv_gap_tol;
@@ -1246,8 +1445,9 @@ int run_phaseless_main(Options & opts)
         best_like = initialization_checkpoint_like;
         have_best_parameters = true;
     }
-    cao.print(tim.date(), std::scientific, "joint convergence: improvement/observation < ", improvement_tol,
-              ", relative likelihood change < ", relative_tol, ", parameter change < ", parameter_tol, " for ",
+    cao.print(tim.date(), std::scientific, "joint convergence: ", joint_score_label,
+              " improvement/observation < ", improvement_tol,
+              ", relative change < ", relative_tol, ", parameter change < ", parameter_tol, " for ",
               stable_iterations_required, " accepted iterations");
 
     auto reset_convergence_history = [&]()
@@ -1288,7 +1488,8 @@ int run_phaseless_main(Options & opts)
         const bool stable = likelihood.monotone && likelihood_stable && parameters_stable;
         stable_iterations = stable ? stable_iterations + 1 : 0;
 
-        cao.print(tim.date(), "accepted iteration", iteration, ", likelihood =", current_like, ", delta =",
+        cao.print(tim.date(), "accepted iteration", iteration, ", ", joint_score_label, "=", current_like,
+                  ", delta =",
                   likelihood.delta, ", relative =", std::scientific, likelihood.relative_change,
                   ", improvement/observation =", likelihood.improvement_per_observation,
                   ", Aitken rate =", likelihood.aitken_rate, ", Aitken gap/observation =",
@@ -1297,7 +1498,7 @@ int run_phaseless_main(Options & opts)
                   parameters.f_rms, ", dR(rms) =", parameters.r_rms, ", stable =", stable_iterations, "/",
                   stable_iterations_required);
         if(!likelihood.monotone)
-            cao.warn(tim.date(), "accepted joint-model likelihood decreased by", likelihood.delta,
+            cao.warn(tim.date(), "accepted joint-model ", joint_score_label, "decreased by", likelihood.delta,
                      "; convergence counter reset");
 
         previous_previous_like = previous_like;
@@ -1315,7 +1516,11 @@ int run_phaseless_main(Options & opts)
             cao.warn(tim.date(), "--stitch-heuristics requires posterior-driven initialization and was not applied");
     }
 
-    if(opts.noaccel)
+    const bool ordinary_only = opts.noaccel || regularized_partial_joint;
+    if(regularized_partial_joint && !opts.noaccel)
+        cao.print(tim.date(), "using ordinary block ECM because dense-F SqS3 extrapolation does not preserve",
+                  "the blockwise ancestry-deviation parameterization");
+    if(ordinary_only)
     {
         for(int it = 0; SIG_COND && it <= opts.nimpute; it++)
         {
@@ -1323,7 +1528,8 @@ int run_phaseless_main(Options & opts)
             faith.initIteration();
             loglike = evaluate_e_step(false);
             preserve_best(loglike);
-            cao.print(tim.date(), "run whole genome, iteration", it, ", likelihood =", loglike, ", time",
+            cao.print(tim.date(), "run whole genome, iteration", it, ", ", joint_score_label, "=", loglike,
+                      ", time",
                       tim.reltime(), " sec");
             if(joint_converged(it, loglike))
             {
@@ -1336,7 +1542,7 @@ int run_phaseless_main(Options & opts)
             faith.updateIteration();
         }
     }
-    const bool run_acceleration = !opts.noaccel;
+    const bool run_acceleration = !ordinary_only;
     int ordinary_finish_start{-1};
     bool ordinary_finish_has_evaluation{false};
     double ordinary_finish_cached_like{NAN};
@@ -1575,7 +1781,7 @@ int run_phaseless_main(Options & opts)
     if(have_best_parameters
        && (!std::isfinite(loglike) || best_like > loglike + monotonicity_tol * observations))
     {
-        cao.warn(tim.date(), "restoring best observed-likelihood checkpoint:", best_like, "instead of", loglike);
+        cao.warn(tim.date(), "restoring best ", joint_score_label, "checkpoint:", best_like, "instead of", loglike);
         restore_parameters(faith, best_parameters);
         loglike = best_like;
     }

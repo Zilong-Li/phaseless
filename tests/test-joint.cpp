@@ -111,6 +111,44 @@ TEST_CASE("joint P update shrinks low-occupancy cells toward pooled site frequen
     REQUIRE_THROWS_AS(faith.setEmissionShrinkage(-0.1), std::invalid_argument);
 }
 
+TEST_CASE("joint F update learns blockwise ancestry odds around shared baseline", "[test-joint]")
+{
+    constexpr int K{2}, C{2}, N{10}, M{4};
+    Phaseless faith(K, C, N, M, 13);
+    faith.pos_chunk = {0, M};
+    faith.NQ = faith.NP = faith.NR = true;
+    faith.NF = false;
+    MyArr2D baseline(C, M);
+    baseline << 0.20, 0.40, 0.60, 0.80,
+                0.80, 0.60, 0.40, 0.20;
+    faith.F[0] = faith.F[1] = baseline;
+    faith.configureBlockRegularizedF(baseline, 2, 10.0);
+    faith.initIteration();
+    faith.EclusterK.middleRows(0, C) << 18.0, 16.0, 2.0, 4.0,
+                                                2.0, 4.0, 18.0, 16.0;
+    faith.EclusterK.middleRows(C, C) << 2.0, 4.0, 18.0, 16.0,
+                                                18.0, 16.0, 2.0, 4.0;
+
+    faith.updateIteration();
+
+    for(int ancestry = 0; ancestry < K; ++ancestry)
+        for(int site = 0; site < M; ++site)
+            REQUIRE(faith.F[ancestry].col(site).sum() == Approx(1.0));
+    auto relative_odds = [&](int ancestry, int site)
+    {
+        return (faith.F[ancestry](0, site) / faith.F[ancestry](1, site))
+             / (baseline(0, site) / baseline(1, site));
+    };
+    REQUIRE(relative_odds(0, 0) == Approx(relative_odds(0, 1)).epsilon(1e-8));
+    REQUIRE(relative_odds(0, 2) == Approx(relative_odds(0, 3)).epsilon(1e-8));
+    REQUIRE(relative_odds(1, 0) == Approx(relative_odds(1, 1)).epsilon(1e-8));
+    REQUIRE(relative_odds(0, 0) > 1.0);
+    REQUIRE(relative_odds(0, 2) < 1.0);
+    REQUIRE(relative_odds(1, 0) < 1.0);
+    REQUIRE_THROWS_AS(faith.configureBlockRegularizedF(baseline, 0, 1.0), std::invalid_argument);
+    REQUIRE_THROWS_AS(faith.configureBlockRegularizedF(baseline, 2, -1.0), std::invalid_argument);
+}
+
 TEST_CASE("joint STITCH heuristic aligns swapped cluster labels", "[test-joint]")
 {
     constexpr int K{2}, C{2}, N{2}, M{4};
