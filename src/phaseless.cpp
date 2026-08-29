@@ -1338,14 +1338,13 @@ int run_phaseless_main(Options & opts)
     }
     const bool run_acceleration = !opts.noaccel;
     int ordinary_finish_start{-1};
+    bool ordinary_finish_has_evaluation{false};
+    double ordinary_finish_cached_like{NAN};
     if(run_acceleration && SIG_COND && !did_converge)
     {
         const int istep{4};
         double alpha{0}, stepMax{4}, alphaMax{1280};
-        const int acceleration_scans = opts.nimpute;
-        const int max_outer_iterations = acceleration_scans / 4;
-        const int iteration_offset = 0;
-        const int finish_reserve = std::min(acceleration_scans,
+        const int finish_reserve = std::min(opts.nimpute,
                                             std::max(12, 4 * (stable_iterations_required + 2)));
         const int forced_finish_scan = opts.nimpute - finish_reserve;
         double accelerated_previous_like{NAN};
@@ -1353,15 +1352,31 @@ int run_phaseless_main(Options & opts)
         bool have_accelerated_previous{false};
         std::deque<bool> recent_rejections;
         std::deque<double> recent_realized_gains;
-        for(int it = 0; SIG_COND && it <= max_outer_iterations; it++)
+        int scan{-1};
+        int it{0};
+        bool have_current_evaluation{false};
+        double current_like{NAN};
+        while(SIG_COND)
         {
-            // Evaluate the current accepted state, then take the first normal EM step.
-            tim.clock();
-            faith.initIteration();
+            if(!have_current_evaluation)
+            {
+                if(scan + 1 > forced_finish_scan)
+                {
+                    ordinary_finish_start = scan + 1;
+                    cao.print(tim.date(), "switching from SqS3 to ordinary-EM finishing at scan",
+                              ordinary_finish_start, " because of reserved ordinary-EM convergence budget;",
+                              opts.nimpute - ordinary_finish_start, " scans remain");
+                    break;
+                }
+                ++scan;
+                tim.clock();
+                faith.initIteration();
+                current_like = evaluate_e_step(false);
+                have_current_evaluation = true;
+            }
             const JointParameterSnapshot sqs3_x0 = snapshot_parameters(faith);
-            loglike = evaluate_e_step(false);
+            loglike = current_like;
             preserve_best(loglike);
-            const int scan = iteration_offset + 4 * it;
             double accelerated_relative{NAN};
             JointParameterChange accelerated_change;
             if(have_accelerated_previous)
@@ -1386,11 +1401,14 @@ int run_phaseless_main(Options & opts)
             const auto handoff = assess_sqs3_handoff(static_cast<int>(recent_rejections.size()), rejected,
                                                      static_cast<int>(recent_realized_gains.size()),
                                                      realized_gain_sum, accelerated_relative, relative_tol);
-            const bool reserve_plain_em = scan >= forced_finish_scan;
-            if(handoff.persistent_rejection || handoff.low_efficiency || reserve_plain_em
-               || it == max_outer_iterations)
+            // A successful pipelined cycle needs three new E-steps: x1, the
+            // ordinary x2 reference, and the accelerated candidate.
+            const bool reserve_plain_em = scan + 3 > forced_finish_scan;
+            if(handoff.persistent_rejection || handoff.low_efficiency || reserve_plain_em)
             {
                 ordinary_finish_start = scan;
+                ordinary_finish_has_evaluation = true;
+                ordinary_finish_cached_like = current_like;
                 const char * reason = handoff.persistent_rejection ? "persistent rejected SqS3 proposals"
                                      : handoff.low_efficiency ? "low realized SqS3 gain"
                                      : "reserved ordinary-EM convergence budget";
@@ -1402,6 +1420,7 @@ int run_phaseless_main(Options & opts)
             }
             faith.updateIteration();
             // second normal iter
+            ++scan;
             faith.initIteration();
             const JointParameterSnapshot sqs3_x1 = snapshot_parameters(faith);
             loglike = evaluate_e_step(false);
@@ -1420,12 +1439,12 @@ int run_phaseless_main(Options & opts)
                 loglike >= accepted_like - monotonicity_tol * observations,
                 ordinary_relative, ordinary_change.q_max, ordinary_change.p_rms,
                 ordinary_change.f_rms, ordinary_change.r_rms, relative_tol, parameter_tol);
-            cao.print(tim.date(), "ordinary-EM map checkpoint", scan + 2, ", relative =", ordinary_relative,
+            cao.print(tim.date(), "ordinary-EM map checkpoint", scan + 1, ", relative =", ordinary_relative,
                       ", dQ(max) =", ordinary_change.q_max, ", dP(rms) =", ordinary_change.p_rms,
                       ", dF(rms) =", ordinary_change.f_rms, ", dR(rms) =", ordinary_change.r_rms);
             if(ordinary_near_convergence)
             {
-                ordinary_finish_start = scan + 2;
+                ordinary_finish_start = scan + 1;
                 cao.print(tim.date(), "switching from SqS3 to ordinary-EM finishing at scan",
                           ordinary_finish_start, " because the ordinary EM map reached the near-convergence",
                           " threshold; rejection rate =", handoff.rejection_rate,
@@ -1477,14 +1496,20 @@ int run_phaseless_main(Options & opts)
                          + alpha * alpha * (normal_candidate.er - 2 * sqs3_x1.er + sqs3_x0.er);
             faith.protectPars();
             const JointParameterSnapshot accelerated_candidate = snapshot_parameters(faith);
-            faith.initIteration();
-            const double accelerated_like = evaluate_e_step(false);
 
-            // Compare complete, evaluated parameter states. Rejected SqS3
-            // proposals cannot leak their P/r trajectory into the EM fallback.
+            // Evaluate the ordinary reference first and the accelerated state
+            // last.  When SqS3 is accepted, its E-step statistics are still
+            // live and can be used directly by the next cycle's first M-step.
             restore_parameters(faith, normal_candidate);
+            ++scan;
             faith.initIteration();
             const double normal_like = evaluate_e_step(false);
+            preserve_best(normal_like);
+
+            restore_parameters(faith, accelerated_candidate);
+            ++scan;
+            faith.initIteration();
+            const double accelerated_like = evaluate_e_step(false);
             const bool rejected_acceleration = !std::isfinite(accelerated_like)
                                             || accelerated_like < normal_like
                                                                      - monotonicity_tol * observations;
@@ -1493,12 +1518,16 @@ int run_phaseless_main(Options & opts)
                 stepMax = istep;
                 cao.warn(tim.date(), "reset stepMax to 4, normal EM yields better likelihoods than the accelerated EM.",
                          normal_like, " -", accelerated_like, ">", monotonicity_tol * observations);
+                restore_parameters(faith, normal_candidate);
                 loglike = normal_like;
+                current_like = normal_like;
+                have_current_evaluation = false;
             }
             else
             {
-                restore_parameters(faith, accelerated_candidate);
                 loglike = accelerated_like;
+                current_like = accelerated_like;
+                have_current_evaluation = true;
             }
             preserve_best(loglike);
             recent_rejections.push_back(rejected_acceleration);
@@ -1513,6 +1542,7 @@ int run_phaseless_main(Options & opts)
             cao.print(tim.date(), "SqS3 proposal alpha =", alpha, ", accelerated likelihood =",
                       accelerated_like, ", normal likelihood =", normal_like, ", selected =",
                       rejected_acceleration ? "ordinary EM" : "SqS3", ", realized gain =", realized_gain);
+            ++it;
         }
     }
     if(ordinary_finish_start >= 0 && SIG_COND && !did_converge)
@@ -1521,8 +1551,13 @@ int run_phaseless_main(Options & opts)
         for(int scan = ordinary_finish_start; SIG_COND && scan <= opts.nimpute; ++scan)
         {
             tim.clock();
-            faith.initIteration();
-            loglike = evaluate_e_step(false);
+            if(scan == ordinary_finish_start && ordinary_finish_has_evaluation)
+                loglike = ordinary_finish_cached_like;
+            else
+            {
+                faith.initIteration();
+                loglike = evaluate_e_step(false);
+            }
             preserve_best(loglike);
             cao.print(tim.date(), "ordinary-EM finishing scan", scan, ", likelihood =", loglike,
                       ", time", tim.reltime(), "sec");
